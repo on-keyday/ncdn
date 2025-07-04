@@ -36,6 +36,8 @@ type Config struct {
 
 	FetchPoPStatus      FetchPoPStatusFunc
 	MakeLatencyMeasurer MakeLatencyMeasurerFunc
+
+	GeoLocationInfoPath string // path to the GeoLocationInfo file, e.g. "secrets/geolite_info.json"
 }
 
 type RegionState struct {
@@ -82,12 +84,14 @@ func New(cfg *Config) *GslbCore {
 		}
 	}
 
-	// TODO: move to config
-	geo, err := FetchGeoLocation("secrets/geolite_info.json")
-	if err != nil {
-		slog.Error("Failed to fetch GeoLocation", slog.String("error", err.Error()))
-	} else {
-		slog.Info("GeoLocation fetched successfully")
+	var geo *GeoLocationInfo
+
+	if cfg.GeoLocationInfoPath != "" {
+		var err error
+		geo, err = FetchGeoLocation(cfg.GeoLocationInfoPath)
+		if err != nil {
+			panic(fmt.Errorf("failed to load GeoLocationInfo: %w", err))
+		}
 	}
 
 	c := &GslbCore{
@@ -108,26 +112,7 @@ func New(cfg *Config) *GslbCore {
 			Error: "not yet available",
 		}
 	}
-	for i := range c.popGeoLocations {
-		geoLoc, err := c.geo.GeoLocation(cfg.Pops[i].Ip4)
-		if err != nil {
-			slog.Warn("Failed to lookup GeoLocation for PoP", slog.String("popId", cfg.Pops[i].Id), slog.String("error", err.Error()))
-			c.popGeoLocations[i] = &GeoLocation{
-				ASN:  nil,
-				City: nil,
-			}
-		} else {
-			slog.Debug("GeoLocation for PoP fetched successfully",
-				slog.String("popId", cfg.Pops[i].Id),
-				slog.String("continent", geoLoc.City.Continent.Names.English),
-				slog.String("country", geoLoc.City.Country.Names.English),
-				slog.String("city", geoLoc.City.City.Names.English),
-				slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
-				slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
-			)
-			c.popGeoLocations[i] = geoLoc
-		}
-	}
+
 	for i, r := range cfg.Regions {
 		c.latencyMeasurers[i] = mlm(r.ProberURL, cfg.ProberSecret)
 
@@ -143,26 +128,48 @@ func New(cfg *Config) *GslbCore {
 		}
 	}
 
-	for i, r := range c.cfg.Regions {
-		c.regionGeoLocations[i] = make([]*GeoLocation, len(r.Prefices))
-		for j, p := range r.Prefices {
-			geoLoc, err := c.geo.GeoLocation(p.Addr())
+	if geo != nil {
+		for i := range c.popGeoLocations {
+			geoLoc, err := c.geo.GeoLocation(cfg.Pops[i].Ip4)
 			if err != nil {
-				slog.Warn("Failed to lookup GeoLocation for region", slog.String("regionId", r.Id), slog.String("error", err.Error()))
-				c.regionGeoLocations[i][j] = &GeoLocation{
+				slog.Warn("Failed to lookup GeoLocation for PoP", slog.String("popId", cfg.Pops[i].Id), slog.String("error", err.Error()))
+				c.popGeoLocations[i] = &GeoLocation{
 					ASN:  nil,
 					City: nil,
 				}
 			} else {
-				slog.Debug("GeoLocation for region fetched successfully",
-					slog.String("regionId", r.Id),
+				slog.Debug("GeoLocation for PoP fetched successfully",
+					slog.String("popId", cfg.Pops[i].Id),
 					slog.String("continent", geoLoc.City.Continent.Names.English),
 					slog.String("country", geoLoc.City.Country.Names.English),
 					slog.String("city", geoLoc.City.City.Names.English),
 					slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
 					slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
 				)
-				c.regionGeoLocations[i][j] = geoLoc
+				c.popGeoLocations[i] = geoLoc
+			}
+		}
+		for i, r := range c.cfg.Regions {
+			c.regionGeoLocations[i] = make([]*GeoLocation, len(r.Prefices))
+			for j, p := range r.Prefices {
+				geoLoc, err := c.geo.GeoLocation(p.Addr())
+				if err != nil {
+					slog.Warn("Failed to lookup GeoLocation for region", slog.String("regionId", r.Id), slog.String("error", err.Error()))
+					c.regionGeoLocations[i][j] = &GeoLocation{
+						ASN:  nil,
+						City: nil,
+					}
+				} else {
+					slog.Debug("GeoLocation for region fetched successfully",
+						slog.String("regionId", r.Id),
+						slog.String("continent", geoLoc.City.Continent.Names.English),
+						slog.String("country", geoLoc.City.Country.Names.English),
+						slog.String("city", geoLoc.City.City.Names.English),
+						slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
+						slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
+					)
+					c.regionGeoLocations[i][j] = geoLoc
+				}
 			}
 		}
 	}
@@ -365,22 +372,61 @@ func (c *GslbCore) collectCandidateRegions(srcIP netip.Addr, geoLoc *GeoLocation
 	return candidateRegions
 }
 
-func (c *GslbCore) collectPoPPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLocation) ([]float64, int) {
+type SmallestInfo struct {
+	Normal   int
+	Error    int
+	HighLoad int
+	Latency  int
+}
+
+func (c *GslbCore) collectPoPPhysicalDistance(geoLoc *GeoLocation, unreachableInfo map[int]UnreachableLevel) ([]float64, *SmallestInfo) {
 	var candidatePopIndex []float64
-	var smallestDistance = math.MaxFloat64
-	var smallestIndex = -1
+	var smallestInfo = SmallestInfo{
+		Normal:   -1,
+		Error:    -1,
+		HighLoad: -1,
+		Latency:  -1,
+	}
+	var (
+		smallestNormalDistance   = math.MaxFloat64
+		smallestErrorDistance    = math.MaxFloat64
+		smallestHighLoadDistance = math.MaxFloat64
+		smallestLatencyDistance  = math.MaxFloat64
+	)
 	for i, popGeoLoc := range c.popGeoLocations {
 		if popGeoLoc == nil || geoLoc == nil {
 			continue // skip if either is nil
 		}
 		distance := calculateLocationDistance(&popGeoLoc.City.Location, &geoLoc.City.Location)
 		candidatePopIndex = append(candidatePopIndex, distance)
-		if distance < smallestDistance {
-			smallestDistance = distance
-			smallestIndex = i
+		if status, ok := unreachableInfo[i]; !ok {
+			if distance < smallestNormalDistance {
+				smallestNormalDistance = distance
+				smallestInfo.Normal = i
+			}
+		} else {
+			switch status {
+			case UnreachableLevelError:
+				if distance < smallestErrorDistance {
+					smallestInfo.Error = i
+					smallestErrorDistance = distance
+				}
+			case UnreachableLevelHighLoad:
+				if distance < smallestHighLoadDistance {
+					smallestInfo.HighLoad = i
+					smallestHighLoadDistance = distance
+				}
+			case UnreachableLevelLatency:
+				if distance < smallestLatencyDistance {
+					smallestInfo.Latency = i
+					smallestLatencyDistance = distance
+				}
+			default:
+				slog.Warn("Unknown unreachable level", slog.String("level", status.String()))
+			}
 		}
 	}
-	return candidatePopIndex, smallestIndex
+	return candidatePopIndex, &smallestInfo
 }
 
 func (c *GslbCore) collectRegionPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLocation) ([][]float64, int, int) {
@@ -408,8 +454,48 @@ func (c *GslbCore) collectRegionPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLo
 	return candidateRegionIndex, smallestIndex, candidateRegionIndexSmallestIndex
 }
 
+type UnreachableLevel string
+
+const (
+	UnreachableLevelError    UnreachableLevel = "error"
+	UnreachableLevelHighLoad UnreachableLevel = "high_load"
+	UnreachableLevelLatency  UnreachableLevel = "latency"
+)
+
+func (s UnreachableLevel) String() string {
+	return string(s)
+}
+
+func (c *GslbCore) detectUnreachablePops() map[int]UnreachableLevel {
+	unreachablePops := make(map[int]UnreachableLevel)
+	for _, region := range c.regions { // TODO: 地域ごととかでちゃんとやる
+		for j, latency := range region.popLatency {
+			if latency > 1000000 { // 1,000,000 ms (1,000 seconds) is considered unreachable TODO: make it configurable
+				unreachablePops[j] = UnreachableLevelLatency
+				slog.Warn("Detected unreachable PoP by latency",
+					slog.String("regionId", region.info.Id),
+					slog.String("popId", c.cfg.Pops[j].Id),
+					slog.Float64("latency", latency))
+			}
+		}
+	}
+	for i, pop := range c.popstate {
+		if pop.Error != "" {
+			unreachablePops[i] = UnreachableLevelError
+			slog.Warn("Detected unreachable PoP by status",
+				slog.String("popId", c.cfg.Pops[i].Id),
+				slog.String("error", pop.Error))
+		} else if pop.Load > 0.9 { // 90% load is considered high load TODO: make it configurable
+			unreachablePops[i] = UnreachableLevelHighLoad
+			slog.Warn("Detected unreachable PoP by load",
+				slog.String("popId", c.cfg.Pops[i].Id),
+				slog.Float64("load", pop.Load))
+		}
+	}
+	return unreachablePops
+}
+
 // TODO: make it configurable
-const physicalDistanceConfidenceThreshold = 1000000    // 1,000,000 meters (1,000 km)
 const proberConfidenceHighDistanceThreshold = 100000   // 100,000 meters (100 km)
 const proberConfidenceMediumDistanceThreshold = 500000 // 500,000 meters (500 km)
 
@@ -425,6 +511,8 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	unreachablePops := c.detectUnreachablePops()
+
 	geoLoc, err := c.geo.GeoLocation(srcIP)
 
 	if err != nil {
@@ -434,12 +522,12 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 		// first, try to calculate physical distance between geoLoc and popGeoLocations
 
 		candidateRegions := c.collectCandidateRegions(srcIP, geoLoc)
-		_, smallestPIndex := c.collectPoPPhysicalDistance(srcIP, geoLoc)
+		_, smallestPIndex := c.collectPoPPhysicalDistance(geoLoc, unreachablePops)
 		regionPhysicalDistance, smallestRIndex, smallestSubIndex := c.collectRegionPhysicalDistance(srcIP, geoLoc)
 
 		confidence := proberConfidenceLow // default to low confidence
 
-		if smallestRIndex >= 0 && smallestPIndex >= 0 {
+		if smallestRIndex >= 0 && smallestSubIndex >= 0 {
 			mostSmall := regionPhysicalDistance[smallestRIndex][smallestSubIndex]
 
 			switch {
@@ -452,10 +540,11 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 
 		var popByDistance *types.PoPInfo
 
-		if smallestPIndex >= 0 {
-			popByDistance = &c.cfg.Pops[smallestPIndex]
+		if smallestPIndex.Normal >= 0 {
 
-			debugLogGeoLocation("Selected PoP by physical distance", c.popGeoLocations[smallestPIndex], srcIP,
+			popByDistance = &c.cfg.Pops[smallestPIndex.Normal]
+
+			debugLogGeoLocation("Selected PoP by physical distance", c.popGeoLocations[smallestPIndex.Normal], srcIP,
 				slog.Float64("distance", regionPhysicalDistance[smallestRIndex][smallestSubIndex]),
 			)
 		}
@@ -469,6 +558,10 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 		for _, region := range candidateRegions {
 			popIndex := make([]int, len(c.cfg.Pops))
 			for j := range c.cfg.Pops {
+				if _, ok := unreachablePops[j]; ok {
+					// skip unreachable pops
+					continue
+				}
 				popIndex[j] = j
 			}
 			// sort popIndex by latency
@@ -500,7 +593,7 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 
 		if popByDistance != nil && popByLatency != nil {
 			if popByDistance == popByLatency { // if both are the same, return it
-				debugLogGeoLocation("Selected PoP by both physical distance and latency", c.popGeoLocations[smallestPIndex], srcIP,
+				debugLogGeoLocation("Selected PoP by both physical distance and prober latency", c.popGeoLocations[smallestPIndex.Normal], srcIP,
 					slog.Float64("latency", lowestLatency),
 					slog.String("latency_confidence", confidence),
 					slog.String("regionId", regionState.info.Id),
@@ -510,7 +603,7 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			}
 			// TODO: make it configurable and more efficient
 			if confidence == proberConfidenceLow {
-				debugLogGeoLocation("Selected PoP by physical distance due to low confidence in latency", c.popGeoLocations[smallestPIndex], srcIP,
+				debugLogGeoLocation("Selected PoP by physical distance due to low confidence in prober latency", c.popGeoLocations[smallestPIndex.Normal], srcIP,
 					slog.Float64("latency", lowestLatency),
 					slog.String("latency_confidence", confidence),
 					slog.String("regionId", regionState.info.Id),
@@ -518,7 +611,7 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 				)
 				return []netip.Addr{popByDistance.Ip4}
 			} else {
-				debugLogGeoLocation("Selected PoP by latency due to higher confidence", c.popGeoLocations[popLatencyIndex], srcIP,
+				debugLogGeoLocation("Selected PoP by prober latency due to higher confidence", c.popGeoLocations[popLatencyIndex], srcIP,
 					slog.Float64("latency", lowestLatency),
 					slog.String("latency_confidence", confidence),
 					slog.String("regionId", regionState.info.Id),
@@ -528,11 +621,11 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			}
 		}
 		if popByDistance != nil {
-			debugLogGeoLocation("Selected PoP by physical distance", c.popGeoLocations[smallestPIndex], srcIP)
+			debugLogGeoLocation("Selected PoP by physical distance", c.popGeoLocations[smallestPIndex.Normal], srcIP)
 			return []netip.Addr{popByDistance.Ip4}
 		}
 		if popByLatency != nil {
-			debugLogGeoLocation("Selected PoP by latency", c.popGeoLocations[popLatencyIndex], srcIP,
+			debugLogGeoLocation("Selected PoP by prober latency", c.popGeoLocations[popLatencyIndex], srcIP,
 				slog.Float64("latency", lowestLatency),
 				slog.String("latency_confidence", confidence),
 				slog.String("regionId", regionState.info.Id),
@@ -540,7 +633,19 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			)
 			return []netip.Addr{popByLatency.Ip4}
 		}
-		// no PoP found by distance or latency, fallback to the first PoP
+		// no PoP found by distance or latency, try highlatency or highload pops
+		if smallestPIndex.Latency >= 0 {
+			debugLogGeoLocation("Selected PoP but high latency", c.popGeoLocations[smallestPIndex.Latency], srcIP,
+				slog.String("unreachable_level", unreachablePops[smallestPIndex.Latency].String()),
+			)
+			return []netip.Addr{c.cfg.Pops[smallestPIndex.Latency].Ip4}
+		}
+		if smallestPIndex.HighLoad >= 0 {
+			debugLogGeoLocation("Selected PoP but high load", c.popGeoLocations[smallestPIndex.HighLoad], srcIP,
+				slog.String("unreachable_level", unreachablePops[smallestPIndex.HighLoad].String()),
+			)
+			return []netip.Addr{c.cfg.Pops[smallestPIndex.HighLoad].Ip4}
+		}
 	}
 	// TODO: make it configurable or use a better fallback strategy
 	slog.Warn("falling back to the first PoP", slog.String("srcIP", srcIP.String()), slog.String("popId", c.cfg.Pops[0].Id), slog.String("popIP", c.cfg.Pops[0].Ip4.String()))

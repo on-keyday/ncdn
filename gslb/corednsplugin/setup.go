@@ -48,6 +48,12 @@ func setup(c *caddy.Controller) error {
 				}
 				ccfg.ProberSecret = c.Val()
 
+			case "geo_location_info":
+				if !c.NextArg() {
+					return c.ArgErr()
+				}
+				ccfg.GeoLocationInfoPath = c.Val()
+
 			case "pop":
 				if !c.NextArg() {
 					return c.ArgErr()
