@@ -6,6 +6,8 @@
 package main
 
 import (
+	"log/slog"
+
 	_ "github.com/coredns/coredns/plugin/debug"
 	_ "github.com/coredns/coredns/plugin/health"
 	_ "github.com/coredns/coredns/plugin/log"
@@ -40,5 +42,6 @@ func init() {
 }
 
 func main() {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 	coremain.Run()
 }

@@ -1,6 +1,6 @@
 module github.com/yzp0n/ncdn
 
-go 1.23.0
+go 1.24
 
 toolchain go1.24.3
 
@@ -22,11 +22,15 @@ require (
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
+	github.com/google/go-github v17.0.0+incompatible // indirect
+	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/onsi/ginkgo/v2 v2.22.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
+	github.com/oschwald/geoip2-golang/v2 v2.0.0-beta.2 // indirect
+	github.com/oschwald/maxminddb-golang/v2 v2.0.0-beta.3 // indirect
 	github.com/prometheus/client_golang v1.22.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.64.0 // indirect

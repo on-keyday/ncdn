@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/netip"
+	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -54,6 +56,11 @@ type GslbCore struct {
 	popstate []*types.PoPStatus
 	regions  []*RegionState
 	serial   uint32
+
+	// TODO: make it as interface?
+	geo                *GeoLocationInfo
+	popGeoLocations    []*GeoLocation
+	regionGeoLocations [][]*GeoLocation
 }
 
 func New(cfg *Config) *GslbCore {
@@ -72,19 +79,50 @@ func New(cfg *Config) *GslbCore {
 		}
 	}
 
+	// TODO: move to config
+	geo, err := FetchGeoLocation("secrets/geolite_info.json")
+	if err != nil {
+		slog.Error("Failed to fetch GeoLocation", slog.String("error", err.Error()))
+	} else {
+		slog.Info("GeoLocation fetched successfully")
+	}
+
 	c := &GslbCore{
 		cfg: cfg,
 
 		fetchPoPStatus:   fps,
 		latencyMeasurers: make([]LatencyMeasurer, len(cfg.Regions)),
 
-		popstate: make([]*types.PoPStatus, len(cfg.Pops)),
-		regions:  make([]*RegionState, len(cfg.Regions)),
-		serial:   0,
+		popstate:           make([]*types.PoPStatus, len(cfg.Pops)),
+		regions:            make([]*RegionState, len(cfg.Regions)),
+		serial:             0,
+		geo:                geo,
+		popGeoLocations:    make([]*GeoLocation, len(cfg.Pops)),
+		regionGeoLocations: make([][]*GeoLocation, len(cfg.Regions)),
 	}
 	for i := range c.popstate {
 		c.popstate[i] = &types.PoPStatus{
 			Error: "not yet available",
+		}
+	}
+	for i := range c.popGeoLocations {
+		geoLoc, err := c.geo.GeoLocation(cfg.Pops[i].Ip4)
+		if err != nil {
+			slog.Warn("Failed to lookup GeoLocation for PoP", slog.String("popId", cfg.Pops[i].Id), slog.String("error", err.Error()))
+			c.popGeoLocations[i] = &GeoLocation{
+				ASN:  nil,
+				City: nil,
+			}
+		} else {
+			slog.Debug("GeoLocation for PoP fetched successfully",
+				slog.String("popId", cfg.Pops[i].Id),
+				slog.String("continent", geoLoc.City.Continent.Names.English),
+				slog.String("country", geoLoc.City.Country.Names.English),
+				slog.String("city", geoLoc.City.City.Names.English),
+				slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
+				slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
+			)
+			c.popGeoLocations[i] = geoLoc
 		}
 	}
 	for i, r := range cfg.Regions {
@@ -99,6 +137,30 @@ func New(cfg *Config) *GslbCore {
 		c.regions[i] = &RegionState{
 			info:       r, // copied for convienience
 			popLatency: popLatency,
+		}
+	}
+
+	for i, r := range c.cfg.Regions {
+		c.regionGeoLocations[i] = make([]*GeoLocation, len(r.Prefices))
+		for j, p := range r.Prefices {
+			geoLoc, err := c.geo.GeoLocation(p.Addr())
+			if err != nil {
+				slog.Warn("Failed to lookup GeoLocation for region", slog.String("regionId", r.Id), slog.String("error", err.Error()))
+				c.regionGeoLocations[i][j] = &GeoLocation{
+					ASN:  nil,
+					City: nil,
+				}
+			} else {
+				slog.Debug("GeoLocation for region fetched successfully",
+					slog.String("regionId", r.Id),
+					slog.String("continent", geoLoc.City.Continent.Names.English),
+					slog.String("country", geoLoc.City.Country.Names.English),
+					slog.String("city", geoLoc.City.City.Names.English),
+					slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
+					slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
+				)
+				c.regionGeoLocations[i][j] = geoLoc
+			}
 		}
 	}
 
@@ -124,7 +186,7 @@ func (c *GslbCore) Run(ctx context.Context) error {
 		// sleep for 30 seconds, or stop running if the context is done
 		select {
 		case <-time.After(30 * time.Second):
-			break
+			// continue
 
 		case <-ctx.Done():
 			err := ctx.Err()
@@ -216,6 +278,79 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// FIXME(student): Implement your own query logic
+	geoLoc, err := c.geo.GeoLocation(srcIP)
+
+	if err != nil {
+		slog.Warn("Failed to lookup GeoLocation for srcIP", slog.String("srcIP", srcIP.String()), slog.String("error", err.Error()))
+	} else {
+		var candidateRegions []*RegionState
+		for i, region := range c.regionGeoLocations {
+			for _, regeionLoc := range region {
+				if geoLoc.City.Continent.Names.English == regeionLoc.City.Continent.Names.English {
+					slog.Debug("Matched region by continent",
+						slog.String("srcIP", srcIP.String()),
+						slog.String("regionId", c.cfg.Regions[i].Id),
+						slog.String("continent", geoLoc.City.Continent.Names.English))
+					candidateRegions = append(candidateRegions, c.regions[i])
+					break
+				}
+			}
+		}
+		var (
+			currentCandidate netip.Addr = c.cfg.Pops[0].Ip4 // default to the first PoP
+			lowestLatency               = float64(10000000) // random long latency
+			regeionState     *RegionState
+			popInfo          *types.PoPInfo
+		)
+		for _, region := range candidateRegions {
+			var popIndex []int
+			for j := range c.cfg.Pops {
+				popIndex = append(popIndex, j)
+			}
+			// sort popIndex by latency
+			slices.SortFunc(popIndex, func(a, b int) int {
+				if region.popLatency[a] < region.popLatency[b] {
+					return -1
+				} else if region.popLatency[a] > region.popLatency[b] {
+					return 1
+				}
+				return 0
+			})
+			if len(popIndex) > 0 {
+				if lowestLatency > region.popLatency[popIndex[0]] {
+					lowestLatency = region.popLatency[popIndex[0]]
+					currentCandidate = c.cfg.Pops[popIndex[0]].Ip4
+					regeionState = region
+					popInfo = &c.cfg.Pops[popIndex[0]]
+				} else {
+					slog.Debug("Skipping candidate region",
+						slog.String("srcIP", srcIP.String()),
+						slog.String("regionId", region.info.Id),
+						slog.Float64("latency", region.popLatency[popIndex[0]]))
+				}
+			}
+		}
+		if regeionState != nil && popInfo != nil {
+			slog.Info("Selected candidate region",
+				slog.String("srcIP", srcIP.String()),
+				slog.String("regionId", regeionState.info.Id),
+				slog.String("popId", popInfo.Id),
+				slog.String("popIP", currentCandidate.String()),
+				slog.Float64("latency", lowestLatency),
+				slog.String("continent", geoLoc.City.Continent.Names.English),
+				slog.String("country", geoLoc.City.Country.Names.English),
+				slog.String("city", geoLoc.City.City.Names.English),
+				slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
+				slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
+			)
+		} else {
+			slog.Warn("No suitable region found, falling back to the first PoP",
+				slog.String("srcIP", srcIP.String()),
+				slog.String("popId", c.cfg.Pops[0].Id),
+				slog.String("popIP", currentCandidate.String()))
+		}
+		return []netip.Addr{currentCandidate}
+	}
+	slog.Warn("GeoLocation lookup failed, falling back to the first PoP", slog.String("srcIP", srcIP.String()), slog.String("popId", c.cfg.Pops[0].Id), slog.String("popIP", c.cfg.Pops[0].Ip4.String()))
 	return []netip.Addr{c.cfg.Pops[0].Ip4}
 }
