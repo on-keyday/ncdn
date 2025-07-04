@@ -466,8 +466,10 @@ func (s UnreachableLevel) String() string {
 	return string(s)
 }
 
-func (c *GslbCore) detectUnreachablePops() map[int]UnreachableLevel {
+func (c *GslbCore) detectUnreachablePops() (map[int]UnreachableLevel, []float64, int) {
 	unreachablePops := make(map[int]UnreachableLevel)
+	globalPopLatencySum := make([]float64, len(c.cfg.Pops))
+	totalRegions := 0
 	for _, region := range c.regions { // TODO: 地域ごととかでちゃんとやる
 		for j, latency := range region.popLatency {
 			if latency > 1000000 { // 1,000,000 ms (1,000 seconds) is considered unreachable TODO: make it configurable
@@ -477,6 +479,8 @@ func (c *GslbCore) detectUnreachablePops() map[int]UnreachableLevel {
 					slog.String("popId", c.cfg.Pops[j].Id),
 					slog.Float64("latency", latency))
 			}
+			globalPopLatencySum[j] += latency
+			totalRegions++
 		}
 	}
 	for i, pop := range c.popstate {
@@ -492,7 +496,7 @@ func (c *GslbCore) detectUnreachablePops() map[int]UnreachableLevel {
 				slog.Float64("load", pop.Load))
 		}
 	}
-	return unreachablePops
+	return unreachablePops, globalPopLatencySum, totalRegions
 }
 
 // TODO: make it configurable
@@ -511,9 +515,18 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	unreachablePops := c.detectUnreachablePops()
+	unreachablePops, globalPopLatencySum, totalRegions := c.detectUnreachablePops()
+	var (
+		geoLoc *GeoLocation
+		err    error
+	)
 
-	geoLoc, err := c.geo.GeoLocation(srcIP)
+	if c.geo == nil {
+		slog.Warn("GeoLocationInfo is not available")
+		goto FALLBACK
+	}
+
+	geoLoc, err = c.geo.GeoLocation(srcIP)
 
 	if err != nil {
 		slog.Warn("Failed to lookup GeoLocation for srcIP", slog.String("srcIP", srcIP.String()), slog.String("error", err.Error()))
@@ -647,7 +660,94 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			return []netip.Addr{c.cfg.Pops[smallestPIndex.HighLoad].Ip4}
 		}
 	}
+
+FALLBACK:
+	var fallbackPops []int
+	var highLatencyPops []int
+	var highLoadPops []int
+	for i := range c.cfg.Pops {
+		if status, ok := unreachablePops[i]; !ok {
+			// if the pop is not unreachable, add it to the fallback list
+			fallbackPops = append(fallbackPops, i)
+		} else if status == UnreachableLevelLatency {
+			// if the pop is unreachable by latency, add it to the high latency list
+			highLatencyPops = append(highLatencyPops, i)
+		} else if status == UnreachableLevelHighLoad {
+			// if the pop is unreachable by high load, add it to the high load list
+			highLoadPops = append(highLoadPops, i)
+		}
+	}
+	if len(fallbackPops) > 0 {
+		// global fallback strategy: lowest mean latency
+		smallestIndex := -1
+		smallestMeanLatency := math.MaxFloat64
+		for _, i := range fallbackPops {
+			meanLatency := globalPopLatencySum[i] / float64(totalRegions)
+			if meanLatency < smallestMeanLatency {
+				smallestMeanLatency = meanLatency
+				smallestIndex = i
+			}
+		}
+		if smallestIndex != -1 {
+			slog.Warn("falling back to PoP with lowest mean latency",
+				slog.String("srcIP", srcIP.String()),
+				slog.String("popId", c.cfg.Pops[smallestIndex].Id),
+				slog.String("popIP", c.cfg.Pops[smallestIndex].Ip4.String()),
+				slog.Float64("meanLatency", smallestMeanLatency),
+			)
+			return []netip.Addr{c.cfg.Pops[smallestIndex].Ip4}
+		}
+	}
+	if len(highLatencyPops) > 0 {
+		// fallback to the first high latency pop
+		smallestIndex := -1
+		smallestMeanLatency := math.MaxFloat64
+		for _, i := range highLatencyPops {
+			meanLatency := globalPopLatencySum[i] / float64(totalRegions)
+			if meanLatency < smallestMeanLatency {
+				smallestMeanLatency = meanLatency
+				smallestIndex = i
+			}
+		}
+		if smallestIndex != -1 {
+			slog.Warn("falling back to the first high latency PoP",
+				slog.String("srcIP", srcIP.String()),
+				slog.String("popId", c.cfg.Pops[smallestIndex].Id),
+				slog.String("popIP", c.cfg.Pops[smallestIndex].Ip4.String()),
+				slog.Float64("meanLatency", smallestMeanLatency),
+			)
+			return []netip.Addr{c.cfg.Pops[smallestIndex].Ip4}
+		}
+	}
+	if len(highLoadPops) > 0 {
+		// fallback to the first high load pop
+		smallestIndex := -1
+		smallestMeanLatency := math.MaxFloat64
+		for _, i := range highLoadPops {
+			meanLatency := globalPopLatencySum[i] / float64(totalRegions)
+			if meanLatency < smallestMeanLatency {
+				smallestMeanLatency = meanLatency
+				smallestIndex = i
+			}
+		}
+		if smallestIndex != -1 {
+			slog.Warn("falling back to the first high load PoP",
+				slog.String("srcIP", srcIP.String()),
+				slog.String("popId", c.cfg.Pops[smallestIndex].Id),
+				slog.String("popIP", c.cfg.Pops[smallestIndex].Ip4.String()),
+				slog.Float64("meanLatency", smallestMeanLatency),
+			)
+			return []netip.Addr{c.cfg.Pops[smallestIndex].Ip4}
+		}
+	}
+	// if no fallback pops found, fallback to the first PoP
+	// this is a last resort, should not happen in normal operation
+
 	// TODO: make it configurable or use a better fallback strategy
-	slog.Warn("falling back to the first PoP", slog.String("srcIP", srcIP.String()), slog.String("popId", c.cfg.Pops[0].Id), slog.String("popIP", c.cfg.Pops[0].Ip4.String()))
+	slog.Warn("falling back to the first PoP",
+		slog.String("srcIP", srcIP.String()),
+		slog.String("popId", c.cfg.Pops[0].Id),
+		slog.String("popIP", c.cfg.Pops[0].Ip4.String()),
+	)
 	return []netip.Addr{c.cfg.Pops[0].Ip4}
 }
