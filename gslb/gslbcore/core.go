@@ -379,10 +379,6 @@ func (c *GslbCore) collectPoPPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLocat
 			smallestDistance = distance
 			smallestIndex = i
 		}
-		debugLogGeoLocation("Calculated physical distance to PoP", popGeoLoc, srcIP,
-			slog.Float64("distance", distance),
-			slog.String("popId", c.cfg.Pops[i].Id),
-			slog.String("popIP", c.cfg.Pops[i].Ip4.String()))
 	}
 	return candidatePopIndex, smallestIndex
 }
@@ -406,12 +402,6 @@ func (c *GslbCore) collectRegionPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLo
 				smallestIndex = i
 				candidateRegionIndexSmallestIndex = j
 			}
-			debugLogGeoLocation("Calculated physical distance to region", regionLoc, srcIP,
-				slog.Float64("distance", distance),
-				slog.String("regionId", c.cfg.Regions[i].Id),
-				slog.String("regionPrefix", c.cfg.Regions[i].Prefices[j].String()),
-				slog.String("regionProberURL", c.cfg.Regions[i].ProberURL),
-			)
 		}
 		candidateRegionIndex = append(candidateRegionIndex, distances)
 	}

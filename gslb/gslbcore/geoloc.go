@@ -28,9 +28,8 @@ type FetchInfo struct {
 }
 
 type GeoLocationInfo struct {
-	asn     *geoip2.Reader
-	city    *geoip2.Reader
-	country *geoip2.Reader
+	asn  *geoip2.Reader
+	city *geoip2.Reader
 
 	originalInfo []*FetchInfo
 }
@@ -74,26 +73,12 @@ func (g *GeoLocationInfo) City(ip netip.Addr) (*geoip2.City, error) {
 	return record, nil
 }
 
-func (g *GeoLocationInfo) Country(ip netip.Addr) (*geoip2.Country, error) {
-	if g.country == nil {
-		return nil, fmt.Errorf("Country database not loaded")
-	}
-	record, err := g.country.Country(ip)
-	if err != nil {
-		return nil, fmt.Errorf("failed to lookup Country for %s: %w", ip, err)
-	}
-	return record, nil
-}
-
 func (g *GeoLocationInfo) Close() {
 	if g.asn != nil {
 		g.asn.Close()
 	}
 	if g.city != nil {
 		g.city.Close()
-	}
-	if g.country != nil {
-		g.country.Close()
 	}
 }
 
@@ -131,7 +116,7 @@ SKIPPED:
 		return nil, fmt.Errorf("failed to fetch GeoLite.mmdb releases: %w", err)
 	}
 
-	var fetchCandidate = []string{"GeoLite2-ASN.mmdb", "GeoLite2-Country.mmdb", "GeoLite2-City.mmdb"}
+	var fetchCandidate = []string{"GeoLite2-ASN.mmdb", "GeoLite2-City.mmdb"}
 
 	var fetchCandidates []*FetchInfo
 
@@ -219,13 +204,6 @@ SKIPPED:
 			}
 			dbs.asn = db
 			slog.Info("ASN database loaded", slog.String("file", c.SavedPath))
-		case "GeoLite2-Country.mmdb":
-			if dbs.country != nil {
-				slog.Warn("Country database already loaded, skipping", slog.String("file", c.SavedPath))
-				continue
-			}
-			dbs.country = db
-			slog.Info("Country database loaded", slog.String("file", c.SavedPath))
 		case "GeoLite2-City.mmdb":
 			if dbs.city != nil {
 				slog.Warn("City database already loaded, skipping", slog.String("file", c.SavedPath))
@@ -239,8 +217,8 @@ SKIPPED:
 		}
 		dbs.originalInfo = append(dbs.originalInfo, c)
 	}
-	if dbs.asn == nil || dbs.city == nil || dbs.country == nil {
-		return nil, fmt.Errorf("failed to load all GeoLite.mmdb files: ASN=%v, City=%v, Country=%v", dbs.asn != nil, dbs.city != nil, dbs.country != nil)
+	if dbs.asn == nil || dbs.city == nil {
+		return nil, fmt.Errorf("failed to load all GeoLite.mmdb files: ASN=%v, City=%v", dbs.asn != nil, dbs.city != nil)
 	}
 
 	runtime.AddCleanup(dbs, func(s struct{}) {
