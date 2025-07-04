@@ -3,13 +3,16 @@ package gslbcore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math"
 	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/oschwald/geoip2-golang/v2"
 	"github.com/yzp0n/ncdn/types"
 )
 
@@ -272,6 +275,160 @@ func (c *GslbCore) PopIdFromIP(ip netip.Addr) string {
 	return "<not found>"
 }
 
+func formatFloatPtr(f *float64) string {
+	if f == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("%f", *f)
+}
+
+func calculateLocationDistance(loc1, loc2 *geoip2.Location) float64 {
+	if loc1 == nil || loc2 == nil {
+		return math.MaxFloat64 // return a large value if either location is nil
+	}
+	if loc1.Latitude == nil || loc1.Longitude == nil || loc2.Latitude == nil || loc2.Longitude == nil {
+		return math.MaxFloat64
+	}
+	// Haversine formula to calculate distance between two points on the Earth
+	const R = 6371e3                                      // Earth radius in meters
+	lat1 := *loc1.Latitude * (3.141592653589793 / 180.0)  // Convert degrees to radians
+	lon1 := *loc1.Longitude * (3.141592653589793 / 180.0) // Convert degrees to radians
+	lat2 := *loc2.Latitude * (3.141592653589793 / 180.0)  // Convert degrees to radians
+	lon2 := *loc2.Longitude * (3.141592653589793 / 180.0) // Convert degrees to radians
+	dlat := lat2 - lat1
+	dlon := lon2 - lon1
+	a := (math.Sin(dlat/2) * math.Sin(dlat/2))
+	b := math.Cos(lat1) * math.Cos(lat2) * (math.Sin(dlon/2) * math.Sin(dlon/2))
+	c := 2 * math.Atan2(math.Sqrt(a+b), math.Sqrt(1-a-b))
+	distance := R * c
+	return distance // in meters
+}
+
+func debugLogGeoLocation(msg string, geoLoc *GeoLocation, srcIP netip.Addr, optionalAttrs ...any) {
+	if geoLoc == nil {
+		slog.Debug(msg, slog.String("srcIP", srcIP.String()), slog.String("geoLocation", "nil"))
+		return
+	}
+	slog.Debug(msg,
+		append([]any{
+			slog.String("srcIP", srcIP.String()),
+			slog.String("continent", geoLoc.City.Continent.Names.English),
+			slog.String("country", geoLoc.City.Country.Names.English),
+			slog.String("city", geoLoc.City.City.Names.English),
+			slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
+			slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
+			slog.String("latitude", formatFloatPtr(geoLoc.City.Location.Latitude)),
+			slog.String("longitude", formatFloatPtr(geoLoc.City.Location.Longitude)),
+		}, // add the default attributes
+			optionalAttrs...)...,
+	)
+}
+
+func (c *GslbCore) collectCandidateRegions(srcIP netip.Addr, geoLoc *GeoLocation) []*RegionState {
+	var candidateRegions []*RegionState
+	for i, region := range c.regionGeoLocations {
+		for _, regionLoc := range region {
+			if geoLoc.City.Continent.Names.English == regionLoc.City.Continent.Names.English &&
+				geoLoc.City.Country.Names.English == regionLoc.City.Country.Names.English &&
+				geoLoc.City.City.Names.English == regionLoc.City.City.Names.English {
+				debugLogGeoLocation("Matched region by continent, country and city", geoLoc, srcIP)
+				candidateRegions = append(candidateRegions, c.regions[i])
+				break
+			}
+		}
+	}
+	if len(candidateRegions) == 0 {
+		// next, try to match by continent and country
+		for i, region := range c.regionGeoLocations {
+			for _, regionLoc := range region {
+				if geoLoc.City.Continent.Names.English == regionLoc.City.Continent.Names.English &&
+					geoLoc.City.Country.Names.English == regionLoc.City.Country.Names.English {
+					debugLogGeoLocation("Matched region by continent and country", geoLoc, srcIP)
+					candidateRegions = append(candidateRegions, c.regions[i])
+					break
+				}
+			}
+		}
+	}
+	if len(candidateRegions) == 0 {
+		// finally, try to match by continent only
+		for i, region := range c.regionGeoLocations {
+			for _, regionLoc := range region {
+				if geoLoc.City.Continent.Names.English == regionLoc.City.Continent.Names.English {
+					debugLogGeoLocation("Matched region by continent", geoLoc, srcIP)
+					candidateRegions = append(candidateRegions, c.regions[i])
+					break
+				}
+			}
+		}
+	}
+	return candidateRegions
+}
+
+func (c *GslbCore) collectPoPPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLocation) ([]float64, int) {
+	var candidatePopIndex []float64
+	var smallestDistance = math.MaxFloat64
+	var smallestIndex = -1
+	for i, popGeoLoc := range c.popGeoLocations {
+		if popGeoLoc == nil || geoLoc == nil {
+			continue // skip if either is nil
+		}
+		distance := calculateLocationDistance(&popGeoLoc.City.Location, &geoLoc.City.Location)
+		candidatePopIndex = append(candidatePopIndex, distance)
+		if distance < smallestDistance {
+			smallestDistance = distance
+			smallestIndex = i
+		}
+		debugLogGeoLocation("Calculated physical distance to PoP", popGeoLoc, srcIP,
+			slog.Float64("distance", distance),
+			slog.String("popId", c.cfg.Pops[i].Id),
+			slog.String("popIP", c.cfg.Pops[i].Ip4.String()))
+	}
+	return candidatePopIndex, smallestIndex
+}
+
+func (c *GslbCore) collectRegionPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLocation) ([][]float64, int, int) {
+	var candidateRegionIndex [][]float64
+	var smallestDistance = math.MaxFloat64
+	var smallestIndex = -1
+	var candidateRegionIndexSmallestIndex = -1
+	for i, region := range c.regionGeoLocations {
+		var distances []float64
+		for j, regionLoc := range region {
+			if regionLoc == nil || geoLoc == nil {
+				distances = append(distances, math.MaxFloat64) // append MaxFloat64 if either is nil
+				continue                                       // skip if either is nil
+			}
+			distance := calculateLocationDistance(&regionLoc.City.Location, &geoLoc.City.Location)
+			distances = append(distances, distance)
+			if distance < smallestDistance {
+				smallestDistance = distance
+				smallestIndex = i
+				candidateRegionIndexSmallestIndex = j
+			}
+			debugLogGeoLocation("Calculated physical distance to region", regionLoc, srcIP,
+				slog.Float64("distance", distance),
+				slog.String("regionId", c.cfg.Regions[i].Id),
+				slog.String("regionPrefix", c.cfg.Regions[i].Prefices[j].String()),
+				slog.String("regionProberURL", c.cfg.Regions[i].ProberURL),
+			)
+		}
+		candidateRegionIndex = append(candidateRegionIndex, distances)
+	}
+	return candidateRegionIndex, smallestIndex, candidateRegionIndexSmallestIndex
+}
+
+// TODO: make it configurable
+const physicalDistanceConfidenceThreshold = 1000000    // 1,000,000 meters (1,000 km)
+const proberConfidenceHighDistanceThreshold = 100000   // 100,000 meters (100 km)
+const proberConfidenceMediumDistanceThreshold = 500000 // 500,000 meters (500 km)
+
+const (
+	proberConfidenceHigh   = "high"
+	proberConfidenceMedium = "medium"
+	proberConfidenceLow    = "low"
+)
+
 func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 	slog.Info("Query", slog.String("srcIP", srcIP.String()))
 
@@ -283,29 +440,46 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 	if err != nil {
 		slog.Warn("Failed to lookup GeoLocation for srcIP", slog.String("srcIP", srcIP.String()), slog.String("error", err.Error()))
 	} else {
-		var candidateRegions []*RegionState
-		for i, region := range c.regionGeoLocations {
-			for _, regeionLoc := range region {
-				if geoLoc.City.Continent.Names.English == regeionLoc.City.Continent.Names.English {
-					slog.Debug("Matched region by continent",
-						slog.String("srcIP", srcIP.String()),
-						slog.String("regionId", c.cfg.Regions[i].Id),
-						slog.String("continent", geoLoc.City.Continent.Names.English))
-					candidateRegions = append(candidateRegions, c.regions[i])
-					break
-				}
+		debugLogGeoLocation("GeoLocation for srcIP fetched successfully", geoLoc, srcIP)
+		// first, try to calculate physical distance between geoLoc and popGeoLocations
+
+		candidateRegions := c.collectCandidateRegions(srcIP, geoLoc)
+		_, smallestPIndex := c.collectPoPPhysicalDistance(srcIP, geoLoc)
+		regionPhysicalDistance, smallestRIndex, smallestSubIndex := c.collectRegionPhysicalDistance(srcIP, geoLoc)
+
+		confidence := proberConfidenceLow // default to low confidence
+
+		if smallestRIndex >= 0 && smallestPIndex >= 0 {
+			mostSmall := regionPhysicalDistance[smallestRIndex][smallestSubIndex]
+
+			switch {
+			case mostSmall < proberConfidenceHighDistanceThreshold:
+				confidence = proberConfidenceHigh
+			case mostSmall < proberConfidenceMediumDistanceThreshold:
+				confidence = proberConfidenceMedium
 			}
 		}
+
+		var popByDistance *types.PoPInfo
+
+		if smallestPIndex >= 0 {
+			popByDistance = &c.cfg.Pops[smallestPIndex]
+
+			debugLogGeoLocation("Selected PoP by physical distance", c.popGeoLocations[smallestPIndex], srcIP,
+				slog.Float64("distance", regionPhysicalDistance[smallestRIndex][smallestSubIndex]),
+			)
+		}
+
 		var (
-			currentCandidate netip.Addr = c.cfg.Pops[0].Ip4 // default to the first PoP
-			lowestLatency               = float64(10000000) // random long latency
-			regeionState     *RegionState
-			popInfo          *types.PoPInfo
+			lowestLatency   = float64(10000000) // random long latency
+			regionState     *RegionState
+			popByLatency    *types.PoPInfo
+			popLatencyIndex int
 		)
 		for _, region := range candidateRegions {
-			var popIndex []int
+			popIndex := make([]int, len(c.cfg.Pops))
 			for j := range c.cfg.Pops {
-				popIndex = append(popIndex, j)
+				popIndex[j] = j
 			}
 			// sort popIndex by latency
 			slices.SortFunc(popIndex, func(a, b int) int {
@@ -319,38 +493,66 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			if len(popIndex) > 0 {
 				if lowestLatency > region.popLatency[popIndex[0]] {
 					lowestLatency = region.popLatency[popIndex[0]]
-					currentCandidate = c.cfg.Pops[popIndex[0]].Ip4
-					regeionState = region
-					popInfo = &c.cfg.Pops[popIndex[0]]
-				} else {
-					slog.Debug("Skipping candidate region",
-						slog.String("srcIP", srcIP.String()),
-						slog.String("regionId", region.info.Id),
-						slog.Float64("latency", region.popLatency[popIndex[0]]))
+					regionState = region
+					popByLatency = &c.cfg.Pops[popIndex[0]]
+					popLatencyIndex = popIndex[0]
 				}
 			}
 		}
-		if regeionState != nil && popInfo != nil {
-			slog.Info("Selected candidate region",
-				slog.String("srcIP", srcIP.String()),
-				slog.String("regionId", regeionState.info.Id),
-				slog.String("popId", popInfo.Id),
-				slog.String("popIP", currentCandidate.String()),
+		if popByLatency != nil {
+			debugLogGeoLocation("Selected PoP by latency", c.popGeoLocations[popLatencyIndex], srcIP,
 				slog.Float64("latency", lowestLatency),
-				slog.String("continent", geoLoc.City.Continent.Names.English),
-				slog.String("country", geoLoc.City.Country.Names.English),
-				slog.String("city", geoLoc.City.City.Names.English),
-				slog.String("asn", strconv.Itoa(int(geoLoc.ASN.AutonomousSystemNumber))),
-				slog.String("asnName", geoLoc.ASN.AutonomousSystemOrganization),
+				slog.String("latency_confidence", confidence),
+				slog.String("regionId", regionState.info.Id),
+				slog.String("regionProberURL", regionState.info.ProberURL),
 			)
-		} else {
-			slog.Warn("No suitable region found, falling back to the first PoP",
-				slog.String("srcIP", srcIP.String()),
-				slog.String("popId", c.cfg.Pops[0].Id),
-				slog.String("popIP", currentCandidate.String()))
 		}
-		return []netip.Addr{currentCandidate}
+
+		if popByDistance != nil && popByLatency != nil {
+			if popByDistance == popByLatency { // if both are the same, return it
+				debugLogGeoLocation("Selected PoP by both physical distance and latency", c.popGeoLocations[smallestPIndex], srcIP,
+					slog.Float64("latency", lowestLatency),
+					slog.String("latency_confidence", confidence),
+					slog.String("regionId", regionState.info.Id),
+					slog.String("regionProberURL", regionState.info.ProberURL),
+				)
+				return []netip.Addr{popByDistance.Ip4}
+			}
+			// TODO: make it configurable and more efficient
+			if confidence == proberConfidenceLow {
+				debugLogGeoLocation("Selected PoP by physical distance due to low confidence in latency", c.popGeoLocations[smallestPIndex], srcIP,
+					slog.Float64("latency", lowestLatency),
+					slog.String("latency_confidence", confidence),
+					slog.String("regionId", regionState.info.Id),
+					slog.String("regionProberURL", regionState.info.ProberURL),
+				)
+				return []netip.Addr{popByDistance.Ip4}
+			} else {
+				debugLogGeoLocation("Selected PoP by latency due to higher confidence", c.popGeoLocations[popLatencyIndex], srcIP,
+					slog.Float64("latency", lowestLatency),
+					slog.String("latency_confidence", confidence),
+					slog.String("regionId", regionState.info.Id),
+					slog.String("regionProberURL", regionState.info.ProberURL),
+				)
+				return []netip.Addr{popByLatency.Ip4}
+			}
+		}
+		if popByDistance != nil {
+			debugLogGeoLocation("Selected PoP by physical distance", c.popGeoLocations[smallestPIndex], srcIP)
+			return []netip.Addr{popByDistance.Ip4}
+		}
+		if popByLatency != nil {
+			debugLogGeoLocation("Selected PoP by latency", c.popGeoLocations[popLatencyIndex], srcIP,
+				slog.Float64("latency", lowestLatency),
+				slog.String("latency_confidence", confidence),
+				slog.String("regionId", regionState.info.Id),
+				slog.String("regionProberURL", regionState.info.ProberURL),
+			)
+			return []netip.Addr{popByLatency.Ip4}
+		}
+		// no PoP found by distance or latency, fallback to the first PoP
 	}
-	slog.Warn("GeoLocation lookup failed, falling back to the first PoP", slog.String("srcIP", srcIP.String()), slog.String("popId", c.cfg.Pops[0].Id), slog.String("popIP", c.cfg.Pops[0].Ip4.String()))
+	// TODO: make it configurable or use a better fallback strategy
+	slog.Warn("falling back to the first PoP", slog.String("srcIP", srcIP.String()), slog.String("popId", c.cfg.Pops[0].Id), slog.String("popIP", c.cfg.Pops[0].Ip4.String()))
 	return []netip.Addr{c.cfg.Pops[0].Ip4}
 }
