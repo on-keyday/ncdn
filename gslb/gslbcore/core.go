@@ -591,7 +591,7 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 		// first, try to calculate physical distance between geoLoc and popGeoLocations
 
 		candidateRegions := c.collectCandidateRegions(srcIP, geoLoc)
-		_, smallestPIndex := c.collectPoPPhysicalDistance(geoLoc, unreachablePops)
+		popDistance, smallestPIndex := c.collectPoPPhysicalDistance(geoLoc, unreachablePops)
 		regionPhysicalDistance, smallestRIndex, smallestSubIndex := c.collectRegionPhysicalDistance(srcIP, geoLoc)
 
 		confidence := proberConfidenceLow // default to low confidence
@@ -614,7 +614,7 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			popByDistance = &c.cfg.Pops[smallestPIndex.Normal]
 
 			debugLogGeoLocation("Selected PoP by physical distance", c.popGeoLocations[smallestPIndex.Normal], srcIP,
-				slog.Float64("distance", regionPhysicalDistance[smallestRIndex][smallestSubIndex]),
+				slog.Float64("distance", popDistance[smallestPIndex.Normal]),
 			)
 		}
 
