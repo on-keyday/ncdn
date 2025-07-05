@@ -314,11 +314,11 @@ func calculateLocationDistance(loc1g, loc2g *GeoLocation) float64 {
 		return math.MaxFloat64
 	}
 	// Haversine formula to calculate distance between two points on the Earth
-	const R = 6371e3                                      // Earth radius in meters
-	lat1 := *loc1.Latitude * (3.141592653589793 / 180.0)  // Convert degrees to radians
-	lon1 := *loc1.Longitude * (3.141592653589793 / 180.0) // Convert degrees to radians
-	lat2 := *loc2.Latitude * (3.141592653589793 / 180.0)  // Convert degrees to radians
-	lon2 := *loc2.Longitude * (3.141592653589793 / 180.0) // Convert degrees to radians
+	const R = 6371e3                            // Earth radius in meters
+	lat1 := *loc1.Latitude * (math.Pi / 180.0)  // Convert degrees to radians
+	lon1 := *loc1.Longitude * (math.Pi / 180.0) // Convert degrees to radians
+	lat2 := *loc2.Latitude * (math.Pi / 180.0)  // Convert degrees to radians
+	lon2 := *loc2.Longitude * (math.Pi / 180.0) // Convert degrees to radians
 	dlat := lat2 - lat1
 	dlon := lon2 - lon1
 	a := (math.Sin(dlat/2) * math.Sin(dlat/2))
