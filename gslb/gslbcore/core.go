@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oschwald/geoip2-golang/v2"
 	"github.com/yzp0n/ncdn/types"
 )
 
@@ -289,10 +288,28 @@ func formatFloatPtr(f *float64) string {
 	return fmt.Sprintf("%f", *f)
 }
 
-func calculateLocationDistance(loc1, loc2 *geoip2.Location) float64 {
-	if loc1 == nil || loc2 == nil {
+// in some senarios, we may need to calculate the cost of the area
+// for example: between Africa and Asia is more expensive than between Africa and Europe
+func calculateAreaCost(loc1g, loc2g *GeoLocation) float64 {
+	if loc1g == nil || loc2g == nil {
 		return math.MaxFloat64 // return a large value if either location is nil
 	}
+	// Simplified cost calculation based on continent
+	if loc1g.City.Continent.Names.English == "Africa" && loc2g.City.Continent.Names.English == "Asia" ||
+		loc1g.City.Continent.Names.English == "Asia" && loc2g.City.Continent.Names.English == "Africa" {
+		// based on original distance between Africa and Asia vs Africa and Europe,
+		// by adding 2e+6 meters is enough cost to make Africa and Asia less preferred than Africa and Europe
+		return 2e+6 // TODO: make it configurable
+	}
+	return 0.0
+}
+
+func calculateLocationDistance(loc1g, loc2g *GeoLocation) float64 {
+	if loc1g == nil || loc2g == nil {
+		return math.MaxFloat64 // return a large value if either location is nil
+	}
+	loc1 := &loc1g.City.Location
+	loc2 := &loc2g.City.Location
 	if loc1.Latitude == nil || loc1.Longitude == nil || loc2.Latitude == nil || loc2.Longitude == nil {
 		return math.MaxFloat64
 	}
@@ -308,7 +325,7 @@ func calculateLocationDistance(loc1, loc2 *geoip2.Location) float64 {
 	b := math.Cos(lat1) * math.Cos(lat2) * (math.Sin(dlon/2) * math.Sin(dlon/2))
 	c := 2 * math.Atan2(math.Sqrt(a+b), math.Sqrt(1-a-b))
 	distance := R * c
-	return distance // in meters
+	return distance + calculateAreaCost(loc1g, loc2g) // add area cost to the distance
 }
 
 func debugLogGeoLocation(msg string, geoLoc *GeoLocation, srcIP netip.Addr, optionalAttrs ...any) {
@@ -338,7 +355,7 @@ func (c *GslbCore) collectCandidateRegions(srcIP netip.Addr, geoLoc *GeoLocation
 			if geoLoc.City.Continent.Names.English == regionLoc.City.Continent.Names.English &&
 				geoLoc.City.Country.Names.English == regionLoc.City.Country.Names.English &&
 				geoLoc.City.City.Names.English == regionLoc.City.City.Names.English {
-				debugLogGeoLocation("Matched region by continent, country and city", geoLoc, srcIP)
+				debugLogGeoLocation("Matched region by continent, country and city", regionLoc, srcIP)
 				candidateRegions = append(candidateRegions, c.regions[i])
 				break
 			}
@@ -350,7 +367,7 @@ func (c *GslbCore) collectCandidateRegions(srcIP netip.Addr, geoLoc *GeoLocation
 			for _, regionLoc := range region {
 				if geoLoc.City.Continent.Names.English == regionLoc.City.Continent.Names.English &&
 					geoLoc.City.Country.Names.English == regionLoc.City.Country.Names.English {
-					debugLogGeoLocation("Matched region by continent and country", geoLoc, srcIP)
+					debugLogGeoLocation("Matched region by continent and country", regionLoc, srcIP)
 					candidateRegions = append(candidateRegions, c.regions[i])
 					break
 				}
@@ -362,7 +379,7 @@ func (c *GslbCore) collectCandidateRegions(srcIP netip.Addr, geoLoc *GeoLocation
 		for i, region := range c.regionGeoLocations {
 			for _, regionLoc := range region {
 				if geoLoc.City.Continent.Names.English == regionLoc.City.Continent.Names.English {
-					debugLogGeoLocation("Matched region by continent", geoLoc, srcIP)
+					debugLogGeoLocation("Matched region by continent", regionLoc, srcIP)
 					candidateRegions = append(candidateRegions, c.regions[i])
 					break
 				}
@@ -376,30 +393,30 @@ type SmallestInfo struct {
 	Normal   int
 	Error    int
 	HighLoad int
-	Latency  int
+	// Latency  int
 }
 
-func (c *GslbCore) collectPoPPhysicalDistance(geoLoc *GeoLocation, unreachableInfo map[int]UnreachableLevel) ([]float64, *SmallestInfo) {
+func (c *GslbCore) collectPoPPhysicalDistance(geoLoc *GeoLocation, unreachableInfo *UnreachableInfo) ([]float64, *SmallestInfo) {
 	var candidatePopIndex []float64
 	var smallestInfo = SmallestInfo{
 		Normal:   -1,
 		Error:    -1,
 		HighLoad: -1,
-		Latency:  -1,
+		// Latency:  -1,
 	}
 	var (
 		smallestNormalDistance   = math.MaxFloat64
 		smallestErrorDistance    = math.MaxFloat64
 		smallestHighLoadDistance = math.MaxFloat64
-		smallestLatencyDistance  = math.MaxFloat64
+		// smallestLatencyDistance  = math.MaxFloat64
 	)
 	for i, popGeoLoc := range c.popGeoLocations {
 		if popGeoLoc == nil || geoLoc == nil {
 			continue // skip if either is nil
 		}
-		distance := calculateLocationDistance(&popGeoLoc.City.Location, &geoLoc.City.Location)
+		distance := calculateLocationDistance(popGeoLoc, geoLoc)
 		candidatePopIndex = append(candidatePopIndex, distance)
-		if status, ok := unreachableInfo[i]; !ok {
+		if status := unreachableInfo.IsUnreachable(i); status == "" {
 			if distance < smallestNormalDistance {
 				smallestNormalDistance = distance
 				smallestInfo.Normal = i
@@ -417,9 +434,11 @@ func (c *GslbCore) collectPoPPhysicalDistance(geoLoc *GeoLocation, unreachableIn
 					smallestHighLoadDistance = distance
 				}
 			case UnreachableLevelLatency:
-				if distance < smallestLatencyDistance {
-					smallestInfo.Latency = i
-					smallestLatencyDistance = distance
+				// high latency is considered as unreachable, but it is region specific
+				// so currently added to the smallestInfo.Normal
+				if distance < smallestNormalDistance {
+					smallestInfo.Normal = i
+					smallestNormalDistance = distance
 				}
 			default:
 				slog.Warn("Unknown unreachable level", slog.String("level", status.String()))
@@ -441,7 +460,7 @@ func (c *GslbCore) collectRegionPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLo
 				distances = append(distances, math.MaxFloat64) // append MaxFloat64 if either is nil
 				continue                                       // skip if either is nil
 			}
-			distance := calculateLocationDistance(&regionLoc.City.Location, &geoLoc.City.Location)
+			distance := calculateLocationDistance(regionLoc, geoLoc)
 			distances = append(distances, distance)
 			if distance < smallestDistance {
 				smallestDistance = distance
@@ -466,14 +485,51 @@ func (s UnreachableLevel) String() string {
 	return string(s)
 }
 
-func (c *GslbCore) detectUnreachablePops() (map[int]UnreachableLevel, []float64, int) {
-	unreachablePops := make(map[int]UnreachableLevel)
+type HighLatencyInfo struct {
+	PopIndex int
+	Regions  map[int]float64
+}
+
+func (h *HighLatencyInfo) AddRegion(regionIndex int, latency float64) {
+	if h.Regions == nil {
+		h.Regions = make(map[int]float64)
+	}
+	h.Regions[regionIndex] = latency
+}
+
+type UnreachableInfo struct {
+	UnreachableErrorHighLoad map[int]UnreachableLevel // map of pop index to UnreachableLevel
+	UnreachableLatency       map[int]*HighLatencyInfo
+}
+
+func (c *UnreachableInfo) IsUnreachable(popIndex int) UnreachableLevel {
+	status, ok := c.UnreachableErrorHighLoad[popIndex]
+	if !ok {
+		if latencyInfo, ok := c.UnreachableLatency[popIndex]; ok && len(latencyInfo.Regions) > 0 {
+			return UnreachableLevelLatency // if there is latency info, consider it as unreachable by latency
+		}
+		return "" // not unreachable
+	}
+	return status // return the unreachable level
+}
+
+func (c *GslbCore) detectUnreachablePops() (*UnreachableInfo, []float64, int) {
+	unreachablePops := &UnreachableInfo{
+		UnreachableErrorHighLoad: make(map[int]UnreachableLevel),
+		UnreachableLatency:       make(map[int]*HighLatencyInfo),
+	}
 	globalPopLatencySum := make([]float64, len(c.cfg.Pops))
 	totalRegions := 0
 	for _, region := range c.regions { // TODO: 地域ごととかでちゃんとやる
 		for j, latency := range region.popLatency {
-			if latency > 1000000 { // 1,000,000 ms (1,000 seconds) is considered unreachable TODO: make it configurable
-				unreachablePops[j] = UnreachableLevelLatency
+			if latency > 500 { // 500 ms is considered unreachable TODO: make it configurable
+				if _, ok := unreachablePops.UnreachableErrorHighLoad[j]; !ok {
+					unreachablePops.UnreachableLatency[j] = &HighLatencyInfo{
+						PopIndex: j,
+						Regions:  make(map[int]float64),
+					}
+				}
+				unreachablePops.UnreachableLatency[j].AddRegion(totalRegions, latency)
 				slog.Warn("Detected unreachable PoP by latency",
 					slog.String("regionId", region.info.Id),
 					slog.String("popId", c.cfg.Pops[j].Id),
@@ -485,12 +541,12 @@ func (c *GslbCore) detectUnreachablePops() (map[int]UnreachableLevel, []float64,
 	}
 	for i, pop := range c.popstate {
 		if pop.Error != "" {
-			unreachablePops[i] = UnreachableLevelError
+			unreachablePops.UnreachableErrorHighLoad[i] = UnreachableLevelError
 			slog.Warn("Detected unreachable PoP by status",
 				slog.String("popId", c.cfg.Pops[i].Id),
 				slog.String("error", pop.Error))
 		} else if pop.Load > 0.9 { // 90% load is considered high load TODO: make it configurable
-			unreachablePops[i] = UnreachableLevelHighLoad
+			unreachablePops.UnreachableErrorHighLoad[i] = UnreachableLevelHighLoad
 			slog.Warn("Detected unreachable PoP by load",
 				slog.String("popId", c.cfg.Pops[i].Id),
 				slog.Float64("load", pop.Load))
@@ -568,14 +624,28 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			popByLatency    *types.PoPInfo
 			popLatencyIndex int
 		)
-		for _, region := range candidateRegions {
-			popIndex := make([]int, len(c.cfg.Pops))
+		for regionIndex, region := range candidateRegions {
+			popIndex := make([]int, 0, len(c.cfg.Pops))
 			for j := range c.cfg.Pops {
-				if _, ok := unreachablePops[j]; ok {
-					// skip unreachable pops
-					continue
+				if status := unreachablePops.IsUnreachable(j); status != "" {
+					if status != UnreachableLevelLatency {
+						// skip unreachable pops
+						continue
+					}
+					// if status is UnreachableLevelLatency, check region info of unreachablePops
+					if latencyInfo, ok := unreachablePops.UnreachableLatency[j]; ok {
+						if _, ok := latencyInfo.Regions[regionIndex]; ok {
+							continue // now, this pop is unreachable in this region
+						}
+					} else {
+						slog.Warn("Unreachable pop without latency info",
+							slog.String("popId", c.cfg.Pops[j].Id),
+							slog.String("regionId", region.info.Id),
+							slog.String("status", status.String()),
+						)
+					}
 				}
-				popIndex[j] = j
+				popIndex = append(popIndex, j)
 			}
 			// sort popIndex by latency
 			slices.SortFunc(popIndex, func(a, b int) int {
@@ -646,27 +716,14 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 			)
 			return []netip.Addr{popByLatency.Ip4}
 		}
-		// no PoP found by distance or latency, try highlatency or highload pops
-		if smallestPIndex.Latency >= 0 {
-			debugLogGeoLocation("Selected PoP but high latency", c.popGeoLocations[smallestPIndex.Latency], srcIP,
-				slog.String("unreachable_level", unreachablePops[smallestPIndex.Latency].String()),
-			)
-			return []netip.Addr{c.cfg.Pops[smallestPIndex.Latency].Ip4}
-		}
-		if smallestPIndex.HighLoad >= 0 {
-			debugLogGeoLocation("Selected PoP but high load", c.popGeoLocations[smallestPIndex.HighLoad], srcIP,
-				slog.String("unreachable_level", unreachablePops[smallestPIndex.HighLoad].String()),
-			)
-			return []netip.Addr{c.cfg.Pops[smallestPIndex.HighLoad].Ip4}
-		}
+		// global fallback strategy
 	}
-
 FALLBACK:
 	var fallbackPops []int
 	var highLatencyPops []int
 	var highLoadPops []int
 	for i := range c.cfg.Pops {
-		if status, ok := unreachablePops[i]; !ok {
+		if status := unreachablePops.IsUnreachable(i); status == "" {
 			// if the pop is not unreachable, add it to the fallback list
 			fallbackPops = append(fallbackPops, i)
 		} else if status == UnreachableLevelLatency {
