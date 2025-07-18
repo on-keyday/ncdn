@@ -1,0 +1,41 @@
+host
+socat -v tcp-listen:9002,reuseaddr unix-connect:./mnt/proxy.sock
+container
+socat unix-listen:../mnt/proxy.sock,fork,mode=777 tcp-connect:localhost:9002 &
+
+198.51.100.200 - ユーザーのアドレス
+198.51.100.1 - ルーターのアドレス(in user network)
+192.168.88.1 - ルーターのアドレス(in pop network)
+192.168.88.20 - ロードバランサーの実アドレス(便宜上実アドレスとする)
+192.168.88.10 - キャッシュサーバー0のアドレス
+192.168.88.11 - キャッシュサーバー1のアドレス
+192.168.88.30 - オリジンのアドレス
+
+192.0.2.10 - ロードバランサーの仮想アドレス
+
+XDPを使っているとどうも通常のtcpdumpからは不可視のように見える
+xdpdumpでのキャプチャ方法
+sudo ip netns exec C0 xdpdump -v -x -i net0
+
+Destination MAC: b6:cc:0d:3f:33:25
+Source MAC: 3e:28:70:d6:0b:e0
+EtherType: Ipv4
+IPIP Proto: Ipv4
+IPIP Source: 192.168.88.20 - ロードバランサーの実アドレス
+IPIP Destination: 192.168.88.10 - キャッシュサーバー0のアドレス
+IPv4 Proto: Tcp
+IPv4 Source: 198.51.100.200 - ユーザーのアドレス
+IPv4 Destination: 192.0.2.10 - ロードバランサーの仮想アドレス
+TCP Source Port: 34972
+TCP Destination Port: 8889
+TCP Options: [{MaximumSegmentSize 0xc000012188} {SackPermitted 0xc000012191} {Timestamp 0xc000012194} {Nop <nil>} {WindowScale 0xc0000121ae}]
+TCP Payload: []
+
+つまるところ
++ XDPのコードでIPIPトンネルを構築してそのまま次の宛先へ送る(tcpdump不可視)
++ ip -n C0 tunnel a ipip0 remote 192.168.88.20 local 192.168.88.10 dev net0 # ipipパケットがロードバランサーから来たらデカプセリングするよう設定
+  ip -n C0 l set ipip0 up # 有効化
+  ip -n C0 a add 192.0.2.10/32 dev ipip0 # C0に192.0.2.10を割り当て
+  -> 結果ここで解除した後通常のルーティングによりC0(=デカプセルしたホスト自身)のところに向かう
++ 戻りのときは内側のIPアドレス198.51.100.200が宛先として使われるためdirect server returnが実現される
+

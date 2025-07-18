@@ -14,5 +14,6 @@
 			]
 		}
 	},
-	"forwardPorts": [9002]
+	"forwardPorts": [9002],
+	"userEnvProbe": "none"
 }

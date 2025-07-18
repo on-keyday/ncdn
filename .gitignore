@@ -2,3 +2,4 @@ supervisord.pid
 **/.terraform/*
 secrets/
 *.o
+mnt/
