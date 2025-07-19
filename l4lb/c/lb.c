@@ -184,10 +184,7 @@ int lb_main(struct xdp_md* ctx) {
         bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
         EXIT(XDP_DROP);
       }
-      debugk("dest ip=%pI4", &dest->ip_address);
-      debugk("dest mac=%02x:%02x:%02x", dest->mac_address[0], dest->mac_address[1], dest->mac_address[2]);
-      debugk("         %02x:%02x:%02x", dest->mac_address[3], dest->mac_address[4], dest->mac_address[5]);
-
+  
   }
   else if(ip->protocol == IPPROTO_UDP) {
      // Now, we've verified that the packet is a TCP packet destined to the VIP.
@@ -281,6 +278,9 @@ int lb_main(struct xdp_md* ctx) {
     EXIT(XDP_PASS);
   }
 
+  debugk("dest ip=%pI4", &dest->ip_address);
+  debugk("dest mac=%02x:%02x:%02x", dest->mac_address[0], dest->mac_address[1], dest->mac_address[2]);
+  debugk("         %02x:%02x:%02x", dest->mac_address[3], dest->mac_address[4], dest->mac_address[5]);
 
   // make room for the additional IP header (IPIP encapsulation)
   if (bpf_xdp_adjust_head(ctx, -(int)sizeof(struct iphdr))) {

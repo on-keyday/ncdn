@@ -1,14 +1,18 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"time"
 
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/yzp0n/ncdn/httprps"
 	"github.com/yzp0n/ncdn/types"
 )
@@ -16,6 +20,10 @@ import (
 var originURLStr = flag.String("originURL", "http://localhost:8888", "Origin server URL")
 var listenAddr = flag.String("listenAddr", ":8889", "Address to listen on")
 var nodeId = flag.String("nodeId", "unknown_node", "Name of the node")
+var lbNodeId = flag.Int("lbNodeId", 0, "Node ID for load balancer (0 for default)")
+var certFile = flag.String("certFile", "ca/cert.pem", "Path to the TLS certificate file")
+var keyFile = flag.String("keyFile", "ca/key.pem", "Path to the TLS key file")
+var sharedSecret = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation(TODO: move into secure place)")
 
 func main() {
 	flag.Parse()
@@ -61,6 +69,44 @@ func main() {
 			r.SetURL(originURL)
 		},
 	})
+
+	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
+	if err != nil {
+		log.Fatalf("Failed to load TLS certificate and key: %v", err)
+	}
+
+	srv := &http3.Server{
+		Addr:    *listenAddr,
+		Handler: mux,
+	}
+
+	pkt, err := net.ListenPacket("udp4", *listenAddr)
+
+	if err != nil {
+		log.Fatalf("Failed to listen on %s: %v", *listenAddr, err)
+	}
+
+	if *lbNodeId < 0 || *lbNodeId > 15 {
+		log.Fatalf("lbNodeId must be between 0 and 15, got %d", *lbNodeId)
+	}
+
+	tr := &quic.Transport{
+		Conn:                  pkt,
+		ConnectionIDLength:    20,
+		ConnectionIDGenerator: NewQUICLBConnIDGenerator(uint8(*lbNodeId), []byte(*sharedSecret)),
+	}
+
+	qlis, err := tr.Listen(http3.ConfigureTLSConfig(&tls.Config{Certificates: []tls.Certificate{cert}}), &quic.Config{})
+	if err != nil {
+		log.Fatalf("Failed to start QUIC listener: %v", err)
+	}
+
+	go func() {
+		err := srv.ServeListener(qlis)
+		if err != nil {
+			log.Fatalf("Failed to serve QUIC listener: %v", err)
+		}
+	}()
 
 	log.Printf("Listening on %s...", *listenAddr)
 	if err := http.ListenAndServe(*listenAddr, nil); err != nil {

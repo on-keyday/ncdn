@@ -3,3 +3,4 @@ supervisord.pid
 secrets/
 *.o
 mnt/
+ca/

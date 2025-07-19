@@ -4,6 +4,8 @@ set -e
 export MY_USER=${USER}
 export SRC_DIR=$(readlink -f $(dirname $0)/..)
 export BIN_DIR=/tmp/ncdn-bin
+export CA_DIR=${SRC_DIR}/ca
+export CA_SERIAL=20250719194728
 mkdir -p ${BIN_DIR}
 export LOG_DIR=/tmp/log
 mkdir -p ${LOG_DIR}

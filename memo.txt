@@ -83,7 +83,11 @@ format QUICLBIDForThisImplementation: # とりあえずこの構造で仮決定 
   server_id :u4 # server id (今回は通常は2台だし増やすとしても16台も使うことはないのでこれでよし)
   client_id_high :u4
   client_id_low :[2]u8 # also nonce for each connection id (2^20=1048576~=約100万)
-  mac :[16]u8 # mac calucluated with connection id exclude this field and server/lb shared secret # ただしパケット長とのトレードオフ
+  mac :[16]u8 # mac calucluated with connection id exclude this field and server/lb shared secret 
+              # ただしパケット長とのトレードオフ 
+              # あとrandomビット数が5 + 4 + 16 = 25bitでQUIC-LB draftのnonce要件32bitに7bit分足りてない気がする
+              # あと1バイトくらいconnection idを増やすかどうか...
+              # 追記: quic-goもといRFC9000により20バイトが限界であることが判明
 
 
 
