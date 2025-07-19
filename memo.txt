@@ -129,3 +129,10 @@ draft仕様において問題の解決策としては
   + オーバーヘッドがどの程度になるんかが課題
 RetryPacketについて
   + 基本的にステートレスなはずだしそもそもserverが送りつけるので関係ない
+
+
+go build -o secrets/qclient tool/quicclient
+sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U secrets/qclient
+
+./gen_certs.sh 20250719194728 20250719194728 true
+

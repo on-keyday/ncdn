@@ -230,7 +230,8 @@ fi
         -name "Brgen Client Certificate"\
         -passout pass:$UNIQUE_NUMBER
         
-
+# append intermediate ca to server cert
+cat $INTERMEDIATE_CA_CERT >> $SERVER_CERT
 
 unset MSYS_NO_PATHCONV
 unset ROOT_CA_DIR

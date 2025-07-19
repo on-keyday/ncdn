@@ -16,7 +16,7 @@ cd ${SRC_DIR}/l4lb
 dests=""
 
 # for ns in LB C0 C1; do
-for ns in LB C0; do
+for ns in LB C0 C1; do
     ip4=$(sudo ip netns exec ${ns} ip -json -f inet a show net0 | jq '.[].addr_info[].local' -r)
     mac=$(sudo ip netns exec ${ns} cat /sys/class/net/net0/address)
 

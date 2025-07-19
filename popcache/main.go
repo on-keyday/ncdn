@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yzp0n/ncdn/httprps"
 	"github.com/yzp0n/ncdn/types"
+	"golang.org/x/net/ipv4"
 )
 
 var originURLStr = flag.String("originURL", "http://localhost:8888", "Origin server URL")
@@ -25,8 +27,23 @@ var certFile = flag.String("certFile", "ca/cert.pem", "Path to the TLS certifica
 var keyFile = flag.String("keyFile", "ca/key.pem", "Path to the TLS key file")
 var sharedSecret = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation(TODO: move into secure place)")
 
+type ObservedPacketConn struct {
+	quic.OOBCapablePacketConn
+	bt *ipv4.PacketConn
+}
+
+func (c *ObservedPacketConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int, err error) {
+	log.Printf("Write To %s", addr)
+	return c.OOBCapablePacketConn.WriteMsgUDP(b, oob, addr)
+}
+
+func (c *ObservedPacketConn) ReadBatch(ms []ipv4.Message, flags int) (int, error) {
+	return c.bt.ReadBatch(ms, flags)
+}
+
 func main() {
 	flag.Parse()
+	log.Printf("QUIC_GO_LOG_LEVEL=%s", os.Getenv("QUIC_GO_LOG_LEVEL"))
 
 	originURL, err := url.Parse(*originURLStr)
 	if err != nil {
@@ -85,6 +102,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen on %s: %v", *listenAddr, err)
 	}
+
+	oobcap, ok := pkt.(quic.OOBCapablePacketConn)
+	if !ok {
+		log.Fatalf("PacketConn %T does not implement OOBCapablePacketConn", pkt)
+	}
+
+	pkt = &ObservedPacketConn{OOBCapablePacketConn: oobcap, bt: ipv4.NewPacketConn(pkt)}
 
 	if *lbNodeId < 0 || *lbNodeId > 15 {
 		log.Fatalf("lbNodeId must be between 0 and 15, got %d", *lbNodeId)

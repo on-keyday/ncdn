@@ -8,6 +8,7 @@ export CA_DIR=${SRC_DIR}/ca
 export CA_SERIAL=20250719194728
 mkdir -p ${BIN_DIR}
 export LOG_DIR=/tmp/log
+export QUIC_GO_LOG_LEVEL="debug"
 mkdir -p ${LOG_DIR}
 
 set -x

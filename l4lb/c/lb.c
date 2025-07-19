@@ -222,6 +222,7 @@ int lb_main(struct xdp_md* ctx) {
           const char* conn_id = (const char*)(quic + 1);
           uint32_t key = conn_id[0];
           uint32_t dest_idx = (key % config->num_dests) + 1;
+          bpf_printk("long initial dest_idx=%d", dest_idx);
           dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
           if (!dest) {
             bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
@@ -237,14 +238,15 @@ int lb_main(struct xdp_md* ctx) {
           // TODO: add validation of mac or other validation logic?
           struct quiclb_connection_id* conn_id =
               (struct quiclb_connection_id*)(quic + 1);
-          const int idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id);
-          if(idx >= config->num_dests) {
-            bpf_printk("idx %d >= num_dests %d", idx, config->num_dests);
+          const int dest_idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id) + 1;
+          bpf_printk("long conn_id dest_idx=%d", dest_idx);
+          if(dest_idx > config->num_dests) {
+            bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
             EXIT(XDP_DROP);
           }
-          dest = bpf_map_lookup_elem(&destinations_map, &idx);
+          dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
           if (!dest) {
-            bpf_printk("ASSERTION FAILURE: no dest entry for %d", idx);
+            bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
             EXIT(XDP_DROP);
           }
         }
@@ -260,19 +262,21 @@ int lb_main(struct xdp_md* ctx) {
         struct quiclb_connection_id* conn_id =
             (struct quiclb_connection_id*)(quic + 1);
         
-        const int idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id);
-
-        if(idx >= config->num_dests) {
-          bpf_printk("idx %d >= num_dests %d", idx, config->num_dests);
+        const int dest_idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id) + 1;
+        bpf_printk("short conn_id dest_idx=%d", dest_idx);
+        if(dest_idx > config->num_dests) {
+          bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
           EXIT(XDP_DROP);
         }
 
-        dest = bpf_map_lookup_elem(&destinations_map, &idx);
+        dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
         if (!dest) {
-          bpf_printk("ASSERTION FAILURE: no dest entry for %d", idx);
+          bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
           EXIT(XDP_DROP);
         }
       }
+      debugk("handled QUIC packet: ip=%pI4 port=%u form=%s", &ip->saddr, ntohs(udp->source),
+             is_long_header ? "long" : "short");
   } else {
     ++c->non_supported_proto_packet_total;
     EXIT(XDP_PASS);
