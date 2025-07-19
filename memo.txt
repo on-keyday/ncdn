@@ -11,9 +11,10 @@ socat unix-listen:../mnt/proxy.sock,fork,mode=777 tcp-connect:localhost:9002 &
 192.168.88.11 - キャッシュサーバー1のアドレス
 192.168.88.30 - オリジンのアドレス
 
-192.0.2.10 - ロードバランサーの仮想アドレス
+192.0.2.10 - popの仮想アドレス(borderルーターからの宛先がロードバランサー向けに、自アドレスとしてはキャッシュサーバー0及びキャッシュサーバー1に割当)
 
 XDPを使っているとどうも通常のtcpdumpからは不可視のように見える
+- 今現在は仮想ネットワークなのでgeneric XDPであると思われる
 xdpdumpでのキャプチャ方法
 sudo ip netns exec C0 xdpdump -v -x -i net0
 
@@ -25,17 +26,102 @@ IPIP Source: 192.168.88.20 - ロードバランサーの実アドレス
 IPIP Destination: 192.168.88.10 - キャッシュサーバー0のアドレス
 IPv4 Proto: Tcp
 IPv4 Source: 198.51.100.200 - ユーザーのアドレス
-IPv4 Destination: 192.0.2.10 - ロードバランサーの仮想アドレス
+IPv4 Destination: 192.0.2.10 - popの仮想アドレス
 TCP Source Port: 34972
 TCP Destination Port: 8889
 TCP Options: [{MaximumSegmentSize 0xc000012188} {SackPermitted 0xc000012191} {Timestamp 0xc000012194} {Nop <nil>} {WindowScale 0xc0000121ae}]
 TCP Payload: []
 
 つまるところ
-+ XDPのコードでIPIPトンネルを構築してそのまま次の宛先へ送る(tcpdump不可視)
++ XDPのコードでIPIPトンネルを構築してそのまま次の宛先へ送る(tcpdump不可視?)
 + ip -n C0 tunnel a ipip0 remote 192.168.88.20 local 192.168.88.10 dev net0 # ipipパケットがロードバランサーから来たらデカプセリングするよう設定
   ip -n C0 l set ipip0 up # 有効化
   ip -n C0 a add 192.0.2.10/32 dev ipip0 # C0に192.0.2.10を割り当て
   -> 結果ここで解除した後通常のルーティングによりC0(=デカプセルしたホスト自身)のところに向かう
 + 戻りのときは内側のIPアドレス198.51.100.200が宛先として使われるためdirect server returnが実現される
 
+QUIC LB
+
+https://datatracker.ietf.org/doc/html/draft-ietf-quic-load-balancers#name-first-cid-octet
+
+
+# LBが気にするべき範囲のLongPacketのフォーマット
+format LongPacketHeaderForLB:
+   form :u1 # 1 long header
+   fixed :u1 # 1だがgrease拡張などで動かされている可能性あり
+   long_packet_type :u2 # non encrypted
+   reserved :u2 # encrypted
+   packet_number_length :u2 # encrypted
+   version :u32 # non encrypted
+   dst_conn_id_len :u8
+   dst_conn_id :[dst_conn_id_len]u8
+   remain :[..]u8 # omitted
+
+# LBが気にするべき範囲のShortPacketのフォーマット
+format ShortPacketHeaderForLB:
+    from :u1 # 0 short header
+    fixed :u1 # 1だがgrease拡張などで動かされている可能性あり
+    spin :u1 # non encrypted
+    reserved :u2 # encrypted
+    key_phase :u1 # encrypted
+    packet_number_length :u2 # encrypted
+    dst_conn_id :[..]u8
+    remain :[..]u8 # omitted
+
+format FirstByteOfQUICLB:
+  config_rotation :u3
+  cid_len_or_random :u5
+
+
+format QUICLBConnectionID:
+  first_octet :FirstByteOfQUICLB
+  server_id :[1..]u8 # ここは実装で決め打ち
+  nonce :[4..]u8 # ここも実装で決め打ち
+
+format QUICLBIDForThisImplementation: # とりあえずこの構造で仮決定 (20バイト)
+  first_octet :FirstByteOfQUICLB # cid_len_or_randomはランダムビット
+  server_id :u4 # server id (今回は通常は2台だし増やすとしても16台も使うことはないのでこれでよし)
+  client_id_high :u4
+  client_id_low :[2]u8 # also nonce for each connection id (2^20=1048576~=約100万)
+  mac :[16]u8 # mac calucluated with connection id exclude this field and server/lb shared secret # ただしパケット長とのトレードオフ
+
+
+
+- Initial/Handshake/Zero RTT/Retry
+  - first_octtet & 0x80 == 1 -> LongPacket
+- One RTT
+  - first_octet & 0x40 == 1 -> ShortPacket
+
+LongPacket
+  + input + 5 == dst_conn_id_len
+  + input + 6 ~ input + 6 + dst_conn_id_len == dst_conn_id
+ShortPacket 
+  + input + 1 == dst_conn_id (length is defined by implementation,LBの場合cid_len_or_randomでわかるはず)
+
+Initialについての考慮事項
+
++ Initial Packetは基本ランダムなconnection idを用いてくるのでどうしようかねぇ...
+  + 基本的に対処すべきはランダムな最初のランダムなコネクションIDだけで後続はこちらの指定した構造が使える
+    + 最初のやつだけラウンドロビン的な方式でいければok
+  + Connection IDがサーバー発行のものかそうでないかが明確になればええよね
+  　+ 長さ(10バイト以外)
+    + 暗号学的なんちゃらの不整合
+      + たまたま初期idが10バイトでそのserver_idがあるサーバーのidになっている場合...
+        + それを信用して通しますでもいいが...
+          + 新手のDoSが通用してしまいそう(内部の特定のサーバーに向かうことを強制させてダウン)
+      + 一応の対策: 検証が必要ではないんじゃろうか...
+      + Initial Packetなら問答無用でラウンドロビンとする
+        + Handshake Packetが生成できる == サーバー生成のコネクションIDが渡っているはず
+      + しかしLBレベルでは整合性検証しない->やはりDoSが通用してしまいそうだが?
++ 根本的には内部構造をリークしないように暗号化あるいは完全性検証のようなことをしないといけない...??
+
+draft仕様において問題の解決策としては
++ QUIC-LB仕様では層数を減らしたFeistel構造ベースの検証を組み込もうとしている
+  + AES-ECB?bpfで走るんか...???
+    + やるとなるとFPGAとかなんですかねぇ...verilogなんぞ書いたことないが...
+  + AF_XDP
+  + dpdk
++ ebpf+ユーザープロセスによるハンドリング...?
+  + オーバーヘッドがどの程度になるんかが課題
+RetryPacketについて
+  + 基本的にステートレスなはずだしそもそもserverが送りつけるので関係ない

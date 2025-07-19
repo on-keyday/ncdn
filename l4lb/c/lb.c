@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
+#include <netinet/udp.h>
 
 #include <bpf/bpf_helpers.h>
 
@@ -85,6 +86,26 @@ struct {
   } while (0)
 #endif
 
+struct quic_long_packet {
+   uint8_t first_byte;
+   uint8_t version[4];
+   uint8_t dst_conn_id_len;
+} PACKED;
+
+struct quic_short_packet {
+   uint8_t first_byte;
+} PACKED;
+
+#define QUICLB_CONNECTION_ID_SIZE 20
+#define QUICLB_CONNECTION_ID_CONFIG_ROTATION(x) (((x) & 0xe0) >> 5)
+#define QUICLB_CONNECTION_ID_RANDOM_VALUE(x) ((x) & 0x1f)
+#define QUICLB_CONNECTION_ID_SERVER_ID(x) (((x)[0] >> 4) & 0x0f)
+struct quiclb_connection_id {
+  uint8_t first_byte; // 3 bit: config_rotation, 5 bit: random value
+  uint8_t connection_id[3]; // first 4 bits is server id and remaining 20 bits is connection id
+  uint8_t message_authentication_code[16]; // 16 bytes MAC
+} PACKED; // 20 bytes total
+
 SEC("xdp")
 int lb_main(struct xdp_md* ctx) {
   void* data = (void*)(uint64_t)ctx->data;
@@ -114,8 +135,7 @@ int lb_main(struct xdp_md* ctx) {
   }
 
   // Check if the packet is long enough to contain the headers we need.
-  if (data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
-          sizeof(struct tcphdr) >
+  if (data + sizeof(struct ethhdr) + sizeof(struct iphdr) >
       data_end) {
     ++c->too_short_packet_total;
     EXIT(XDP_PASS);
@@ -138,31 +158,129 @@ int lb_main(struct xdp_md* ctx) {
     ++c->no_vip_match_total;
     EXIT(XDP_PASS);
   }
-  if (ip->protocol != IPPROTO_TCP) {
+
+  struct destination_entry* dest;
+  if (ip->protocol == IPPROTO_TCP) {
+      // Now, we've verified that the packet is a TCP packet destined to the VIP.
+      // Record them in the stats as they are eligible for load balancing.
+      ++c->rx_packet_total;
+      c->rx_total_size += data_end - data;
+
+      if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+            sizeof(struct tcphdr) > data_end) {
+        ++c->too_short_packet_total;
+        EXIT(XDP_PASS);
+      }
+
+      struct tcphdr* tcp = (struct tcphdr*)(ip + 1);
+
+      uint32_t key = ip->saddr + tcp->source;
+      debugk("incoming packet: ip=%pI4 port=%u", &ip->saddr, ntohs(tcp->source));
+
+      uint32_t dest_idx = (key % config->num_dests) + 1;
+      debugk("dest_idx=%d", dest_idx);
+      dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+      if (!dest) {
+        bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
+        EXIT(XDP_DROP);
+      }
+      debugk("dest ip=%pI4", &dest->ip_address);
+      debugk("dest mac=%02x:%02x:%02x", dest->mac_address[0], dest->mac_address[1], dest->mac_address[2]);
+      debugk("         %02x:%02x:%02x", dest->mac_address[3], dest->mac_address[4], dest->mac_address[5]);
+
+  }
+  else if(ip->protocol == IPPROTO_UDP) {
+     // Now, we've verified that the packet is a TCP packet destined to the VIP.
+      // Record them in the stats as they are eligible for load balancing.
+      ++c->rx_packet_total;
+      c->rx_total_size += data_end - data;
+
+      if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+            sizeof(struct udphdr) + 1 /*for QUIC first byte*/ > data_end) {
+        ++c->too_short_packet_total;
+        EXIT(XDP_PASS);
+      }
+
+      // TODO: validate destination port?
+      struct udphdr* udp = (struct udphdr*)(ip + 1);
+      const char* quic_first_byte = (const char*)(udp + 1);
+      const int is_long_header = (quic_first_byte[0] & 0x80) == 0x80 ? 1 : 0;
+      if(is_long_header) {
+        // Long header
+        /*RFC 9000 says least 8 byte for initial dst connection id so this least 1 byte requirements for destionation connection id is always satisfied*/
+        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+              sizeof(struct udphdr) + sizeof(struct quic_long_packet) + 1 > data_end) {
+          ++c->too_short_packet_total;
+          EXIT(XDP_PASS);
+        }
+
+        struct quic_long_packet* quic = (struct quic_long_packet*)(udp + 1);
+        if(quic->dst_conn_id_len != QUICLB_CONNECTION_ID_SIZE) {
+          if(quic->dst_conn_id_len == 0) {
+            // This is a connection ID rotation packet, which we do not support.
+            ++c->non_supported_proto_packet_total;
+            EXIT(XDP_PASS);
+          }
+          // fast path to roundrobin based on connection ID
+          const char* conn_id = (const char*)(quic + 1);
+          uint32_t key = conn_id[0];
+          uint32_t dest_idx = (key % config->num_dests) + 1;
+          dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+          if (!dest) {
+            bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
+            EXIT(XDP_DROP);
+          }
+        }
+        else {
+          if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+              sizeof(struct udphdr) + sizeof(struct quic_long_packet) + sizeof(struct quiclb_connection_id) > data_end) {
+            ++c->too_short_packet_total;
+            EXIT(XDP_PASS);
+          }
+          // TODO: add validation of mac or other validation logic?
+          struct quiclb_connection_id* conn_id =
+              (struct quiclb_connection_id*)(quic + 1);
+          const int idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id);
+          if(idx >= config->num_dests) {
+            bpf_printk("idx %d >= num_dests %d", idx, config->num_dests);
+            EXIT(XDP_DROP);
+          }
+          dest = bpf_map_lookup_elem(&destinations_map, &idx);
+          if (!dest) {
+            bpf_printk("ASSERTION FAILURE: no dest entry for %d", idx);
+            EXIT(XDP_DROP);
+          }
+        }
+      } else {
+        // Short header
+        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+              sizeof(struct udphdr) + sizeof(struct quic_short_packet) + sizeof(struct quiclb_connection_id) > data_end) {
+          ++c->too_short_packet_total;
+          EXIT(XDP_PASS);
+        }
+
+        struct quic_short_packet* quic = (struct quic_short_packet*)(udp + 1);
+        struct quiclb_connection_id* conn_id =
+            (struct quiclb_connection_id*)(quic + 1);
+        
+        const int idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id);
+
+        if(idx >= config->num_dests) {
+          bpf_printk("idx %d >= num_dests %d", idx, config->num_dests);
+          EXIT(XDP_DROP);
+        }
+
+        dest = bpf_map_lookup_elem(&destinations_map, &idx);
+        if (!dest) {
+          bpf_printk("ASSERTION FAILURE: no dest entry for %d", idx);
+          EXIT(XDP_DROP);
+        }
+      }
+  } else {
     ++c->non_supported_proto_packet_total;
     EXIT(XDP_PASS);
   }
 
-  // Now, we've verified that the packet is a TCP packet destined to the VIP.
-  // Record them in the stats as they are eligible for load balancing.
-  ++c->rx_packet_total;
-  c->rx_total_size += data_end - data;
-
-  struct tcphdr* tcp = (struct tcphdr*)(ip + 1);
-
-  uint32_t key = ip->saddr + tcp->source;
-  debugk("incoming packet: ip=%pI4 port=%u", &ip->saddr, ntohs(tcp->source));
-
-  uint32_t dest_idx = (key % config->num_dests) + 1;
-  debugk("dest_idx=%d", dest_idx);
-  struct destination_entry* dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
-  if (!dest) {
-    bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
-    EXIT(XDP_DROP);
-  }
-  debugk("dest ip=%pI4", &dest->ip_address);
-  debugk("dest mac=%02x:%02x:%02x", dest->mac_address[0], dest->mac_address[1], dest->mac_address[2]);
-  debugk("         %02x:%02x:%02x", dest->mac_address[3], dest->mac_address[4], dest->mac_address[5]);
 
   // make room for the additional IP header (IPIP encapsulation)
   if (bpf_xdp_adjust_head(ctx, -(int)sizeof(struct iphdr))) {
