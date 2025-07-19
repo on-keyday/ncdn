@@ -136,3 +136,54 @@ sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U secrets/qclient
 
 ./gen_certs.sh 20250719194728 20250719194728 true
 
+現段階
+qclient-1155067 [002] ..s2. 1468482.933419: bpf_trace_printk: long initial dest_idx=1
+qclient-1155067 [002] .Ns2. 1468482.933439: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=long
+qclient-1155067 [002] .Ns2. 1468482.933441: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155067 [002] .Ns2. 1468482.933443: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155067 [002] .Ns2. 1468482.933443: bpf_trace_printk:          3f:33:25
+qclient-1155067 [002] .Ns2. 1468482.933695: bpf_trace_printk: long initial dest_idx=1
+qclient-1155067 [002] .Ns2. 1468482.933704: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=long
+qclient-1155067 [002] .Ns2. 1468482.933705: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155067 [002] .Ns2. 1468482.933706: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155067 [002] .Ns2. 1468482.933707: bpf_trace_printk:          3f:33:25
+qclient-1155063 [000] ..s2. 1468482.938149: bpf_trace_printk: long conn_id dest_idx=1
+qclient-1155063 [000] ..s2. 1468482.938165: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=long
+qclient-1155063 [000] ..s2. 1468482.938167: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155063 [000] ..s2. 1468482.938168: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155063 [000] ..s2. 1468482.938169: bpf_trace_printk:          3f:33:25
+qclient-1155063 [000] ..s2. 1468482.938564: bpf_trace_printk: long conn_id dest_idx=1
+qclient-1155063 [000] ..s2. 1468482.938577: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=long
+qclient-1155063 [000] ..s2. 1468482.938578: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155063 [000] ..s2. 1468482.938579: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155063 [000] ..s2. 1468482.938580: bpf_trace_printk:          3f:33:25
+qclient-1155065 [003] ..s2. 1468482.941480: bpf_trace_printk: long conn_id dest_idx=1
+qclient-1155065 [003] ..s2. 1468482.941493: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=long
+qclient-1155065 [003] ..s2. 1468482.941494: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155065 [003] ..s2. 1468482.941496: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155065 [003] ..s2. 1468482.941497: bpf_trace_printk:          3f:33:25
+qclient-1155065 [003] ..s2. 1468482.941569: bpf_trace_printk: short conn_id dest_idx=1
+qclient-1155065 [003] ..s2. 1468482.941572: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=short
+qclient-1155065 [003] ..s2. 1468482.941573: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155065 [003] ..s2. 1468482.941575: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155065 [003] ..s2. 1468482.941575: bpf_trace_printk:          3f:33:25
+  <...>-1155064 [002] ..s2. 1468482.942069: bpf_trace_printk: short conn_id dest_idx=1
+  <...>-1155064 [002] ..s2. 1468482.942077: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=short
+  <...>-1155064 [002] ..s2. 1468482.942078: bpf_trace_printk: dest ip=192.168.88.10
+  <...>-1155064 [002] ..s2. 1468482.942080: bpf_trace_printk: dest mac=b6:cc:0d
+  <...>-1155064 [002] ..s2. 1468482.942081: bpf_trace_printk:          3f:33:25
+qclient-1155064 [002] ..s2. 1468482.942216: bpf_trace_printk: short conn_id dest_idx=1
+qclient-1155064 [002] ..s2. 1468482.942219: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=short
+qclient-1155064 [002] ..s2. 1468482.942220: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155064 [002] ..s2. 1468482.942221: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155064 [002] ..s2. 1468482.942222: bpf_trace_printk:          3f:33:25
+qclient-1155061 [000] .Ns2. 1468482.944221: bpf_trace_printk: short conn_id dest_idx=1
+qclient-1155061 [000] .Ns2. 1468482.944236: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=short
+qclient-1155061 [000] .Ns2. 1468482.944237: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155061 [000] .Ns2. 1468482.944238: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155061 [000] .Ns2. 1468482.944239: bpf_trace_printk:          3f:33:25
+qclient-1155064 [001] ..s2. 1468482.945853: bpf_trace_printk: short conn_id dest_idx=1
+qclient-1155064 [001] ..s2. 1468482.945869: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=46077 form=short
+qclient-1155064 [001] ..s2. 1468482.945870: bpf_trace_printk: dest ip=192.168.88.10
+qclient-1155064 [001] ..s2. 1468482.945872: bpf_trace_printk: dest mac=b6:cc:0d
+qclient-1155064 [001] ..s2. 1468482.945873: bpf_trace_printk:          3f:33:25
