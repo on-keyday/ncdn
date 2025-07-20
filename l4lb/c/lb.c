@@ -103,8 +103,10 @@ struct quic_short_packet {
 struct quiclb_connection_id {
   uint8_t first_byte; // 3 bit: config_rotation, 5 bit: random value
   uint8_t connection_id[3]; // first 4 bits is server id and remaining 20 bits is connection id
-  uint8_t message_authentication_code[16]; // 16 bytes MAC
+  uint8_t nonce_message_authentication_code[16]; // nonce padding 7 bit + 121 bit MAC
 } PACKED; // 20 bytes total
+
+
 
 SEC("xdp")
 int lb_main(struct xdp_md* ctx) {
