@@ -6,10 +6,13 @@
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 
+
 #include <bpf/bpf_helpers.h>
+#include "lb.h"
 
 #include <stdint.h>
 #include <sys/types.h>
+#include "errno.h"
 
 #define PACKED __attribute__((__packed__))
 #define ALIGN8 __attribute__((aligned(8)))
@@ -106,10 +109,284 @@ struct quiclb_connection_id {
   uint8_t nonce_message_authentication_code[16]; // nonce padding 7 bit + 121 bit MAC
 } PACKED; // 20 bytes total
 
+/*
+//clang-format off
+uint8_t inv_sbox[256] = {
+0x52,0x09,0x6a,0xd5,0x30,0x36,0xa5,0x38,0xbf,0x40,0xa3,0x9e,0x81,0xf3,0xd7,0xfb,
+0x7c,0xe3,0x39,0x82,0x9b,0x2f,0xff,0x87,0x34,0x8e,0x43,0x44,0xc4,0xde,0xe9,0xcb,
+0x54,0x7b,0x94,0x32,0xa6,0xc2,0x23,0x3d,0xee,0x4c,0x95,0x0b,0x42,0xfa,0xc3,0x4e,
+0x08,0x2e,0xa1,0x66,0x28,0xd9,0x24,0xb2,0x76,0x5b,0xa2,0x49,0x6d,0x8b,0xd1,0x25,
+0x72,0xf8,0xf6,0x64,0x86,0x68,0x98,0x16,0xd4,0xa4,0x5c,0xcc,0x5d,0x65,0xb6,0x92,
+0x6c,0x70,0x48,0x50,0xfd,0xed,0xb9,0xda,0x5e,0x15,0x46,0x57,0xa7,0x8d,0x9d,0x84,
+0x90,0xd8,0xab,0x00,0x8c,0xbc,0xd3,0x0a,0xf7,0xe4,0x58,0x05,0xb8,0xb3,0x45,0x06,
+0xd0,0x2c,0x1e,0x8f,0xca,0x3f,0x0f,0x02,0xc1,0xaf,0xbd,0x03,0x01,0x13,0x8a,0x6b,
+0x3a,0x91,0x11,0x41,0x4f,0x67,0xdc,0xea,0x97,0xf2,0xcf,0xce,0xf0,0xb4,0xe6,0x73,
+0x96,0xac,0x74,0x22,0xe7,0xad,0x35,0x85,0xe2,0xf9,0x37,0xe8,0x1c,0x75,0xdf,0x6e,
+0x47,0xf1,0x1a,0x71,0x1d,0x29,0xc5,0x89,0x6f,0xb7,0x62,0x0e,0xaa,0x18,0xbe,0x1b,
+0xfc,0x56,0x3e,0x4b,0xc6,0xd2,0x79,0x20,0x9a,0xdb,0xc0,0xfe,0x78,0xcd,0x5a,0xf4,
+0x1f,0xdd,0xa8,0x33,0x88,0x07,0xc7,0x31,0xb1,0x12,0x10,0x59,0x27,0x80,0xec,0x5f,
+0x60,0x51,0x7f,0xa9,0x19,0xb5,0x4a,0x0d,0x2d,0xe5,0x7a,0x9f,0x93,0xc9,0x9c,0xef,
+0xa0,0xe0,0x3b,0x4d,0xae,0x2a,0xf5,0xb0,0xc8,0xeb,0xbb,0x3c,0x83,0x53,0x99,0x61,
+0x17,0x2b,0x04,0x7e,0xba,0x77,0xd6,0x26,0xe1,0x69,0x14,0x63,0x55,0x21,0x0c,0x7d,
+};
+//clang-format on
 
+__always_inline void inv_subbytes(uint8_t* s0) {
+    s0[0] = inv_sbox[s0[0]];
+    s0[1] = inv_sbox[s0[1]];
+    s0[2] = inv_sbox[s0[2]];
+    s0[3] = inv_sbox[s0[3]];
+    s0[4] = inv_sbox[s0[4]];
+    s0[5] = inv_sbox[s0[5]];  
+    s0[6] = inv_sbox[s0[6]];
+    s0[7] = inv_sbox[s0[7]];
+    s0[8] = inv_sbox[s0[8]];
+    s0[9] = inv_sbox[s0[9]];
+    s0[10] = inv_sbox[s0[10]];
+    s0[11] = inv_sbox[s0[11]];
+    s0[12] = inv_sbox[s0[12]];
+    s0[13] = inv_sbox[s0[13]];
+    s0[14] = inv_sbox[s0[14]];
+    s0[15] = inv_sbox[s0[15]];
+}
+
+__always_inline void inv_shiftrows(uint8_t* s0) {
+    uint8_t s[4];
+    for (int r = 0; r < 4; r++) {
+        s[0] = s0[0*4 + r];
+        s[1] = s0[1*4 + r];
+        s[2] = s0[2*4 + r];
+        s[3] = s0[3*4 + r];
+        s0[0*4 + r] = s[(4-r) % 4];
+        s0[1*4 + r] = s[(5-r) % 4];
+        s0[2*4 + r] = s[(6-r) % 4];
+        s0[3*4 + r] = s[(7-r) % 4];
+    }
+}
+
+__always_inline uint8_t xtime(uint8_t x) {
+    // GF(2^8)上でのx * {02}の乗算
+    return (x << 1) ^ (((x >> 7) & 1) * 0x1b);
+}
+
+// ミックスカラムは行列積で実装
+__always_inline void inv_mix_columns(uint8_t* state) {
+    for (int c = 0; c < 4; c++) {
+        uint8_t s0 = state[4*c + 0];
+        uint8_t s1 = state[4*c + 1];
+        uint8_t s2 = state[4*c + 2];
+        uint8_t s3 = state[4*c + 3];
+
+        state[4*c + 0] = xtime(xtime(xtime(s0))) ^ xtime(xtime(s1)) ^ xtime(xtime(xtime(s1))) ^ s1 ^ xtime(xtime(s2)) ^ xtime(xtime(xtime(s2))) ^ s2 ^ xtime(xtime(xtime(s3))) ^ xtime(s3);
+        state[4*c + 1] = xtime(xtime(xtime(s0))) ^ xtime(s0) ^ xtime(xtime(xtime(s1))) ^ xtime(xtime(s1)) ^ s1 ^ xtime(xtime(xtime(s2))) ^ xtime(s2) ^ xtime(xtime(xtime(s3))) ^ xtime(xtime(s3)) ^ s3;
+        state[4*c + 2] = xtime(xtime(s0)) ^ s0 ^ xtime(xtime(xtime(s1))) ^ xtime(s1) ^ xtime(xtime(s2)) ^ xtime(xtime(xtime(s2))) ^ s2 ^ xtime(xtime(s3)) ^ xtime(xtime(xtime(s3))) ^ s3;
+        state[4*c + 3] = xtime(s0) ^ xtime(xtime(s0)) ^ s0 ^ xtime(s1) ^ xtime(xtime(s1)) ^ s1 ^ xtime(s2) ^ xtime(xtime(s2)) ^ s2 ^ xtime(s3) ^ xtime(xtime(s3)) ^ s3;
+    }
+}
+
+__always_inline void add_round_key(uint8_t* state, uint8_t* round_key) {
+    state[0] ^= round_key[0];
+    state[1] ^= round_key[1];
+    state[2] ^= round_key[2];
+    state[3] ^= round_key[3];
+    state[4] ^= round_key[4];
+    state[5] ^= round_key[5];
+    state[6] ^= round_key[6];
+    state[7] ^= round_key[7];
+    state[8] ^= round_key[8];
+    state[9] ^= round_key[9];
+    state[10] ^= round_key[10];
+    state[11] ^= round_key[11];
+    state[12] ^= round_key[12];
+    state[13] ^= round_key[13];
+    state[14] ^= round_key[14];
+    state[15] ^= round_key[15];
+}
+
+__always_inline void aes128_decrypt(uint8_t state[16], uint8_t* round_keys) {
+    // 最後のラウンドキーを適用
+    add_round_key(state, &round_keys[10 * 16]);
+
+    // 逆のラウンドを実行
+    for (int r = 9; r > 0; r--) {
+        inv_shiftrows(state);
+        inv_subbytes(state);
+        add_round_key(state, &round_keys[r * 16]);
+        inv_mix_columns(state);
+    }
+
+    // 最初のラウンドキーを適用
+    inv_shiftrows(state);
+    inv_subbytes(state);
+    add_round_key(state, round_keys);
+}
+
+
+*/
+__always_inline void expand_result(uint8_t(*out)[16],uint8_t input_10[10],uint8_t pass){
+   (*out)[0] = input_10[0];
+   (*out)[1] = input_10[1];
+   (*out)[2] = input_10[2];
+   (*out)[3] = input_10[3];
+   (*out)[4] = input_10[4];
+   (*out)[5] = input_10[5];
+   (*out)[6] = input_10[6];
+   (*out)[7] = input_10[7];
+   (*out)[8] = input_10[8];
+   (*out)[9] = input_10[9];
+   (*out)[10] = 0;
+   (*out)[11] = 0;
+   (*out)[12] = 0;
+   (*out)[13] = 0;
+   (*out)[14] = 19; // length
+   (*out)[15] = pass;
+}
+
+__always_inline void split_19(uint8_t(*left)[10],uint8_t(*right)[10],uint8_t input19[19]) {
+    (*left)[0] = input19[0];
+    (*left)[1] = input19[1];
+    (*left)[2] = input19[2];
+    (*left)[3] = input19[3];
+    (*left)[4] = input19[4];
+    (*left)[5] = input19[5];
+    (*left)[6] = input19[6];
+    (*left)[7] = input19[7];
+    (*left)[8] = input19[8];
+    (*left)[9] = input19[9] & 0xf0;
+  
+    (*right)[0] = input19[9] & 0x0f;
+    (*right)[1] = input19[10];
+    (*right)[2] = input19[11];
+    (*right)[3] = input19[12];
+    (*right)[4] = input19[13];
+    (*right)[5] = input19[14];
+    (*right)[6] = input19[15];
+    (*right)[7] = input19[16];
+    (*right)[8] = input19[17];
+    (*right)[9] = input19[18];
+}
+
+__always_inline void xor_assign_10(uint8_t* out, uint8_t* in) {
+    for (int i = 0; i < 10; i++) {
+        out[i] ^= in[i];
+    }
+}
+
+// from https://github.com/torvalds/linux/blob/master/kernel/bpf/crypto.c#L30
+// GPL-2.0
+
+__always_inline struct __crypto_ctx_value *crypto_ctx_value_lookup(void)
+{
+    uint32_t key = 0;
+
+    return bpf_map_lookup_elem(&__crypto_ctx_map, &key);
+}
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 4096);
+} ringbuf SEC(".maps");
+
+
+__always_inline int connection_id_decrypt(struct quiclb_connection_id* connection_id, uint8_t* round_keys, const char* context) {
+    struct __crypto_ctx_value *v = crypto_ctx_value_lookup();
+    if (!v) {
+        bpf_printk("%s: no crypto context found", context);
+        return -ENOENT;
+    }
+    struct bpf_crypto_ctx *ctx = (struct bpf_crypto_ctx*) v->ctx;
+    // 20 byteの接続IDを16バイトに分割してAES-128で復号
+    uint8_t* connection_id_bytes = (uint8_t*)connection_id;
+    uint8_t left[10],right[10],temporary[16];
+    split_19(&left, &right, &connection_id_bytes[1]);
+    struct bpf_dynptr temporary_dynptr;
+    bpf_ringbuf_reserve_dynptr(&ringbuf, sizeof(temporary), 0, &temporary_dynptr);
+#define DO_AES_ECB()     bpf_dynptr_write(&temporary_dynptr, 0, &temporary, sizeof(temporary), 0); bpf_crypto_encrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL)
+    // length of right_2 == 10
+    // length of left_2 == 10
+    // temporary = truncate(aes_ecb(expand(19, 4, right_2)),10)
+    // left_1 = left_2 xor temporary
+    expand_result(&temporary,right /*right_2*/,4);
+    DO_AES_ECB();
+    xor_assign_10(left, temporary);
+    left[9] &= 0xf0; // clear the last 4 bits of left_1
+    // temporary = truncate(aes_ecb(expand(19, 3, left_1)),10)
+    // right_1 = right_2 xor temporary
+    expand_result(&temporary,left /*left_1*/,3);
+    DO_AES_ECB();
+    xor_assign_10(right, temporary);
+    right[0] &= 0x0f; // clear the first 4 bits of right_1
+    // temporary = truncate(aes_ecb(expand(19, 2, right_1)),10)
+    // left_0 = left_1 xor temporary
+    expand_result(&temporary, right /*right_1*/, 2);
+    DO_AES_ECB();
+    xor_assign_10(left, temporary);
+    left[9] &= 0xf0; // clear the last 4 bits of left_0
+    // temporary = truncate(aes_ecb(expand(19, 1, left_1)),10)
+    // right_0 = right_1 xor temporary
+    expand_result(&temporary, left /*left_0*/, 1);
+    DO_AES_ECB();
+    xor_assign_10(right, temporary);
+    right[0] &= 0x0f; // clear the first 4 bits of right_0
+
+    uint8_t connection_id_result[20];
+    connection_id_result[0] = connection_id_bytes[0]; 
+    connection_id_result[1] = left[0]; 
+    connection_id_result[2] = left[1];
+    connection_id_result[3] = left[2];
+    connection_id_result[4] = left[3];
+    connection_id_result[5] = left[4];
+    connection_id_result[6] = left[5];
+    connection_id_result[7] = left[6];
+    connection_id_result[8] = left[7];
+    connection_id_result[9] = left[8];
+    connection_id_result[10] = (left[9] & 0xf0) | (right[0] & 0x0f);
+    connection_id_result[11] = right[1];
+    connection_id_result[12] = right[2];
+    connection_id_result[13] = right[3];
+    connection_id_result[14] = right[4];
+    connection_id_result[15] = right[5];
+    connection_id_result[16] = right[6];
+    connection_id_result[17] = right[7];
+    connection_id_result[18] = right[8];
+    connection_id_result[19] = right[9];
+    struct quiclb_connection_id* result = (struct quiclb_connection_id*)connection_id_result;
+    const int index = QUICLB_CONNECTION_ID_SERVER_ID(result->connection_id);
+    bpf_printk("%s: decrypted connection_id index=%d", context, index);
+    return index; // 0-15
+}
+
+
+
+// https://github.com/torvalds/linux/blob/01a412d06bc5786eb4e44a6c8f0f4659bd4c9864/kernel/bpf/crypto.c#L146
+__always_inline struct destination_entry* handle_connection_id(struct quiclb_connection_id* conn_id,
+                                               struct lb_config* config,
+                                               const char* context
+                                              ) {
+
+   const int dest_idx = connection_id_decrypt(conn_id, NULL, context);
+    if(dest_idx < 0) {
+      bpf_printk("%s: connection_id_decrypt failed with %d", context, dest_idx);
+      return NULL;
+    }
+   bpf_printk("%s conn_id dest_idx=%d", context, dest_idx + 1);
+   if(dest_idx > config->num_dests) {
+      bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
+      return NULL;
+   }
+
+  struct destination_entry* entry = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+  if(!entry) {
+    bpf_printk("no destination entry for %d", dest_idx);
+    return NULL;
+  }
+  bpf_printk("found dest entry for %d", dest_idx);
+  return entry;
+}
 
 SEC("xdp")
 int lb_main(struct xdp_md* ctx) {
+  
   void* data = (void*)(uint64_t)ctx->data;
   void* data_end = (void*)(uint64_t)ctx->data_end;
 
@@ -240,15 +517,9 @@ int lb_main(struct xdp_md* ctx) {
           // TODO: add validation of mac or other validation logic?
           struct quiclb_connection_id* conn_id =
               (struct quiclb_connection_id*)(quic + 1);
-          const int dest_idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id) + 1;
-          bpf_printk("long conn_id dest_idx=%d", dest_idx);
-          if(dest_idx > config->num_dests) {
-            bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
-            EXIT(XDP_DROP);
-          }
-          dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+     
+          dest = handle_connection_id(conn_id, config, "long");
           if (!dest) {
-            bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
             EXIT(XDP_DROP);
           }
         }
@@ -263,17 +534,10 @@ int lb_main(struct xdp_md* ctx) {
         struct quic_short_packet* quic = (struct quic_short_packet*)(udp + 1);
         struct quiclb_connection_id* conn_id =
             (struct quiclb_connection_id*)(quic + 1);
-        
-        const int dest_idx = QUICLB_CONNECTION_ID_SERVER_ID(conn_id->connection_id) + 1;
-        bpf_printk("short conn_id dest_idx=%d", dest_idx);
-        if(dest_idx > config->num_dests) {
-          bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
-          EXIT(XDP_DROP);
-        }
 
-        dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+        dest = handle_connection_id(conn_id,config,"short");
+
         if (!dest) {
-          bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
           EXIT(XDP_DROP);
         }
       }

@@ -42,6 +42,7 @@ type Bindings struct {
 	XdpcapHook       *ebpf.Map     `ebpf:"xdpcap_hook"`
 	DestinationArray *ebpf.Map     `ebpf:"destinations_map"`
 	ConfigMap        *ebpf.Map     `ebpf:"lb_config_map"`
+	CryptoCtxMap     *ebpf.Map     `ebpf:"__crypto_ctx_map"`
 }
 
 func (b *Bindings) Close() error {
@@ -50,10 +51,11 @@ func (b *Bindings) Close() error {
 		b.XdpcapHook.Close(),
 		b.DestinationArray.Close(),
 		b.ConfigMap.Close(),
+		b.CryptoCtxMap.Close(),
 	)
 }
 
-func BindBalancer(binPath, xdpcapHookPath string) (*Bindings, error) {
+func BindBalancer(binPath, xdpcapHookPath, cryptoPinDirPath string) (*Bindings, error) {
 	m, err := ReadDWARFStructs(binPath)
 	if err != nil {
 		return nil, fmt.Errorf("ReadDWARFStructs(%q): %w", binPath, err)
@@ -74,11 +76,16 @@ func BindBalancer(binPath, xdpcapHookPath string) (*Bindings, error) {
 		return nil, fmt.Errorf("Failed to read spec %q: %w", binPath, err)
 	}
 
+	spec.Maps["__crypto_ctx_map"].Pinning = ebpf.PinByName
+
 	var bindings Bindings
 	if err := spec.LoadAndAssign(&bindings, &ebpf.CollectionOptions{
 		Programs: ebpf.ProgramOptions{
 			LogLevel:     0,
 			LogSizeStart: 1 * 1024 * 1024,
+		},
+		Maps: ebpf.MapOptions{
+			PinPath: cryptoPinDirPath,
 		},
 	}); err != nil {
 		var ve *ebpf.VerifierError

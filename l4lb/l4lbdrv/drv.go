@@ -19,6 +19,8 @@ type Config struct {
 	BinPath        string
 	InterfaceName  string
 	XdpCapHookPath string
+	CryptoBin      string
+	CryptoPinDir   string // Path to pinning directory for crypto context map
 
 	VIP   netip.Addr
 	Dests DestinationEntries
@@ -46,7 +48,26 @@ func New(cfg *Config) (*L4LB, error) {
 			return nil, fmt.Errorf("Failed to get absolute path for %s: %w", cfg.XdpCapHookPath, err)
 		}
 	}
-	bindings, err := BindBalancer(aBinPath, aXdpcapHookPath)
+	var cryptoPinDirPath string
+	if cfg.CryptoPinDir != "" {
+		cryptoPinDirPath, err = filepath.Abs(cfg.CryptoPinDir)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to get absolute path for %s: %w", cfg.CryptoPinDir, err)
+		}
+	}
+	var aCryptoBin string
+	if cryptoPinDirPath != "" {
+		aCryptoBin, err = filepath.Abs(cfg.CryptoBin)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to get absolute path for %s: %w", cfg.CryptoBin, err)
+		}
+	}
+	err = InitCrypto(aCryptoBin, filepath.Join(cryptoPinDirPath, "__crypto_ctx_map"))
+	if err != nil {
+		return nil, fmt.Errorf("Failed to init crypto: %w", err)
+	}
+
+	bindings, err := BindBalancer(aBinPath, aXdpcapHookPath, cryptoPinDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to bind balancer: %w", err)
 	}

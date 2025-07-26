@@ -375,6 +375,7 @@ func emitBindingsGo(p *Parsed) error {
 
 var SourceFiles = []string{
 	"../c/lb.c",
+	"../c/init_crypto.c",
 }
 
 func run() error {

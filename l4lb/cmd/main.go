@@ -17,6 +17,7 @@ import (
 )
 
 var lbBin = flag.String("lbBin", "c/lb.o", "Path to XDP lb binary")
+var cryptoBin = flag.String("cryptoBin", "c/init_crypto.o", "Path to XDP crypto binary")
 var xdpcapHookPath = flag.String("xdpcapHookPath", "/sys/fs/bpf/xdpcap_hook", "Path to XDPCap hook")
 var xdpif = flag.String("interface", "net0", "Interface to attach lb prog to")
 var vip = flag.String("vip", "192.0.2.10", "VIP address to load balance")
@@ -63,6 +64,8 @@ func main() {
 
 	cfg := &l4lbdrv.Config{
 		BinPath:        *lbBin,
+		CryptoBin:      *cryptoBin,
+		CryptoPinDir:   "/sys/fs/bpf/crypto_ctx_map",
 		XdpCapHookPath: *xdpcapHookPath,
 		InterfaceName:  *xdpif,
 		VIP:            netip.MustParseAddr(*vip),

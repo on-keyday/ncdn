@@ -4,18 +4,18 @@ NCDN_STRIP=0
 CFLAGS=-O2 -g -Wall -Wno-unused-value -Wno-pointer-sign
 CFLAGS+=-Wno-compare-distinct-pointer-types -Wno-address-of-packed-member -Werror -fno-builtin-bcmp
 
-all: lb.o dummy.o
+all: lb.o dummy.o init_crypto.o
 
 .PHONY: all clean
 
 .SUFFIXES:
-.SUFFIXES: .o .ll .c
+.SUFFIXES: .o .ll .c .h
 
 .c.ll:
-	clang ${CFLAGS} -emit-llvm -c -o $@ $<
+	clang-19 ${CFLAGS} -emit-llvm -c -o $@ $<
 
 .ll.o:
-	llc -march=bpf -filetype=obj -o $@ $<
+	llc-19 -march=bpf -filetype=obj -o $@ $<
 ifeq (${NCDN_STRIP},1)
 	llvm-strip -g $@
 endif

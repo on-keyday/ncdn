@@ -12,19 +12,19 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:66
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:69
 )
 
-type StatCounters struct { // ../c/lb.c:28
-	RxPacketTotal                uint64 // ../c/lb.c:29
-	RxTotalSize                  uint64 // ../c/lb.c:30
-	TooShortPacketTotal          uint64 // ../c/lb.c:32
-	NonIpv4PacketTotal           uint64 // ../c/lb.c:33
-	IpOptionPacketTotal          uint64 // ../c/lb.c:34
-	NonSupportedProtoPacketTotal uint64 // ../c/lb.c:35
-	NoVipMatchTotal              uint64 // ../c/lb.c:36
-	FailedAdjustHeadTotal        uint64 // ../c/lb.c:37
-	FailedAdjustTailTotal        uint64 // ../c/lb.c:38
+type StatCounters struct { // ../c/lb.c:27
+	RxPacketTotal                uint64 // ../c/lb.c:28
+	RxTotalSize                  uint64 // ../c/lb.c:29
+	TooShortPacketTotal          uint64 // ../c/lb.c:31
+	NonIpv4PacketTotal           uint64 // ../c/lb.c:32
+	IpOptionPacketTotal          uint64 // ../c/lb.c:33
+	NonSupportedProtoPacketTotal uint64 // ../c/lb.c:34
+	NoVipMatchTotal              uint64 // ../c/lb.c:35
+	FailedAdjustHeadTotal        uint64 // ../c/lb.c:36
+	FailedAdjustTailTotal        uint64 // ../c/lb.c:37
 }
 
 func StatCountersAssertLayout(s *DWARFStruct) error {
@@ -139,9 +139,9 @@ func (c *StatCounters) String() string {
 	return buf.String()
 }
 
-type LbConfig struct { // ../c/lb.c:49
-	VipAddress uint32 // ../c/lb.c:50
-	NumDests   uint32 // ../c/lb.c:51
+type LbConfig struct { // ../c/lb.c:50
+	VipAddress uint32 // ../c/lb.c:51
+	NumDests   uint32 // ../c/lb.c:52
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -179,5 +179,13 @@ func LbAssertLayout(m map[string]*DWARFStruct) error {
 	if err := LbConfigAssertLayout(m["lb_config"]); err != nil {
 		return fmt.Errorf("lb_config: %v", err)
 	}
+	return nil
+}
+
+// Source: ../c/init_crypto.c
+
+const ()
+
+func Init_cryptoAssertLayout(m map[string]*DWARFStruct) error {
 	return nil
 }
