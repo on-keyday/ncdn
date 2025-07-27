@@ -1,5 +1,7 @@
 #include "lb.h"
+#include <bpf/bpf_helpers.h>
 #include <errno.h>
+#include <bpf/bpf_tracing.h>
 __always_inline int crypto_ctx_insert(bpf_crypto_ctx_t * __kptr ctx)
 {
 	struct __crypto_ctx_value local, *v;
@@ -31,17 +33,31 @@ __always_inline int crypto_ctx_insert(bpf_crypto_ctx_t * __kptr ctx)
 int status;
 volatile bpf_crypto_ctx_t value;
 volatile struct __crypto_ctx_value dummy;
+
+struct quiclb_shared_key { /* go: */
+	uint8_t key[16]; // 128 bits
+} __attribute__((aligned(8)));
+
 SEC("syscall")
-int crypto_init(void *args){
+int crypto_init(struct quiclb_shared_key *args){
+	bpf_printk("crypto_init called\n");
+	if(!args) {
+		bpf_printk("crypto_init: args or args->key is NULL");
+		return 0;
+	}
 
 	(void)value; // avoid unused variable warning
 	bpf_crypto_ctx_t __kptr *cctx;
 	struct bpf_crypto_params params = {
 		.type = "skcipher",
-        .algo = "ecb",
+        .algo = "ecb(aes)",
 		.key_len = 16,
 		.authsize = 0,
 	};
+
+	__builtin_memcpy(params.key, args->key, 16);
+
+
 	int err = 0;
 
 	status = 0;
@@ -51,12 +67,15 @@ int crypto_init(void *args){
 
 	if (!cctx) {
 		status = err;
+		bpf_printk("crypto_init: bpf_crypto_ctx_create failed with %d\n", err);
 		return 0;
 	}
 
 	err = crypto_ctx_insert(cctx);
-	if (err && err != -EEXIST)
+	if (err && err != -EEXIST)	
 		status = err;
+
+	bpf_printk("crypto_init: err %d\n", err);
 
 	return 0;
 

@@ -4,3 +4,6 @@ secrets/
 *.o
 mnt/
 ca/
+dpdk/
+llvm.sh
+vm_images/

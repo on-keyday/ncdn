@@ -12,19 +12,26 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:69
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:80
 )
 
-type StatCounters struct { // ../c/lb.c:27
-	RxPacketTotal                uint64 // ../c/lb.c:28
-	RxTotalSize                  uint64 // ../c/lb.c:29
-	TooShortPacketTotal          uint64 // ../c/lb.c:31
-	NonIpv4PacketTotal           uint64 // ../c/lb.c:32
-	IpOptionPacketTotal          uint64 // ../c/lb.c:33
-	NonSupportedProtoPacketTotal uint64 // ../c/lb.c:34
-	NoVipMatchTotal              uint64 // ../c/lb.c:35
-	FailedAdjustHeadTotal        uint64 // ../c/lb.c:36
-	FailedAdjustTailTotal        uint64 // ../c/lb.c:37
+type StatCounters struct { // ../c/lb.c:30
+	RxPacketTotal                   uint64 // ../c/lb.c:31
+	RxTotalSize                     uint64 // ../c/lb.c:32
+	TooShortPacketTotal             uint64 // ../c/lb.c:34
+	NonIpv4PacketTotal              uint64 // ../c/lb.c:35
+	IpOptionPacketTotal             uint64 // ../c/lb.c:36
+	NonSupportedProtoPacketTotal    uint64 // ../c/lb.c:37
+	NoVipMatchTotal                 uint64 // ../c/lb.c:38
+	FailedAdjustHeadTotal           uint64 // ../c/lb.c:39
+	FailedAdjustTailTotal           uint64 // ../c/lb.c:40
+	QuiclbShortPacketTotal          uint64 // ../c/lb.c:42
+	QuiclbLongPacketTotal           uint64 // ../c/lb.c:43
+	QuiclbInitialRoutingPacketTotal uint64 // ../c/lb.c:44
+	QuiclbTooShortLongPacketTotal   uint64 // ../c/lb.c:45
+	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:46
+	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:47
+	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:48
 }
 
 func StatCountersAssertLayout(s *DWARFStruct) error {
@@ -86,6 +93,41 @@ func StatCountersAssertLayout(s *DWARFStruct) error {
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go FailedAdjustTailTotal: %d, dwarf failed_adjust_tail_total: %d", goff, doff)
 	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbShortPacketTotal)
+	doff = fs["quiclb_short_packet_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbShortPacketTotal: %d, dwarf quiclb_short_packet_total: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbLongPacketTotal)
+	doff = fs["quiclb_long_packet_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbLongPacketTotal: %d, dwarf quiclb_long_packet_total: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbInitialRoutingPacketTotal)
+	doff = fs["quiclb_initial_routing_packet_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbInitialRoutingPacketTotal: %d, dwarf quiclb_initial_routing_packet_total: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbTooShortLongPacketTotal)
+	doff = fs["quiclb_too_short_long_packet_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbTooShortLongPacketTotal: %d, dwarf quiclb_too_short_long_packet_total: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbNoConnectionIdTotal)
+	doff = fs["quiclb_no_connection_id_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbNoConnectionIdTotal: %d, dwarf quiclb_no_connection_id_total: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbNoDestEntryTotal)
+	doff = fs["quiclb_no_dest_entry_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbNoDestEntryTotal: %d, dwarf quiclb_no_dest_entry_total: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbInvalidCryptoContextTotal)
+	doff = fs["quiclb_invalid_crypto_context_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbInvalidCryptoContextTotal: %d, dwarf quiclb_invalid_crypto_context_total: %d", goff, doff)
+	}
 
 	return nil
 }
@@ -100,6 +142,13 @@ func (c *StatCounters) Add(other *StatCounters) {
 	c.NoVipMatchTotal += other.NoVipMatchTotal
 	c.FailedAdjustHeadTotal += other.FailedAdjustHeadTotal
 	c.FailedAdjustTailTotal += other.FailedAdjustTailTotal
+	c.QuiclbShortPacketTotal += other.QuiclbShortPacketTotal
+	c.QuiclbLongPacketTotal += other.QuiclbLongPacketTotal
+	c.QuiclbInitialRoutingPacketTotal += other.QuiclbInitialRoutingPacketTotal
+	c.QuiclbTooShortLongPacketTotal += other.QuiclbTooShortLongPacketTotal
+	c.QuiclbNoConnectionIdTotal += other.QuiclbNoConnectionIdTotal
+	c.QuiclbNoDestEntryTotal += other.QuiclbNoDestEntryTotal
+	c.QuiclbInvalidCryptoContextTotal += other.QuiclbInvalidCryptoContextTotal
 }
 
 func (c *StatCounters) String() string {
@@ -132,6 +181,27 @@ func (c *StatCounters) String() string {
 	if c.FailedAdjustTailTotal != 0 {
 		buf.WriteString(fmt.Sprintf("FailedAdjustTailTotal=%d, ", c.FailedAdjustTailTotal))
 	}
+	if c.QuiclbShortPacketTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbShortPacketTotal=%d, ", c.QuiclbShortPacketTotal))
+	}
+	if c.QuiclbLongPacketTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbLongPacketTotal=%d, ", c.QuiclbLongPacketTotal))
+	}
+	if c.QuiclbInitialRoutingPacketTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbInitialRoutingPacketTotal=%d, ", c.QuiclbInitialRoutingPacketTotal))
+	}
+	if c.QuiclbTooShortLongPacketTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbTooShortLongPacketTotal=%d, ", c.QuiclbTooShortLongPacketTotal))
+	}
+	if c.QuiclbNoConnectionIdTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbNoConnectionIdTotal=%d, ", c.QuiclbNoConnectionIdTotal))
+	}
+	if c.QuiclbNoDestEntryTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbNoDestEntryTotal=%d, ", c.QuiclbNoDestEntryTotal))
+	}
+	if c.QuiclbInvalidCryptoContextTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbInvalidCryptoContextTotal=%d, ", c.QuiclbInvalidCryptoContextTotal))
+	}
 	if strings.HasSuffix(buf.String(), ", ") {
 		buf.Truncate(buf.Len() - 2)
 	}
@@ -139,9 +209,9 @@ func (c *StatCounters) String() string {
 	return buf.String()
 }
 
-type LbConfig struct { // ../c/lb.c:50
-	VipAddress uint32 // ../c/lb.c:51
-	NumDests   uint32 // ../c/lb.c:52
+type LbConfig struct { // ../c/lb.c:61
+	VipAddress uint32 // ../c/lb.c:62
+	NumDests   uint32 // ../c/lb.c:63
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -186,6 +256,36 @@ func LbAssertLayout(m map[string]*DWARFStruct) error {
 
 const ()
 
+type QuiclbSharedKey struct { // ../c/init_crypto.c:37
+	Key [16]uint8 // ../c/init_crypto.c:38
+}
+
+func QuiclbSharedKeyAssertLayout(s *DWARFStruct) error {
+	if s == nil {
+		return fmt.Errorf("DWARFStruct is nil")
+	}
+
+	gosize := unsafe.Sizeof(QuiclbSharedKey{})
+	if gosize != uintptr(s.Size) {
+		return fmt.Errorf("size mismatch: go: %d, dwarf: %d", gosize, s.Size)
+	}
+
+	fs := s.Fields
+
+	var goff uintptr
+	var doff int64
+	goff = unsafe.Offsetof(QuiclbSharedKey{}.Key)
+	doff = fs["key"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go Key: %d, dwarf key: %d", goff, doff)
+	}
+
+	return nil
+}
+
 func Init_cryptoAssertLayout(m map[string]*DWARFStruct) error {
+	if err := QuiclbSharedKeyAssertLayout(m["quiclb_shared_key"]); err != nil {
+		return fmt.Errorf("quiclb_shared_key: %v", err)
+	}
 	return nil
 }

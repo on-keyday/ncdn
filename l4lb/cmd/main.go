@@ -12,8 +12,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/yzp0n/ncdn/l4lb/l4lbdrv"
+	"golang.org/x/sys/unix"
 )
 
 var lbBin = flag.String("lbBin", "c/lb.o", "Path to XDP lb binary")
@@ -54,8 +56,43 @@ func parseDest(deststr string) ([]l4lbdrv.DestinationEntry, error) {
 	return dests, nil
 }
 
+func FSType(path string) (int64, error) {
+	var statfs unix.Statfs_t
+	if err := unix.Statfs(path, &statfs); err != nil {
+		return 0, err
+	}
+
+	fsType := int64(statfs.Type)
+	if unsafe.Sizeof(statfs.Type) == 4 {
+		// We're on a 32 bit arch, where statfs.Type is int32. bpfFSType is a
+		// negative number when interpreted as int32 so we need to cast via
+		// uint32 to avoid sign extension.
+		fsType = int64(uint32(statfs.Type))
+	}
+	return fsType, nil
+}
+
 func main() {
 	flag.Parse()
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		log.Panicf("Failed to read /proc/self/mountinfo: %v", err)
+	}
+	fmt.Printf("Mountinfo:\n%s\n", data)
+	linked, err := os.Readlink("/proc/self/ns/mnt")
+	if err != nil {
+		log.Panicf("Failed to read /proc/self/ns/mnt: %v", err)
+	}
+	fmt.Printf("Mount name: %s\n", linked)
+	///*
+	typ, err := FSType("/sys/fs/bpf/") // Ensure that the BPF filesystem is mounted
+	if err != nil {
+		log.Panicf("Failed to get filesystem type: %v", err)
+	}
+	if typ != 0xcafe4a11 {
+		log.Panicf("Expected BPF filesystem type %d, got %d", 0xcafe4a11, typ)
+	}
+	//*/
 
 	dests, err := parseDest(*deststr)
 	if err != nil {
@@ -65,7 +102,7 @@ func main() {
 	cfg := &l4lbdrv.Config{
 		BinPath:        *lbBin,
 		CryptoBin:      *cryptoBin,
-		CryptoPinDir:   "/sys/fs/bpf/crypto_ctx_map",
+		EBPFPinDir:     "/sys/fs/bpf/",
 		XdpCapHookPath: *xdpcapHookPath,
 		InterfaceName:  *xdpif,
 		VIP:            netip.MustParseAddr(*vip),

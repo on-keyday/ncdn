@@ -20,10 +20,11 @@ type Config struct {
 	InterfaceName  string
 	XdpCapHookPath string
 	CryptoBin      string
-	CryptoPinDir   string // Path to pinning directory for crypto context map
+	EBPFPinDir     string // Path to pinning directory for crypto context map
 
-	VIP   netip.Addr
-	Dests DestinationEntries
+	VIP       netip.Addr
+	Dests     DestinationEntries
+	SharedKey []byte // Shared key for QUIC connection ID generation
 }
 
 type L4LB struct {
@@ -49,10 +50,10 @@ func New(cfg *Config) (*L4LB, error) {
 		}
 	}
 	var cryptoPinDirPath string
-	if cfg.CryptoPinDir != "" {
-		cryptoPinDirPath, err = filepath.Abs(cfg.CryptoPinDir)
+	if cfg.EBPFPinDir != "" {
+		cryptoPinDirPath, err = filepath.Abs(cfg.EBPFPinDir)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to get absolute path for %s: %w", cfg.CryptoPinDir, err)
+			return nil, fmt.Errorf("Failed to get absolute path for %s: %w", cfg.EBPFPinDir, err)
 		}
 	}
 	var aCryptoBin string
@@ -62,7 +63,7 @@ func New(cfg *Config) (*L4LB, error) {
 			return nil, fmt.Errorf("Failed to get absolute path for %s: %w", cfg.CryptoBin, err)
 		}
 	}
-	err = InitCrypto(aCryptoBin, filepath.Join(cryptoPinDirPath, "__crypto_ctx_map"))
+	err = InitCrypto(aCryptoBin, filepath.Join(cryptoPinDirPath, "__crypto_ctx_map"), cfg.SharedKey)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to init crypto: %w", err)
 	}

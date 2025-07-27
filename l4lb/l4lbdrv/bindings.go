@@ -90,6 +90,9 @@ func BindBalancer(binPath, xdpcapHookPath, cryptoPinDirPath string) (*Bindings, 
 	}); err != nil {
 		var ve *ebpf.VerifierError
 		if errors.As(err, &ve) {
+			for _, line := range ve.Log {
+				slog.Error("Full verifier log", slog.String("line", line))
+			}
 			slog.Error("Full verifier", slog.String("error", ve.Error()))
 		}
 		return nil, fmt.Errorf("Failed to bind spec: %w", err)

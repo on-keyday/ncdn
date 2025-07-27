@@ -12,8 +12,10 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/miekg/dns v1.1.66
 	github.com/oschwald/geoip2-golang/v2 v2.0.0-beta.2
+	github.com/quic-go/quic-go v0.53.0
 	github.com/vishvananda/netlink v1.3.1
 	go.uber.org/multierr v1.11.0
+	golang.org/x/net v0.40.0
 	golang.org/x/sys v0.33.0
 )
 
@@ -37,7 +39,6 @@ require (
 	github.com/prometheus/common v0.64.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.53.0 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
@@ -45,7 +46,6 @@ require (
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sync v0.14.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
 	golang.org/x/tools v0.32.0 // indirect

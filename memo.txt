@@ -102,6 +102,31 @@ format QUICLBIDFortThisImplementationMACTarget:
   zero :u1 # paddingとして0を埋める
 
 
+format QUICLBIDForThisImplementationv2: # 
+  first_octet :FirstByteOfQUICLB # cid_len_or_randomはランダムビット
+  server_id :u4 # server id (今回は通常は2台だし増やすとしても16台も使うことはないのでこれでよし)
+  opaque_1 :u4
+  opaque :[18]u8
+
+# 'input_bytes' is drawn from one half of the plaintext.  It forms
+# the N most significant octets of the output, where N is half the
+# 'length' argument, rounded up, and thus a number between 3 and 10,
+#  inclusive.
+# 'Zeropad' is a set of 14-N octets set to zero.
+# 'length' is an 8-bit integer that reports the sum of the
+# configured nonce length and server id length in octets, and forms
+# the fifteenth octet of the output.  The 'length' argument MUST NOT
+# exceed 19 and MUST NOT be less than 5.
+# 'pass' is an 8-bit integer that reports the 'pass' argument of the
+# algorithm, and forms the sixteenth (least significant) octet of
+# the output.  It guarantees that the cryptographic input of every
+# pass of the algorithm is unique.
+format ExpandResult:
+  input_bytes :[3..=10]u8
+  zero_padding :[14 - input_bytes.length]u8
+  full_connection_id_len :u8
+  full_connection_id_len >= 5 && full_connection_id_len <= 19
+  pass :u8 # for cryptographic input uniqueness
 
 - Initial/Handshake/Zero RTT/Retry
   - first_octtet & 0x80 == 1 -> LongPacket

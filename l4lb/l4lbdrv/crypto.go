@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/cilium/ebpf"
+	"github.com/yzp0n/ncdn/tool/util"
 )
 
 type CryptoInitBinding struct {
@@ -14,7 +15,7 @@ type CryptoInitBinding struct {
 	CryptoCtxMap *ebpf.Map     `ebpf:"__crypto_ctx_map"`
 }
 
-func InitCrypto(binPath string, cryptoMap string) error {
+func InitCrypto(binPath string, cryptoMap string, sharedKey []byte) error {
 	m, err := ReadDWARFStructs(binPath)
 	if err != nil {
 		return fmt.Errorf("ReadDWARFStructs(%q): %w", binPath, err)
@@ -50,7 +51,19 @@ func InitCrypto(binPath string, cryptoMap string) error {
 		return fmt.Errorf("failed to bind spec: %w", err)
 	}
 
-	_, _, err = bindings.CryptoInit.Test(make([]byte, 14))
+	derivedKey, err := util.DeriveKey(sharedKey, "quic-lb")
+	if err != nil {
+		return fmt.Errorf("failed to derive key: %w", err)
+	}
+	if len(derivedKey) != 16 {
+		return fmt.Errorf("derived key must be 16 bytes, got %d bytes", len(derivedKey))
+	}
+	var quicLBContext QuiclbSharedKey
+	copy(quicLBContext.Key[:], derivedKey)
+
+	_, err = bindings.CryptoInit.Run(&ebpf.RunOptions{
+		Context: &quicLBContext,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to test crypto init: %w", err)
 	}

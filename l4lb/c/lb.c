@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdint.h>
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
 #include <netinet/in.h>
@@ -37,6 +38,14 @@ struct stat_counters { /* go:Add,String */
   uint64_t no_vip_match_total; // HELP Number of packets dropped due to their dest IP address not matching any known VIP.
   uint64_t failed_adjust_head_total; // HELP Number of xdp_adjust_head failures.
   uint64_t failed_adjust_tail_total; // HELP Number of xdp_adjust_tail failures.
+
+  uint64_t quiclb_short_packet_total; // HELP Number of QUIC-LB short packets received.
+  uint64_t quiclb_long_packet_total; // HELP Number of QUIC-LB long packets received.
+  uint64_t quiclb_initial_routing_packet_total; // HELP Number of QUIC-LB initial routing packets received.
+  uint64_t quiclb_too_short_long_packet_total; // HELP Number of QUIC-LB short-long packets received.
+  uint64_t quiclb_no_connection_id_total; // HELP Number of QUIC-LB packets received without connection ID.
+  uint64_t quiclb_no_dest_entry_total; // HELP Number of QUIC-LB packets received without destination entry.
+  uint64_t quiclb_invalid_crypto_context_total; // HELP Number of QUIC-LB packets received with invalid crypto context.
 } ALIGN8;
 // clang-format on
 
@@ -295,7 +304,11 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
         return -ENOENT;
     }
     struct bpf_crypto_ctx *ctx = (struct bpf_crypto_ctx*) v->ctx;
-    // 20 byteの接続IDを16バイトに分割してAES-128で復号
+    if(!ctx) {
+        bpf_printk("%s: crypto context is NULL", context);
+        return -ENOENT;
+    }
+    // 20 byteの接続IDを16バイトに分割してQUIC-LBの接続IDを復号化する
     uint8_t* connection_id_bytes = (uint8_t*)connection_id;
     uint8_t left[10],right[10],temporary[16];
     split_19(&left, &right, &connection_id_bytes[1]);
@@ -328,6 +341,7 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
     DO_AES_ECB();
     xor_assign_10(right, temporary);
     right[0] &= 0x0f; // clear the first 4 bits of right_0
+    bpf_ringbuf_discard_dynptr(&temporary_dynptr,0);
 
     uint8_t connection_id_result[20];
     connection_id_result[0] = connection_id_bytes[0]; 
@@ -357,31 +371,51 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
 }
 
 
+__always_inline struct destination_entry* handle_initial(struct quiclb_connection_id* conn_id,
+struct lb_config* config,
+struct stat_counters* c,
+                                               const char* context) {
+     // fast path to roundrobin based on connection ID TODO: improve for security
+    const char* conn_id_bytes = (const char*)(conn_id);
+    uint32_t key = conn_id_bytes[0];
+    uint32_t dest_idx = (key % config->num_dests) + 1;
+    bpf_printk("long initial dest_idx=%d", dest_idx);
+    struct destination_entry* dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+    if (!dest) {
+      bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
+      ++c->quiclb_no_dest_entry_total;
+      return NULL;
+    }
+    ++c->quiclb_initial_routing_packet_total;
+    return dest;
+}
 
 // https://github.com/torvalds/linux/blob/01a412d06bc5786eb4e44a6c8f0f4659bd4c9864/kernel/bpf/crypto.c#L146
 __always_inline struct destination_entry* handle_connection_id(struct quiclb_connection_id* conn_id,
                                                struct lb_config* config,
+                                               struct stat_counters* c,
                                                const char* context
                                               ) {
 
    const int dest_idx = connection_id_decrypt(conn_id, NULL, context);
     if(dest_idx < 0) {
+      ++c->quiclb_invalid_crypto_context_total;
       bpf_printk("%s: connection_id_decrypt failed with %d", context, dest_idx);
       return NULL;
     }
-   bpf_printk("%s conn_id dest_idx=%d", context, dest_idx + 1);
-   if(dest_idx > config->num_dests) {
-      bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
-      return NULL;
-   }
+    bpf_printk("%s conn_id dest_idx=%d", context, dest_idx);
+    if(dest_idx > config->num_dests) {
+       bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
+       return handle_initial(conn_id, config, c, context);
+    }
 
-  struct destination_entry* entry = bpf_map_lookup_elem(&destinations_map, &dest_idx);
-  if(!entry) {
-    bpf_printk("no destination entry for %d", dest_idx);
-    return NULL;
-  }
-  bpf_printk("found dest entry for %d", dest_idx);
-  return entry;
+    struct destination_entry* entry = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+    if(!entry) {
+      bpf_printk("no destination entry for %d", dest_idx);
+      return NULL;
+    }
+    bpf_printk("found dest entry for %d", dest_idx);
+    return entry;
 }
 
 SEC("xdp")
@@ -482,11 +516,12 @@ int lb_main(struct xdp_md* ctx) {
       const char* quic_first_byte = (const char*)(udp + 1);
       const int is_long_header = (quic_first_byte[0] & 0x80) == 0x80 ? 1 : 0;
       if(is_long_header) {
+        ++c->quiclb_long_packet_total;
         // Long header
         /*RFC 9000 says least 8 byte for initial dst connection id so this least 1 byte requirements for destionation connection id is always satisfied*/
         if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
               sizeof(struct udphdr) + sizeof(struct quic_long_packet) + 1 > data_end) {
-          ++c->too_short_packet_total;
+          ++c->quiclb_too_short_long_packet_total;
           EXIT(XDP_PASS);
         }
 
@@ -494,31 +529,26 @@ int lb_main(struct xdp_md* ctx) {
         if(quic->dst_conn_id_len != QUICLB_CONNECTION_ID_SIZE) {
           if(quic->dst_conn_id_len == 0) {
             // This is a connection ID rotation packet, which we do not support.
-            ++c->non_supported_proto_packet_total;
+            ++c->quiclb_no_connection_id_total;
             EXIT(XDP_PASS);
           }
-          // fast path to roundrobin based on connection ID
-          const char* conn_id = (const char*)(quic + 1);
-          uint32_t key = conn_id[0];
-          uint32_t dest_idx = (key % config->num_dests) + 1;
-          bpf_printk("long initial dest_idx=%d", dest_idx);
-          dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+          dest = handle_initial((struct quiclb_connection_id*)(quic+1) , config, c, "initial");
           if (!dest) {
-            bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
+            ++c->quiclb_no_dest_entry_total;
             EXIT(XDP_DROP);
           }
         }
         else {
           if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
               sizeof(struct udphdr) + sizeof(struct quic_long_packet) + sizeof(struct quiclb_connection_id) > data_end) {
-            ++c->too_short_packet_total;
+            ++c->quiclb_too_short_long_packet_total;
             EXIT(XDP_PASS);
           }
           // TODO: add validation of mac or other validation logic?
           struct quiclb_connection_id* conn_id =
               (struct quiclb_connection_id*)(quic + 1);
      
-          dest = handle_connection_id(conn_id, config, "long");
+          dest = handle_connection_id(conn_id, config,c, "long");
           if (!dest) {
             EXIT(XDP_DROP);
           }
@@ -535,7 +565,7 @@ int lb_main(struct xdp_md* ctx) {
         struct quiclb_connection_id* conn_id =
             (struct quiclb_connection_id*)(quic + 1);
 
-        dest = handle_connection_id(conn_id,config,"short");
+        dest = handle_connection_id(conn_id,config,c,"short");
 
         if (!dest) {
           EXIT(XDP_DROP);
