@@ -465,12 +465,13 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
                                                const char* context
                                               ) {
 
-   const int dest_idx = connection_id_decrypt(conn_id, NULL, context);
-    if(dest_idx < 0) {
+    int dest_idx_ = connection_id_decrypt(conn_id, NULL, context);
+    if(dest_idx_ < 0) {
       ++c->quiclb_invalid_crypto_context_total;
-      bpf_printk("%s: connection_id_decrypt failed with %d", context, dest_idx);
+      bpf_printk("%s: connection_id_decrypt failed with %d", context, dest_idx_);
       return NULL;
     }
+    const int dest_idx = dest_idx_ + 1; // dest_idx is 1-based index
     bpf_printk("%s conn_id dest_idx=%d", context, dest_idx);
     if(dest_idx > config->num_dests) {
        bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
