@@ -296,6 +296,67 @@ struct {
     __uint(max_entries, 4096);
 } ringbuf SEC(".maps");
 
+__always_inline void print_half(const char* name, uint8_t* data) {
+    uint64_t high;
+    uint16_t low;
+    high = (uint64_t)(data[0]) << 56 |
+           (uint64_t)(data[1]) << 48 |
+           (uint64_t)(data[2]) << 40 |
+           (uint64_t)(data[3]) << 32 |
+           (uint64_t)(data[4]) << 24 |
+           (uint64_t)(data[5]) << 16 |
+           (uint64_t)(data[6]) << 8 |
+           (uint64_t)(data[7]);
+    low = (data[8] << 8) | data[9];
+    bpf_printk("DEBUG: %s=%016lx%04x", name, high, low);
+}
+
+__always_inline void print_key(const char* name, const uint8_t* key) {
+    uint64_t high, low;
+    high = (uint64_t)(key[0]) << 56 |
+           (uint64_t)(key[1]) << 48 |
+           (uint64_t)(key[2]) << 40 |
+           (uint64_t)(key[3]) << 32 |
+           (uint64_t)(key[4]) << 24 |
+           (uint64_t)(key[5]) << 16 |
+           (uint64_t)(key[6]) << 8 |
+           (uint64_t)(key[7]);
+    low = ((uint64_t)(key[8]) << 56) |
+          ((uint64_t)(key[9]) << 48) |
+          ((uint64_t)(key[10]) << 40) |
+          ((uint64_t)(key[11]) << 32) |
+          ((uint64_t)(key[12]) << 24) |
+          ((uint64_t)(key[13]) << 16) |
+          ((uint64_t)(key[14]) << 8) |
+          ((uint64_t)(key[15]));
+    bpf_printk("DEBUG: %s=%016lx%016lx", name, high, low);
+}
+
+__always_inline void print_full_connection_id(const char* name, const uint8_t* connection_id) {
+    uint64_t high, middle;
+    uint32_t low;
+    high = (uint64_t)(connection_id[0]) << 56 |
+           (uint64_t)(connection_id[1]) << 48 |
+           (uint64_t)(connection_id[2]) << 40 |
+           (uint64_t)(connection_id[3]) << 32 |
+           (uint64_t)(connection_id[4]) << 24 |
+           (uint64_t)(connection_id[5]) << 16 |
+           (uint64_t)(connection_id[6]) << 8 |
+           (uint64_t)(connection_id[7]);
+    middle = (uint64_t)(connection_id[8]) << 56 |
+             (uint64_t)(connection_id[9]) << 48 |
+             (uint64_t)(connection_id[10]) << 40 |
+             (uint64_t)(connection_id[11]) << 32 |
+             (uint64_t)(connection_id[12]) << 24 |
+             (uint64_t)(connection_id[13]) << 16 |
+             (uint64_t)(connection_id[14]) << 8 |
+             (uint64_t)(connection_id[15]);
+    low = ((uint32_t)(connection_id[16]) << 24) |
+          ((uint32_t)(connection_id[17]) << 16) |
+          ((uint32_t)(connection_id[18]) << 8) |
+          ((uint32_t)(connection_id[19]));
+    bpf_printk("DEBUG: %s=%016lx%016lx%08x",name, high, middle, low);
+}
 
 __always_inline int connection_id_decrypt(struct quiclb_connection_id* connection_id, uint8_t* round_keys, const char* context) {
     struct __crypto_ctx_value *v = crypto_ctx_value_lookup();
@@ -310,39 +371,45 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
     }
     // 20 byteの接続IDを16バイトに分割してQUIC-LBの接続IDを復号化する
     uint8_t* connection_id_bytes = (uint8_t*)connection_id;
+    print_full_connection_id("encrypted_conn_id", connection_id_bytes);
     uint8_t left[10],right[10],temporary[16];
     split_19(&left, &right, &connection_id_bytes[1]);
+    print_half("left_2", left);
+    print_half("right_2", right);
     struct bpf_dynptr temporary_dynptr;
     bpf_ringbuf_reserve_dynptr(&ringbuf, sizeof(temporary), 0, &temporary_dynptr);
-#define DO_AES_ECB()     bpf_dynptr_write(&temporary_dynptr, 0, &temporary, sizeof(temporary), 0); bpf_crypto_encrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL)
-    // length of right_2 == 10
-    // length of left_2 == 10
-    // temporary = truncate(aes_ecb(expand(19, 4, right_2)),10)
-    // left_1 = left_2 xor temporary
-    expand_result(&temporary,right /*right_2*/,4);
-    DO_AES_ECB();
-    xor_assign_10(left, temporary);
-    left[9] &= 0xf0; // clear the last 4 bits of left_1
-    // temporary = truncate(aes_ecb(expand(19, 3, left_1)),10)
-    // right_1 = right_2 xor temporary
-    expand_result(&temporary,left /*left_1*/,3);
-    DO_AES_ECB();
-    xor_assign_10(right, temporary);
-    right[0] &= 0x0f; // clear the first 4 bits of right_1
-    // temporary = truncate(aes_ecb(expand(19, 2, right_1)),10)
-    // left_0 = left_1 xor temporary
-    expand_result(&temporary, right /*right_1*/, 2);
-    DO_AES_ECB();
-    xor_assign_10(left, temporary);
-    left[9] &= 0xf0; // clear the last 4 bits of left_0
-    // temporary = truncate(aes_ecb(expand(19, 1, left_1)),10)
-    // right_0 = right_1 xor temporary
-    expand_result(&temporary, left /*left_0*/, 1);
-    DO_AES_ECB();
-    xor_assign_10(right, temporary);
-    right[0] &= 0x0f; // clear the first 4 bits of right_0
-    bpf_ringbuf_discard_dynptr(&temporary_dynptr,0);
+    int aes_result = 0;
+#define DO_AES_ECB()    \
+ bpf_dynptr_write(&temporary_dynptr, 0, &temporary, sizeof(temporary), 0);\
+ aes_result =  bpf_crypto_encrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL);\
+  if(aes_result < 0) { \
+    bpf_printk("%s: bpf_crypto_encrypt failed with %d", context, aes_result); \
+    bpf_ringbuf_discard_dynptr(&temporary_dynptr, 0); \
+    return aes_result; \
+ }\
+ bpf_dynptr_read(&temporary, sizeof(temporary), &temporary_dynptr, 0, 0);
+ 
+#define ROUND(n,input,output) \
+    expand_result(&temporary, input, n);\
+    print_key("pass_" #n "_key", temporary); \
+    DO_AES_ECB(); \
+    xor_assign_10(output, temporary);\
+    output[n%2 == 0? 9: 0] &= n%2 == 0? 0xf0 : 0x0f;
 
+    // right_2 -> left_1
+    ROUND(4,right,left);
+    print_half("left_1", left);
+    // left_1 -> right_1
+    ROUND(3,left,right);
+    print_half("right_1", right);
+    // right_1 -> left_0
+    ROUND(2,right,left);
+    print_half("left_0", left);
+    // left_0 -> right_0
+    ROUND(1,left,right);
+    print_half("right_0", right);
+
+    bpf_ringbuf_discard_dynptr(&temporary_dynptr,0);
     uint8_t connection_id_result[20];
     connection_id_result[0] = connection_id_bytes[0]; 
     connection_id_result[1] = left[0]; 
@@ -364,6 +431,7 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
     connection_id_result[17] = right[7];
     connection_id_result[18] = right[8];
     connection_id_result[19] = right[9];
+    print_full_connection_id("decrypted_conn_id", connection_id_result);
     struct quiclb_connection_id* result = (struct quiclb_connection_id*)connection_id_result;
     const int index = QUICLB_CONNECTION_ID_SERVER_ID(result->connection_id);
     bpf_printk("%s: decrypted connection_id index=%d", context, index);
@@ -379,7 +447,7 @@ struct stat_counters* c,
     const char* conn_id_bytes = (const char*)(conn_id);
     uint32_t key = conn_id_bytes[0];
     uint32_t dest_idx = (key % config->num_dests) + 1;
-    bpf_printk("long initial dest_idx=%d", dest_idx);
+    bpf_printk("%s (initial) dest_idx=%d",context, dest_idx);
     struct destination_entry* dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
     if (!dest) {
       bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
@@ -532,7 +600,7 @@ int lb_main(struct xdp_md* ctx) {
             ++c->quiclb_no_connection_id_total;
             EXIT(XDP_PASS);
           }
-          dest = handle_initial((struct quiclb_connection_id*)(quic+1) , config, c, "initial");
+          dest = handle_initial((struct quiclb_connection_id*)(quic+1) , config, c, "long");
           if (!dest) {
             ++c->quiclb_no_dest_entry_total;
             EXIT(XDP_DROP);

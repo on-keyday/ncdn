@@ -168,10 +168,12 @@ RetryPacketについて
   + 基本的にステートレスなはずだしそもそもserverが送りつけるので関係ない
 
 
-go build -o secrets/qclient tool/quicclient
-sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U secrets/qclient
+go build -o ./secrets/qclient ./tool/quicclient
+sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U ./secrets/qclient 192.0.2.10:8889 /mnt/ncdn/ca/certs/20250719194728/root_ca.crt
 
 ./gen_certs.sh 20250719194728 20250719194728 true
+
+192.0.2.10:8889
 
 現段階
 qclient-1155067 [002] ..s2. 1468482.933419: bpf_trace_printk: long initial dest_idx=1
@@ -224,3 +226,330 @@ qclient-1155064 [001] ..s2. 1468482.945869: bpf_trace_printk: handled QUIC packe
 qclient-1155064 [001] ..s2. 1468482.945870: bpf_trace_printk: dest ip=192.168.88.10
 qclient-1155064 [001] ..s2. 1468482.945872: bpf_trace_printk: dest mac=b6:cc:0d
 qclient-1155064 [001] ..s2. 1468482.945873: bpf_trace_printk:          3f:33:25
+
+
+
+DEBUG: round 1: input=a44aa0392f0c0f516a1d output=03e9f7a90de9fd3d8336
+DEBUG: round 2: input=29dfa415274a37fa6452 output=a44aa0392f0c0f516a1d
+DEBUG: round 3: input=ff0eb3002a2c69c95d43 output=29dfa415274a37fa6452
+DEBUG: round 4: input=5a3b6a7d8b85d2c57a3b output=ff0eb3002a2c69c95d43
+DEBUG: round 1: input=c7e70d1d1e0d4e54049d output=07e915ac44dfe2474ec0
+DEBUG: round 2: input=433c9c1eafba2f110c39 output=c7e70d1d1e0d4e54049d
+DEBUG: round 3: input=0bb3a9e386f4fd6ec83a output=433c9c1eafba2f110c39
+DEBUG: round 4: input=d183a3733face973fc45 output=0bb3a9e386f4fd6ec83a
+DEBUG: round 1: input=85dfccb08741bbd7adf6 output=096df9abfc6d504cd3c2
+DEBUG: round 2: input=a38912f25b08f80fdbfe output=85dfccb08741bbd7adf6
+DEBUG: round 3: input=9450472aa1d170cf9688 output=a38912f25b08f80fdbfe
+DEBUG: round 4: input=779620dd74351c1b9ab2 output=9450472aa1d170cf9688
+DEBUG: round 1: input=271beffca3c1cb461582 output=051efc3c879e0a09f8de
+DEBUG: round 2: input=b3631fc02aaf1e7aff1a output=271beffca3c1cb461582
+DEBUG: round 3: input=4e79428b085e287b383e output=b3631fc02aaf1e7aff1a
+DEBUG: round 4: input=30094ec763606bb58686 output=4e79428b085e287b383e
+DEBUG: round 1: input=01ca73b8a492cb57a203 output=5cff761ace9d667a3b15
+DEBUG: round 2: input=5cff761ace9d667a3b15 output=8727f557283135d5cf3d
+DEBUG: round 3: input=8727f557283135d5cf3d output=87c0d9ca4116854a8c54
+DEBUG: round 4: input=87c0d9ca4116854a8c54 output=9e19d1e37dd01528fc63
+DEBUG: round 1: input=01860055d5ee20d45556 output=5010a449a6b20dd7fd56
+DEBUG: round 2: input=5010a449a6b20dd7fd56 output=bc2bce150f6b111a90d8
+DEBUG: round 3: input=bc2bce150f6b111a90d8 output=5927e90fa79c67f8ee6e
+DEBUG: round 4: input=5927e90fa79c67f8ee6e output=f2ac17a29b63f2fbe19b
+DEBUG: round 1: input=085b785026d117adf278 output=bc7ec61af9ddd93ec9e3
+DEBUG: round 2: input=bc7ec61af9ddd93ec9e3 output=00b7b4f8a9be878de4fd
+DEBUG: round 3: input=00b7b4f8a9be878de4fd output=6c6ca46d655cb54a0b22
+DEBUG: round 4: input=6c6ca46d655cb54a0b22 output=59a5108b93a372c05100
+DEBUG: round 1: input=0388d6613533d99afcbf output=44e37ba1b6abe2b8f899
+DEBUG: round 2: input=44e37ba1b6abe2b8f899 output=f895cb28d0adff8513f5
+DEBUG: round 3: input=f895cb28d0adff8513f5 output=529749112f6a39d4d1bf
+DEBUG: round 4: input=529749112f6a39d4d1bf output=543466712f01412263ec
+DEBUG: round 1: input=03d9b8360681c2089af2 output=56e8d0a82e090e91f778
+DEBUG: round 2: input=56e8d0a82e090e91f778 output=4a7994328104e68d1e8f
+DEBUG: round 3: input=4a7994328104e68d1e8f output=733b2e9655a073fcee30
+DEBUG: round 4: input=733b2e9655a073fcee30 output=223c056174417659e264
+DEBUG: round 1: input=0b95caa4febd0aaa83fd output=48fe78d84c9784186ce2
+DEBUG: round 2: input=48fe78d84c9784186ce2 output=67dac6132e44d9387d81
+DEBUG: round 3: input=67dac6132e44d9387d81 output=8187c17990c12774b9d3
+DEBUG: round 4: input=8187c17990c12774b9d3 output=32ae4b5d9cc1b90a9dde
+DEBUG: round 1: input=02a1ade4dfe76f55fb10 output=a17b19ea53f2f09038ea
+DEBUG: round 2: input=a17b19ea53f2f09038ea output=e36e25b8d0f241e073d6
+DEBUG: round 3: input=e36e25b8d0f241e073d6 output=1761b1dc95b9a93881cc
+DEBUG: round 4: input=1761b1dc95b9a93881cc output=5e764e78ce7e3ddfa971
+DEBUG: round 1: input=062e5a3ca3143bdf50ac output=62fa04afe6d545183d4a
+DEBUG: round 2: input=62fa04afe6d545183d4a output=a8092153028cf36fa8b9
+DEBUG: round 3: input=a8092153028cf36fa8b9 output=c44713333566bc2c79e5
+DEBUG: round 4: input=c44713333566bc2c79e5 output=f6b9935966e9b27176d2
+DEBUG: round 1: input=008e62d9bc0de17bf5f6 output=a4f3124421f3aa6a6aeb
+DEBUG: round 2: input=a4f3124421f3aa6a6aeb output=e11ba377fe7257e8956a
+DEBUG: round 3: input=e11ba377fe7257e8956a output=1cb0401b86c48fde8e3a
+DEBUG: round 4: input=1cb0401b86c48fde8e3a output=c537eabdea3e1b8ea9b4
+DEBUG: round 1: input=01e16b835a552684c48f output=42a758cc21f00a3d7b3e
+DEBUG: round 2: input=42a758cc21f00a3d7b3e output=2cb4f014644169c21367
+DEBUG: round 3: input=2cb4f014644169c21367 output=efc206258e4e8552b408
+DEBUG: round 4: input=efc206258e4e8552b408 output=4ed0fe25081fa6b56809
+DEBUG: round 1: input=09d710d78f37722b419a output=a3a7d0bccc80e94c6021
+DEBUG: round 2: input=a3a7d0bccc80e94c6021 output=7bcbed8ca195685a04c6
+DEBUG: round 3: input=7bcbed8ca195685a04c6 output=1298782f4df57d563522
+DEBUG: round 4: input=1298782f4df57d563522 output=6e445c57caa0e89e63c9
+DEBUG: round 1: input=07b09804e9665146453c output=0458c2f76e3d2e4ec191
+DEBUG: round 2: input=0458c2f76e3d2e4ec191 output=968b9bc49c3b9194ad88
+DEBUG: round 3: input=968b9bc49c3b9194ad88 output=7bf1ce7d47213ad6418a
+DEBUG: round 4: input=7bf1ce7d47213ad6418a output=1ec17da35848747a39ca
+DEBUG: round 1: input=0533ec996b44290a7403 output=0cf77add30d502d721e2
+DEBUG: round 2: input=0cf77add30d502d721e2 output=2047c2703b672114d925
+DEBUG: round 3: input=2047c2703b672114d925 output=1647ee05556f8fadfcde
+DEBUG: round 4: input=1647ee05556f8fadfcde output=3a83427ad4bd2c952994
+DEBUG: round 1: input=0f0ae6be6ffa06d9bc32 output=7a3f56b8427202ae12f5
+DEBUG: round 2: input=7a3f56b8427202ae12f5 output=f96e5e508884a3403edb
+DEBUG: round 3: input=f96e5e508884a3403edb output=ae1ced796fe215354b79
+DEBUG: round 4: input=ae1ced796fe215354b79 output=9e961c24356634fe7c0d
+DEBUG: round 1: input=0afc351227062b116749 output=317f5173531f30125ba8
+DEBUG: round 2: input=317f5173531f30125ba8 output=93f6df5a627af932476c
+DEBUG: round 3: input=93f6df5a627af932476c output=8553f8e1d4996e8e97f0
+DEBUG: round 4: input=8553f8e1d4996e8e97f0 output=86313cbd4f7249866e80
+DEBUG: round 1: input=05421d0b75c31ebb4d33 output=290bb630f43e49b25813
+DEBUG: round 2: input=290bb630f43e49b25813 output=64c459e2cbcd11803489
+DEBUG: round 3: input=64c459e2cbcd11803489 output=d42fb560dfa5ce3e8fe4
+DEBUG: round 4: input=d42fb560dfa5ce3e8fe4 output=a6db68ba93c12ebf020d
+DEBUG: round 1: input=0a6cde4083592508a312 output=34025c4778719d65a497
+DEBUG: round 2: input=34025c4778719d65a497 output=8b07b67adc9f86f0cb9a
+DEBUG: round 3: input=8b07b67adc9f86f0cb9a output=81e9e776b11d70070d48
+DEBUG: round 4: input=81e9e776b11d70070d48 output=3d805b9eb09d0974efbd
+
+
+
+         qclient-4487    [001] ..s2.  4951.510216: bpf_trace_printk: DEBUG: left_2=1298782f4df57d563520
+         qclient-4487    [001] ..s2.  4951.510231: bpf_trace_printk: DEBUG: right_2=0e6e445c57caa0e89e63
+         qclient-4487    [001] ..s2.  4951.510260: bpf_trace_printk: DEBUG: left_1=1cf63c731a3fddbeab40
+         qclient-4487    [001] ..s2.  4951.510262: bpf_trace_printk: DEBUG: right_1=0298782f4df57d563523
+         qclient-4487    [001] ..s2.  4951.510263: bpf_trace_printk: DEBUG: left_0=1e6e445c57caa0e89e60
+         qclient-4487    [001] ..s2.  4951.510264: bpf_trace_printk: DEBUG: right_0=0cf63c731a3fddbeab43
+         qclient-4487    [001] ..s2.  4951.510266: bpf_trace_printk: long: decrypted connection_id index=1
+         qclient-4487    [001] ..s2.  4951.510267: bpf_trace_printk: long conn_id dest_idx=1
+         qclient-4487    [001] ..s2.  4951.510268: bpf_trace_printk: found dest entry for 1
+         qclient-4487    [001] ..s2.  4951.510272: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=50464 form=long
+         qclient-4487    [001] ..s2.  4951.510274: bpf_trace_printk: dest ip=192.168.88.10
+         qclient-4487    [001] ..s2.  4951.510275: bpf_trace_printk: dest mac=3a:04:5b
+         qclient-4487    [001] ..s2.  4951.510276: bpf_trace_printk:          3d:a5:45
+         qclient-4490    [000] ..s2.  4952.314495: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4490    [000] .Ns2.  4952.314513: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=long
+         qclient-4490    [000] .Ns2.  4952.314514: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4490    [000] .Ns2.  4952.314516: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4490    [000] .Ns2.  4952.314517: bpf_trace_printk:          34:17:78
+         qclient-4490    [001] ..s2.  4952.315916: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4490    [001] ..s2.  4952.315929: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=long
+         qclient-4490    [001] ..s2.  4952.315930: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4490    [001] ..s2.  4952.315930: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4490    [001] ..s2.  4952.315931: bpf_trace_printk:          34:17:78
+           <...>-4493    [001] ..s2.  4952.319547: bpf_trace_printk: DEBUG: left_2=ae1ced796fe215354b70
+           <...>-4493    [001] ..s2.  4952.319553: bpf_trace_printk: DEBUG: right_2=0e9e961c24356634fe7c
+           <...>-4493    [001] ..s2.  4952.319560: bpf_trace_printk: DEBUG: left_1=a0827b654bd77301b500
+           <...>-4493    [001] ..s2.  4952.319560: bpf_trace_printk: DEBUG: right_1=0e1ced796fe215354b7c
+           <...>-4493    [001] ..s2.  4952.319561: bpf_trace_printk: DEBUG: left_0=ae9e961c24356634fe70
+           <...>-4493    [001] ..s2.  4952.319562: bpf_trace_printk: DEBUG: right_0=00827b654bd77301b50c
+           <...>-4493    [001] ..s2.  4952.319563: bpf_trace_printk: long: decrypted connection_id index=10
+           <...>-4493    [001] ..s2.  4952.319566: bpf_trace_printk: long conn_id dest_idx=10
+           <...>-4493    [001] ..s2.  4952.319567: bpf_trace_printk: idx 10 >= num_dests 2
+           <...>-4493    [001] ..s2.  4952.319567: bpf_trace_printk: long (initial) dest_idx=2
+           <...>-4493    [001] ..s2.  4952.319571: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=long
+           <...>-4493    [001] ..s2.  4952.319571: bpf_trace_printk: dest ip=192.168.88.11
+           <...>-4493    [001] ..s2.  4952.319572: bpf_trace_printk: dest mac=9e:3e:11
+           <...>-4493    [001] ..s2.  4952.319573: bpf_trace_printk:          34:17:78
+         qclient-4493    [001] ..s2.  4952.320266: bpf_trace_printk: DEBUG: left_2=ae1ced796fe215354b70
+         qclient-4493    [001] ..s2.  4952.320280: bpf_trace_printk: DEBUG: right_2=0e9e961c24356634fe7c
+         qclient-4493    [001] ..s2.  4952.320285: bpf_trace_printk: DEBUG: left_1=a0827b654bd77301b500
+         qclient-4493    [001] ..s2.  4952.320286: bpf_trace_printk: DEBUG: right_1=0e1ced796fe215354b7c
+         qclient-4493    [001] ..s2.  4952.320287: bpf_trace_printk: DEBUG: left_0=ae9e961c24356634fe70
+         qclient-4493    [001] ..s2.  4952.320289: bpf_trace_printk: DEBUG: right_0=00827b654bd77301b50c
+         qclient-4493    [001] ..s2.  4952.320290: bpf_trace_printk: long: decrypted connection_id index=10
+         qclient-4493    [001] ..s2.  4952.320291: bpf_trace_printk: long conn_id dest_idx=10
+         qclient-4493    [001] ..s2.  4952.320292: bpf_trace_printk: idx 10 >= num_dests 2
+         qclient-4493    [001] ..s2.  4952.320293: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4493    [001] ..s2.  4952.320295: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=long
+         qclient-4493    [001] ..s2.  4952.320297: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4493    [001] ..s2.  4952.320297: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4493    [001] ..s2.  4952.320298: bpf_trace_printk:          34:17:78
+         qclient-4494    [000] ..s2.  4952.325199: bpf_trace_printk: DEBUG: left_2=8553f8e1d4996e8e97f0
+         qclient-4494    [000] .Ns2.  4952.325209: bpf_trace_printk: DEBUG: right_2=0686313cbd4f7249866e
+         qclient-4494    [000] .Ns2.  4952.325214: bpf_trace_printk: DEBUG: left_1=83d5c9dd69d61cc71190
+         qclient-4494    [000] .Ns2.  4952.325215: bpf_trace_printk: DEBUG: right_1=0553f8e1d4996e8e97fe
+         qclient-4494    [000] .Ns2.  4952.325216: bpf_trace_printk: DEBUG: left_0=8686313cbd4f72498660
+         qclient-4494    [000] .Ns2.  4952.325216: bpf_trace_printk: DEBUG: right_0=03d5c9dd69d61cc7119e
+         qclient-4494    [000] .Ns2.  4952.325217: bpf_trace_printk: long: decrypted connection_id index=8
+         qclient-4494    [000] .Ns2.  4952.325218: bpf_trace_printk: long conn_id dest_idx=8
+         qclient-4494    [000] .Ns2.  4952.325218: bpf_trace_printk: idx 8 >= num_dests 2
+         qclient-4494    [000] .Ns2.  4952.325219: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4494    [000] .Ns2.  4952.325222: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=long
+         qclient-4494    [000] .Ns2.  4952.325222: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4494    [000] .Ns2.  4952.325223: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4494    [000] .Ns2.  4952.325223: bpf_trace_printk:          34:17:78
+         qclient-4494    [001] ..s2.  4952.325936: bpf_trace_printk: DEBUG: left_2=8553f8e1d4996e8e97f0
+         qclient-4494    [001] ..s2.  4952.325937: bpf_trace_printk: DEBUG: right_2=0686313cbd4f7249866e
+         qclient-4494    [001] ..s2.  4952.325941: bpf_trace_printk: DEBUG: left_1=83d5c9dd69d61cc71190
+         qclient-4494    [001] ..s2.  4952.325942: bpf_trace_printk: DEBUG: right_1=0553f8e1d4996e8e97fe
+         qclient-4494    [001] ..s2.  4952.325943: bpf_trace_printk: DEBUG: left_0=8686313cbd4f72498660
+         qclient-4494    [001] ..s2.  4952.325944: bpf_trace_printk: DEBUG: right_0=03d5c9dd69d61cc7119e
+         qclient-4494    [001] ..s2.  4952.325944: bpf_trace_printk: long: decrypted connection_id index=8
+         qclient-4494    [001] ..s2.  4952.325945: bpf_trace_printk: long conn_id dest_idx=8
+         qclient-4494    [001] ..s2.  4952.325945: bpf_trace_printk: idx 8 >= num_dests 2
+         qclient-4494    [001] ..s2.  4952.325946: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4494    [001] ..s2.  4952.325948: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=long
+         qclient-4494    [001] ..s2.  4952.325949: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4494    [001] ..s2.  4952.325949: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4494    [001] ..s2.  4952.325950: bpf_trace_printk:          34:17:78
+         qclient-4494    [001] ..s2.  4952.325997: bpf_trace_printk: DEBUG: left_2=8553f8e1d4996e8e97f0
+         qclient-4494    [001] ..s2.  4952.325998: bpf_trace_printk: DEBUG: right_2=0686313cbd4f7249866e
+         qclient-4494    [001] ..s2.  4952.326000: bpf_trace_printk: DEBUG: left_1=83d5c9dd69d61cc71190
+         qclient-4494    [001] ..s2.  4952.326000: bpf_trace_printk: DEBUG: right_1=0553f8e1d4996e8e97fe
+         qclient-4494    [001] ..s2.  4952.326001: bpf_trace_printk: DEBUG: left_0=8686313cbd4f72498660
+         qclient-4494    [001] ..s2.  4952.326002: bpf_trace_printk: DEBUG: right_0=03d5c9dd69d61cc7119e
+         qclient-4494    [001] ..s2.  4952.326002: bpf_trace_printk: long: decrypted connection_id index=8
+         qclient-4494    [001] ..s2.  4952.326003: bpf_trace_printk: long conn_id dest_idx=8
+         qclient-4494    [001] ..s2.  4952.326003: bpf_trace_printk: idx 8 >= num_dests 2
+         qclient-4494    [001] ..s2.  4952.326004: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4494    [001] ..s2.  4952.326005: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=long
+         qclient-4494    [001] ..s2.  4952.326005: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4494    [001] ..s2.  4952.326006: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4494    [001] ..s2.  4952.326006: bpf_trace_printk:          34:17:78
+         qclient-4494    [001] ..s2.  4952.326019: bpf_trace_printk: DEBUG: left_2=8553f8e1d4996e8e97f0
+         qclient-4494    [001] ..s2.  4952.326021: bpf_trace_printk: DEBUG: right_2=0686313cbd4f7249866e
+         qclient-4494    [001] ..s2.  4952.326022: bpf_trace_printk: DEBUG: left_1=83d5c9dd69d61cc71190
+         qclient-4494    [001] ..s2.  4952.326023: bpf_trace_printk: DEBUG: right_1=0553f8e1d4996e8e97fe
+         qclient-4494    [001] ..s2.  4952.326023: bpf_trace_printk: DEBUG: left_0=8686313cbd4f72498660
+         qclient-4494    [001] ..s2.  4952.326024: bpf_trace_printk: DEBUG: right_0=03d5c9dd69d61cc7119e
+         qclient-4494    [001] ..s2.  4952.326025: bpf_trace_printk: short: decrypted connection_id index=8
+         qclient-4494    [001] ..s2.  4952.326025: bpf_trace_printk: short conn_id dest_idx=8
+         qclient-4494    [001] ..s2.  4952.326026: bpf_trace_printk: idx 8 >= num_dests 2
+         qclient-4494    [001] ..s2.  4952.326026: bpf_trace_printk: short (initial) dest_idx=2
+         qclient-4494    [001] ..s2.  4952.326027: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=49154 form=short
+         qclient-4494    [001] ..s2.  4952.326028: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4494    [001] ..s2.  4952.326028: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4494    [001] ..s2.  4952.326028: bpf_trace_printk:          34:17:78
+
+    qclient-4147    [000] ..s2.  4331.507352: bpf_trace_printk: DEBUG: left_2=
+         qclient-4147    [000] ..s2.  4331.507358: bpf_trace_printk: DEBUG:  59:27:e9
+         qclient-4147    [000] ..s2.  4331.507359: bpf_trace_printk: DEBUG:  0f:a7:9c
+         qclient-4147    [000] ..s2.  4331.507359: bpf_trace_printk: DEBUG:  67:f8:ee
+         qclient-4147    [000] ..s2.  4331.507360: bpf_trace_printk: DEBUG:  60
+         qclient-4147    [000] ..s2.  4331.507360: bpf_trace_printk: DEBUG: right_2=
+         qclient-4147    [000] ..s2.  4331.507360: bpf_trace_printk: DEBUG:  02:f2:ac
+         qclient-4147    [000] ..s2.  4331.507361: bpf_trace_printk: DEBUG:  17:a2:9b
+         qclient-4147    [000] ..s2.  4331.507361: bpf_trace_printk: DEBUG:  63:f2:fb
+         qclient-4147    [000] ..s2.  4331.507361: bpf_trace_printk: DEBUG:  e1
+         qclient-4147    [000] ..s2.  4331.507366: bpf_trace_printk: DEBUG: left_1=
+         qclient-4147    [000] ..s2.  4331.507366: bpf_trace_printk: DEBUG:  5b:d5:45
+         qclient-4147    [000] ..s2.  4331.507367: bpf_trace_printk: DEBUG:  18:05:07
+         qclient-4147    [000] ..s2.  4331.507367: bpf_trace_printk: DEBUG:  04:0a:15
+         qclient-4147    [000] ..s2.  4331.507367: bpf_trace_printk: DEBUG:  80
+         qclient-4147    [000] ..s2.  4331.507368: bpf_trace_printk: DEBUG: right_1=
+         qclient-4147    [000] ..s2.  4331.507368: bpf_trace_printk: DEBUG:  09:27:e9
+         qclient-4147    [000] ..s2.  4331.507368: bpf_trace_printk: DEBUG:  0f:a7:9c
+         qclient-4147    [000] ..s2.  4331.507369: bpf_trace_printk: DEBUG:  67:f8:ee
+         qclient-4147    [000] ..s2.  4331.507369: bpf_trace_printk: DEBUG:  61
+         qclient-4147    [000] ..s2.  4331.507369: bpf_trace_printk: DEBUG: left_0=
+         qclient-4147    [000] ..s2.  4331.507370: bpf_trace_printk: DEBUG:  52:f2:ac
+         qclient-4147    [000] ..s2.  4331.507370: bpf_trace_printk: DEBUG:  17:a2:9b
+         qclient-4147    [000] ..s2.  4331.507371: bpf_trace_printk: DEBUG:  63:f2:fb
+         qclient-4147    [000] ..s2.  4331.507371: bpf_trace_printk: DEBUG:  e0
+         qclient-4147    [000] ..s2.  4331.507371: bpf_trace_printk: DEBUG: right_0=
+         qclient-4147    [000] ..s2.  4331.507372: bpf_trace_printk: DEBUG:  0b:d5:45
+         qclient-4147    [000] ..s2.  4331.507372: bpf_trace_printk: DEBUG:  18:05:07
+         qclient-4147    [000] ..s2.  4331.507373: bpf_trace_printk: DEBUG:  04:0a:15
+         qclient-4147    [000] ..s2.  4331.507373: bpf_trace_printk: DEBUG:  81
+
+
+         qclient-4719    [001] ..s2.  5585.273633: bpf_trace_printk: DEBUG: left_2=f57a6d9633af057d95f0
+         qclient-4719    [001] ..s2.  5585.273635: bpf_trace_printk: DEBUG: right_2=0c9c192c4f4fc702bb45
+         qclient-4719    [001] ..s2.  5585.273638: bpf_trace_printk: DEBUG: left_1=f9e674ba7ce0c27f2eb0
+         qclient-4719    [001] ..s2.  5585.273639: bpf_trace_printk: DEBUG: right_1=057a6d9633af057d95f5
+         qclient-4719    [001] ..s2.  5585.273640: bpf_trace_printk: DEBUG: left_0=fc9c192c4f4fc702bb40
+         qclient-4719    [001] ..s2.  5585.273641: bpf_trace_printk: DEBUG: right_0=09e674ba7ce0c27f2eb5
+         qclient-4716    [000] ..s2.  5581.788495: bpf_trace_printk: DEBUG: left_2=f57a6d9633af057d95f0
+         qclient-4716    [000] ..s2.  5581.788510: bpf_trace_printk: DEBUG: right_2=0c9c192c4f4fc702bb45
+         qclient-4716    [000] ..s2.  5581.788519: bpf_trace_printk: DEBUG: left_1=f9e674ba7ce0c27f2eb0
+         qclient-4716    [000] ..s2.  5581.788520: bpf_trace_printk: DEBUG: right_1=057a6d9633af057d95f5
+         qclient-4716    [000] ..s2.  5581.788522: bpf_trace_printk: DEBUG: left_0=fc9c192c4f4fc702bb40
+         qclient-4716    [000] ..s2.  5581.788523: bpf_trace_printk: DEBUG: right_0=09e674ba7ce0c27f2eb5
+         qclient-4716    [000] ..s2.  5581.788525: bpf_trace_printk: long: decrypted connection_id index=15
+         qclient-4716    [000] ..s2.  5581.788526: bpf_trace_printk: long conn_id dest_idx=15
+         qclient-4716    [000] ..s2.  5581.788527: bpf_trace_printk: idx 15 >= num_dests 2
+         qclient-4716    [000] ..s2.  5581.788528: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4716    [000] ..s2.  5581.788534: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=44293 form=long
+         qclient-4716    [000] ..s2.  5581.788536: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4716    [000] ..s2.  5581.788537: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4716    [000] ..s2.  5581.788538: bpf_trace_printk:          34:17:78
+         qclient-4716    [000] ..s2.  5582.902851: bpf_trace_printk: DEBUG: left_2=f57a6d9633af057d95f0
+         qclient-4716    [000] .Ns2.  5582.902868: bpf_trace_printk: DEBUG: right_2=0c9c192c4f4fc702bb45
+         qclient-4716    [000] .Ns2.  5582.902880: bpf_trace_printk: DEBUG: left_1=f9e674ba7ce0c27f2eb0
+         qclient-4716    [000] .Ns2.  5582.902881: bpf_trace_printk: DEBUG: right_1=057a6d9633af057d95f5
+         qclient-4716    [000] .Ns2.  5582.902883: bpf_trace_printk: DEBUG: left_0=fc9c192c4f4fc702bb40
+         qclient-4716    [000] .Ns2.  5582.902884: bpf_trace_printk: DEBUG: right_0=09e674ba7ce0c27f2eb5
+         qclient-4716    [000] .Ns2.  5582.902886: bpf_trace_printk: long: decrypted connection_id index=15
+         qclient-4716    [000] .Ns2.  5582.902888: bpf_trace_printk: long conn_id dest_idx=15
+         qclient-4716    [000] .Ns2.  5582.902889: bpf_trace_printk: idx 15 >= num_dests 2
+         qclient-4716    [000] .Ns2.  5582.902890: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4716    [000] .Ns2.  5582.902895: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=44293 form=long
+         qclient-4716    [000] .Ns2.  5582.902897: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4716    [000] .Ns2.  5582.902898: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4716    [000] .Ns2.  5582.902899: bpf_trace_printk:          34:17:78
+         qclient-4716    [000] ..s2.  5582.903782: bpf_trace_printk: DEBUG: left_2=f57a6d9633af057d95f0
+         qclient-4716    [000] ..s2.  5582.903785: bpf_trace_printk: DEBUG: right_2=0c9c192c4f4fc702bb45
+         qclient-4716    [000] ..s2.  5582.903793: bpf_trace_printk: DEBUG: left_1=f9e674ba7ce0c27f2eb0
+         qclient-4716    [000] ..s2.  5582.903795: bpf_trace_printk: DEBUG: right_1=057a6d9633af057d95f5
+         qclient-4716    [000] ..s2.  5582.903796: bpf_trace_printk: DEBUG: left_0=fc9c192c4f4fc702bb40
+         qclient-4716    [000] ..s2.  5582.903797: bpf_trace_printk: DEBUG: right_0=09e674ba7ce0c27f2eb5
+         qclient-4716    [000] ..s2.  5582.903799: bpf_trace_printk: long: decrypted connection_id index=15
+         qclient-4716    [000] ..s2.  5582.903800: bpf_trace_printk: long conn_id dest_idx=15
+         qclient-4716    [000] ..s2.  5582.903801: bpf_trace_printk: idx 15 >= num_dests 2
+         qclient-4716    [000] ..s2.  5582.903802: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4716    [000] ..s2.  5582.903806: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=44293 form=long
+         qclient-4716    [000] ..s2.  5582.903807: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4716    [000] ..s2.  5582.903808: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4716    [000] ..s2.  5582.903809: bpf_trace_printk:          34:17:78
+         qclient-4719    [001] .Ns2.  5585.273492: bpf_trace_printk: DEBUG: left_2=f57a6d9633af057d95f0
+         qclient-4719    [001] .Ns2.  5585.273515: bpf_trace_printk: DEBUG: right_2=0c9c192c4f4fc702bb45
+         qclient-4719    [001] .Ns2.  5585.273525: bpf_trace_printk: DEBUG: left_1=f9e674ba7ce0c27f2eb0
+         qclient-4719    [001] .Ns2.  5585.273526: bpf_trace_printk: DEBUG: right_1=057a6d9633af057d95f5
+         qclient-4719    [001] .Ns2.  5585.273528: bpf_trace_printk: DEBUG: left_0=fc9c192c4f4fc702bb40
+         qclient-4719    [001] .Ns2.  5585.273529: bpf_trace_printk: DEBUG: right_0=09e674ba7ce0c27f2eb5
+         qclient-4719    [001] .Ns2.  5585.273532: bpf_trace_printk: long: decrypted connection_id index=15
+         qclient-4719    [001] .Ns2.  5585.273533: bpf_trace_printk: long conn_id dest_idx=15
+         qclient-4719    [001] .Ns2.  5585.273534: bpf_trace_printk: idx 15 >= num_dests 2
+         qclient-4719    [001] .Ns2.  5585.273535: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4719    [001] .Ns2.  5585.273539: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=44293 form=long
+         qclient-4719    [001] .Ns2.  5585.273541: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4719    [001] .Ns2.  5585.273542: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4719    [001] .Ns2.  5585.273543: bpf_trace_printk:          34:17:78
+         qclient-4719    [001] ..s2.  5585.273633: bpf_trace_printk: DEBUG: left_2=f57a6d9633af057d95f0
+         qclient-4719    [001] ..s2.  5585.273635: bpf_trace_printk: DEBUG: right_2=0c9c192c4f4fc702bb45
+         qclient-4719    [001] ..s2.  5585.273638: bpf_trace_printk: DEBUG: left_1=f9e674ba7ce0c27f2eb0
+         qclient-4719    [001] ..s2.  5585.273639: bpf_trace_printk: DEBUG: right_1=057a6d9633af057d95f5
+         qclient-4719    [001] ..s2.  5585.273640: bpf_trace_printk: DEBUG: left_0=fc9c192c4f4fc702bb40
+         qclient-4719    [001] ..s2.  5585.273641: bpf_trace_printk: DEBUG: right_0=09e674ba7ce0c27f2eb5
+         qclient-4719    [001] ..s2.  5585.273642: bpf_trace_printk: long: decrypted connection_id index=15
+         qclient-4719    [001] ..s2.  5585.273643: bpf_trace_printk: long conn_id dest_idx=15
+         qclient-4719    [001] ..s2.  5585.273644: bpf_trace_printk: idx 15 >= num_dests 2
+         qclient-4719    [001] ..s2.  5585.273645: bpf_trace_printk: long (initial) dest_idx=2
+         qclient-4719    [001] ..s2.  5585.273647: bpf_trace_printk: handled QUIC packet: ip=198.51.100.200 port=44293 form=long
+         qclient-4719    [001] ..s2.  5585.273648: bpf_trace_printk: dest ip=192.168.88.11
+         qclient-4719    [001] ..s2.  5585.273649: bpf_trace_printk: dest mac=9e:3e:11
+         qclient-4719    [001] ..s2.  5585.273650: bpf_trace_printk:          34:17:78
+
+DEBUG: Initial left: 0409aaa50341bd28e330, right: 0681020a6d1463c37a63
+DEBUG: round 1: right_0=0681020a6d1463c37a63 left_1=79864520a5709c26365c
+DEBUG: round 2: left_1=79864520a5709c26365c right_1=faaf48938650d2c9d3d4
+DEBUG: round 3: right_1=faaf48938650d2c9d3d4 left_2=168c927dcd92b0ebe1bf
+DEBUG: round 4:  left_2=168c927dcd92b0ebe1bf right_2=f40d6cb145fba74cf3a9
+DEBUG: Initial left: 03da1c56e89455cf1e40, right: 0163421f81f045b6c1ba
+DEBUG: round 1: right_0=0163421f81f045b6c1ba left_1=cb1abf7cb3bd1b1eec7c
+DEBUG: round 2: left_1=cb1abf7cb3bd1b1eec7c right_1=3465ec677818fa1885e6
+DEBUG: round 3: right_1=3465ec677818fa1885e6 left_2=f57a6d9633af057d95f9
+DEBUG: round 4:  left_2=f57a6d9633af057d95f9 right_2=9c192c4f4fc702bb45da
+DEBUG: Initial left: 01b942e86fc7d552a8d0, right: 0175ac5289496fb3c1d3
+DEBUG: round 1: right_0=0175ac5289496fb3c1d3 left_1=16d872da4918072facfd
+DEBUG: round 2: left_1=16d872da4918072facfd right_1=10a62bbeccc7ce4bee7b
+DEBUG: round 3: right_1=10a62bbeccc7ce4bee7b left_2=102efe09a65c8dec7b09
+DEBUG: round 4:  left_2=102efe09a65c8dec7b09 right_2=6a4881ac1e0a504268f5
+DEBUG: Initial left: 0691b8227dd4fbadcb40, right: 0b1bd4653412a7c5c7cf
+DEBUG: round 1: right_0=0b1bd4653412a7c5c7cf left_1=778d08860be9217e608b
+DEBUG: round 2: left_1=778d08860be9217e608b right_1=7390373a5b617f55f801
+DEBUG: round 3: right_1=7390373a5b617f55f801 left_2=316fa3f340484312da34
+DEBUG: round 4:  left_2=316fa3f340484312da34 right_2=e90c33cd4bd71bf0bca5

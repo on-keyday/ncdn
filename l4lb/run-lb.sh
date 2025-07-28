@@ -8,7 +8,7 @@ mkdir -p ${BIN_DIR}
 
 set -x
 (cd ${SRC_DIR}/l4lb/c && make)
-GO=/usr/local/go/bin/go
+GO=$(which go)
 $GO build -o ${BIN_DIR}/l4lb ${SRC_DIR}/l4lb/cmd
 set +x
 

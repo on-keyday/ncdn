@@ -24,6 +24,7 @@ var xdpcapHookPath = flag.String("xdpcapHookPath", "/sys/fs/bpf/xdpcap_hook", "P
 var xdpif = flag.String("interface", "net0", "Interface to attach lb prog to")
 var vip = flag.String("vip", "192.0.2.10", "VIP address to load balance")
 var deststr = flag.String("dests", "", "Comma separated list of destination IP and MAC addresses. (Example: 192.168.88.10;00:00:5e:00:53:01,)")
+var sharedKey = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation (TODO: move into secure place)")
 
 func parseDest(deststr string) ([]l4lbdrv.DestinationEntry, error) {
 	commas := strings.Split(deststr, ",")
@@ -107,6 +108,7 @@ func main() {
 		InterfaceName:  *xdpif,
 		VIP:            netip.MustParseAddr(*vip),
 		Dests:          dests,
+		SharedKey:      []byte(*sharedKey),
 	}
 	lb, err := l4lbdrv.New(cfg)
 	if err != nil {

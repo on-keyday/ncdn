@@ -24,6 +24,7 @@ func NewQUICLBConnIDGenerator(server_id uint8, sharedKey []byte) *QUICLBConnIDGe
 	if err != nil {
 		panic(fmt.Errorf("failed to derive AES key: %w", err))
 	}
+	fmt.Printf("DEBUG: Derived AES key: %x\n", aesKeyBytes)
 	block, err := aes.NewCipher(aesKeyBytes[:])
 	if err != nil {
 		panic(fmt.Errorf("failed to create AES cipher: %w", err))
@@ -98,6 +99,7 @@ func (g *QUICLBConnIDGenerator) GenerateConnectionID() (quic.ConnectionID, error
 	cid[0] &= 0x1f // 5 bits for random. 3 bit rotation id is currently 0
 	cid[1] &= 0x0f // 4 bits for server id
 	cid[1] |= g.server_id << 4
+	fmt.Printf("DEBUG: Initial CID: %x\n", cid)
 	// Encrypt the connection ID using AES
 	const connectionIDLen = 19 // exclude the first octet
 	var left [10]byte
@@ -106,25 +108,29 @@ func (g *QUICLBConnIDGenerator) GenerateConnectionID() (quic.ConnectionID, error
 	left[9] &= 0xf0            // clear the last 4 bits of left part
 	copy(right[:], cid[10:20]) // right part
 	right[0] &= 0x0f           // clear the first 4 bits of right part
-	round := func(output []byte, input []byte, pass uint8) {
+	round := func(input []byte, output []byte, pass uint8, name_in, name_out string) {
 		temporary := expand(connectionIDLen, pass, input[:])
+		fmt.Printf("DEBUG: pass_%d_key = %032x\n", pass, temporary)
 		g.sharedKey.Encrypt(temporary[:], temporary[:]) // Encrypt left part
 		subtle.XORBytes(output[:], output[:], truncate(temporary, 10))
-		if len(output)%2 != 0 {
-			if pass%2 == 0 {
-				output[len(output)-1] &= 0xf0
-			} else {
-				output[0] &= 0x0f
-			}
+		if pass%2 == 0 {
+			output[len(output)-1] &= 0xf0
+		} else {
+			output[0] &= 0x0f
 		}
+		fmt.Printf("DEBUG: round %d: %s=%020x %s=%020x\n", pass, name_in, input, name_out, output)
 	}
-	round(left[:], right[:], 1)
-	round(right[:], left[:], 2)
-	round(left[:], right[:], 3)
-	round(right[:], left[:], 4)
+	fmt.Printf("DEBUG: Initial left: %020x, right: %020x\n", left, right)
+	round(left[:], right[:], 1, "left_0", "right_1")
+	round(right[:], left[:], 2, "right_1", "left_1")
+	round(left[:], right[:], 3, "left_1", "right_2")
+	round(right[:], left[:], 4, "right_2", "left_2")
 	copy(cid[1:10], left[:9])              // 0-9
-	copy(cid[11:20], right[:9])            // 11-19
+	copy(cid[11:20], right[1:])            // 11-19
 	cid[10] = left[9]&0xf0 | right[0]&0x0f // 10
+
+	fmt.Printf("DEBUG: Final left: %020x, right: %020x\n", left, right)
+	fmt.Printf("DEBUG: Final CID: %040x\n", cid)
 
 	return quic.ConnectionIDFromBytes(cid[:]), nil
 }

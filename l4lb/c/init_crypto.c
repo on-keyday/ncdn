@@ -2,6 +2,7 @@
 #include <bpf/bpf_helpers.h>
 #include <errno.h>
 #include <bpf/bpf_tracing.h>
+#include <stdint.h>
 __always_inline int crypto_ctx_insert(bpf_crypto_ctx_t * __kptr ctx)
 {
 	struct __crypto_ctx_value local, *v;
@@ -56,6 +57,25 @@ int crypto_init(struct quiclb_shared_key *args){
 	};
 
 	__builtin_memcpy(params.key, args->key, 16);
+
+	uint64_t high,low;
+	high = (uint64_t)(args->key[0]) << 56 |
+		   (uint64_t)(args->key[1]) << 48 |
+		   (uint64_t)(args->key[2]) << 40 |
+		   (uint64_t)(args->key[3]) << 32 |
+		   (uint64_t)(args->key[4]) << 24 |
+		   (uint64_t)(args->key[5]) << 16 |
+		   (uint64_t)(args->key[6]) << 8 |
+		   (uint64_t)(args->key[7]);
+	low = ((uint64_t)(args->key[8]) << 56) |
+		  ((uint64_t)(args->key[9]) << 48) |
+		  ((uint64_t)(args->key[10]) << 40) |
+		  ((uint64_t)(args->key[11]) << 32) |
+		  ((uint64_t)(args->key[12]) << 24) |
+		  ((uint64_t)(args->key[13]) << 16) |
+		  ((uint64_t)(args->key[14]) << 8) |
+		  ((uint64_t)(args->key[15]));
+	bpf_printk("DEBUG: key=%016lx%016lx", high, low);
 
 
 	int err = 0;

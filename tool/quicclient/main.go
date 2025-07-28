@@ -13,8 +13,15 @@ import (
 )
 
 func main() {
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: quicclient <server address> <certificate path>")
+		return
+	}
 	fmt.Println("Starting QUIC LB client...")
-	rootCA := "/workspaces/ncdn/ca/certs/20250719194728/root_ca.crt"
+	serverAddress := os.Args[1]
+	fmt.Println("Server Address:", serverAddress)
+	rootCA := os.Args[2]
+	fmt.Println("Root CA Path:", rootCA)
 	rootCertPool := x509.NewCertPool()
 	rootCABytes, err := os.ReadFile(rootCA)
 	if err != nil {
@@ -36,7 +43,7 @@ func main() {
 
 	client.Timeout = 10 * time.Second
 
-	resp, err := client.Get("https://192.0.2.10:8889/statusz")
+	resp, err := client.Get("https://" + serverAddress + "/statusz")
 
 	if err != nil {
 		panic(err)
