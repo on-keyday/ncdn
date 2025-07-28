@@ -46,6 +46,7 @@ struct stat_counters { /* go:Add,String */
   uint64_t quiclb_no_connection_id_total; // HELP Number of QUIC-LB packets received without connection ID.
   uint64_t quiclb_no_dest_entry_total; // HELP Number of QUIC-LB packets received without destination entry.
   uint64_t quiclb_invalid_crypto_context_total; // HELP Number of QUIC-LB packets received with invalid crypto context.
+  uint64_t quiclb_encrypt_success_call_total; // HELP Number of QUIC-LB packets that called bpf_crypto_encrypt.
 } ALIGN8;
 // clang-format on
 
@@ -291,10 +292,6 @@ __always_inline struct __crypto_ctx_value *crypto_ctx_value_lookup(void)
     return bpf_map_lookup_elem(&__crypto_ctx_map, &key);
 }
 
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 4096);
-} ringbuf SEC(".maps");
 
 __always_inline void print_half(const char* name, uint8_t* data) {
     uint64_t high;
@@ -358,7 +355,9 @@ __always_inline void print_full_connection_id(const char* name, const uint8_t* c
     bpf_printk("DEBUG: %s=%016lx%016lx%08x",name, high, middle, low);
 }
 
-__always_inline int connection_id_decrypt(struct quiclb_connection_id* connection_id, uint8_t* round_keys, const char* context) {
+uint8_t temporary[16];
+
+__always_inline int connection_id_decrypt(struct quiclb_connection_id* connection_id, uint8_t* round_keys, const char* context,struct stat_counters* c) {
     struct __crypto_ctx_value *v = crypto_ctx_value_lookup();
     if (!v) {
         bpf_printk("%s: no crypto context found", context);
@@ -369,24 +368,29 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
         bpf_printk("%s: crypto context is NULL", context);
         return -ENOENT;
     }
+    bpf_printk("%s: crypto context found, ctx=%p", context, ctx);
     // 20 byteの接続IDを16バイトに分割してQUIC-LBの接続IDを復号化する
     uint8_t* connection_id_bytes = (uint8_t*)connection_id;
     print_full_connection_id("encrypted_conn_id", connection_id_bytes);
-    uint8_t left[10],right[10],temporary[16];
+    uint8_t left[10],right[10];
     split_19(&left, &right, &connection_id_bytes[1]);
     print_half("left_2", left);
     print_half("right_2", right);
     struct bpf_dynptr temporary_dynptr;
-    bpf_ringbuf_reserve_dynptr(&ringbuf, sizeof(temporary), 0, &temporary_dynptr);
+    int ret = bpf_dynptr_from_mem(&temporary,sizeof(temporary), 0, &temporary_dynptr);
+    if (ret < 0) {
+        bpf_printk("%s: bpf_dynptr_from_mem failed with %d", context, ret);
+        return ret;
+    }
     int aes_result = 0;
 #define DO_AES_ECB()    \
  bpf_dynptr_write(&temporary_dynptr, 0, &temporary, sizeof(temporary), 0);\
  aes_result =  bpf_crypto_encrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL);\
   if(aes_result < 0) { \
-    bpf_printk("%s: bpf_crypto_encrypt failed with %d", context, aes_result); \
-    bpf_ringbuf_discard_dynptr(&temporary_dynptr, 0); \
+    bpf_printk("%s: bpf_crypto_encrypt failed with %d", context, aes_result);  \
     return aes_result; \
  }\
+ c->quiclb_encrypt_success_call_total++;\
  bpf_dynptr_read(&temporary, sizeof(temporary), &temporary_dynptr, 0, 0);
  
 #define ROUND(n,input,output) \
@@ -409,7 +413,6 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
     ROUND(1,left,right);
     print_half("right_0", right);
 
-    bpf_ringbuf_discard_dynptr(&temporary_dynptr,0);
     uint8_t connection_id_result[20];
     connection_id_result[0] = connection_id_bytes[0]; 
     connection_id_result[1] = left[0]; 
@@ -465,7 +468,7 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
                                                const char* context
                                               ) {
 
-    int dest_idx_ = connection_id_decrypt(conn_id, NULL, context);
+    int dest_idx_ = connection_id_decrypt(conn_id, NULL, context,c);
     if(dest_idx_ < 0) {
       ++c->quiclb_invalid_crypto_context_total;
       bpf_printk("%s: connection_id_decrypt failed with %d", context, dest_idx_);
@@ -623,6 +626,7 @@ int lb_main(struct xdp_md* ctx) {
           }
         }
       } else {
+        ++c->quiclb_short_packet_total;
         // Short header
         if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
               sizeof(struct udphdr) + sizeof(struct quic_short_packet) + sizeof(struct quiclb_connection_id) > data_end) {

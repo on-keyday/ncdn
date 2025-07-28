@@ -12,7 +12,7 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:80
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:81
 )
 
 type StatCounters struct { // ../c/lb.c:30
@@ -32,6 +32,7 @@ type StatCounters struct { // ../c/lb.c:30
 	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:46
 	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:47
 	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:48
+	QuiclbEncryptSuccessCallTotal   uint64 // ../c/lb.c:49
 }
 
 func StatCountersAssertLayout(s *DWARFStruct) error {
@@ -128,6 +129,11 @@ func StatCountersAssertLayout(s *DWARFStruct) error {
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go QuiclbInvalidCryptoContextTotal: %d, dwarf quiclb_invalid_crypto_context_total: %d", goff, doff)
 	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbEncryptSuccessCallTotal)
+	doff = fs["quiclb_encrypt_success_call_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbEncryptSuccessCallTotal: %d, dwarf quiclb_encrypt_success_call_total: %d", goff, doff)
+	}
 
 	return nil
 }
@@ -149,6 +155,7 @@ func (c *StatCounters) Add(other *StatCounters) {
 	c.QuiclbNoConnectionIdTotal += other.QuiclbNoConnectionIdTotal
 	c.QuiclbNoDestEntryTotal += other.QuiclbNoDestEntryTotal
 	c.QuiclbInvalidCryptoContextTotal += other.QuiclbInvalidCryptoContextTotal
+	c.QuiclbEncryptSuccessCallTotal += other.QuiclbEncryptSuccessCallTotal
 }
 
 func (c *StatCounters) String() string {
@@ -202,6 +209,9 @@ func (c *StatCounters) String() string {
 	if c.QuiclbInvalidCryptoContextTotal != 0 {
 		buf.WriteString(fmt.Sprintf("QuiclbInvalidCryptoContextTotal=%d, ", c.QuiclbInvalidCryptoContextTotal))
 	}
+	if c.QuiclbEncryptSuccessCallTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbEncryptSuccessCallTotal=%d, ", c.QuiclbEncryptSuccessCallTotal))
+	}
 	if strings.HasSuffix(buf.String(), ", ") {
 		buf.Truncate(buf.Len() - 2)
 	}
@@ -209,9 +219,9 @@ func (c *StatCounters) String() string {
 	return buf.String()
 }
 
-type LbConfig struct { // ../c/lb.c:61
-	VipAddress uint32 // ../c/lb.c:62
-	NumDests   uint32 // ../c/lb.c:63
+type LbConfig struct { // ../c/lb.c:62
+	VipAddress uint32 // ../c/lb.c:63
+	NumDests   uint32 // ../c/lb.c:64
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -256,8 +266,8 @@ func LbAssertLayout(m map[string]*DWARFStruct) error {
 
 const ()
 
-type QuiclbSharedKey struct { // ../c/init_crypto.c:37
-	Key [16]uint8 // ../c/init_crypto.c:38
+type QuiclbSharedKey struct { // ../c/init_crypto.c:38
+	Key [16]uint8 // ../c/init_crypto.c:39
 }
 
 func QuiclbSharedKeyAssertLayout(s *DWARFStruct) error {
