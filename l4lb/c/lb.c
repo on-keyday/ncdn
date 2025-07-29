@@ -47,6 +47,7 @@ struct stat_counters { /* go:Add,String */
   uint64_t quiclb_no_dest_entry_total; // HELP Number of QUIC-LB packets received without destination entry.
   uint64_t quiclb_invalid_crypto_context_total; // HELP Number of QUIC-LB packets received with invalid crypto context.
   uint64_t quiclb_encrypt_success_call_total; // HELP Number of QUIC-LB packets that called bpf_crypto_encrypt.
+  uint64_t quiclb_decrypt_success_call_total; // HELP Number of QUIC-LB packets that called bpf_crypto_decrypt.
 } ALIGN8;
 // clang-format on
 
@@ -233,6 +234,20 @@ __always_inline void aes128_decrypt(uint8_t state[16], uint8_t* round_keys) {
 
 
 */
+
+__always_inline void expand(uint8_t(*out)[16],uint8_t* input, uint8_t full_len,uint8_t pass) {
+  const int half_len = (full_len >> 1) + (full_len & 1);
+  for(int i = 0; i < half_len; i++) {
+    (*out)[i] = input[i];
+  }
+  for(int i = half_len; i < 16; i++) {
+    (*out)[i] = 0;
+  }
+  (*out)[14] = full_len; // length
+  (*out)[15] = pass;
+}
+
+/*
 __always_inline void expand_result(uint8_t(*out)[16],uint8_t input_10[10],uint8_t pass){
    (*out)[0] = input_10[0];
    (*out)[1] = input_10[1];
@@ -251,8 +266,42 @@ __always_inline void expand_result(uint8_t(*out)[16],uint8_t input_10[10],uint8_
    (*out)[14] = 19; // length
    (*out)[15] = pass;
 }
+*/
 
-__always_inline void split_19(uint8_t(*left)[10],uint8_t(*right)[10],uint8_t input19[19]) {
+__always_inline int split(uint8_t* left,uint8_t* right,const uint8_t* input,uint8_t full_len) {
+    if(full_len < 5 || full_len > 19) {
+      return -EINVAL;
+    }
+    const uint8_t half_len = (full_len >> 1) + (full_len & 1);
+    const uint8_t right_start = full_len - half_len;
+    for (int i = 0; i < half_len; i++) {
+        left[i] = input[i];
+    }
+    for (int i = 0; i < half_len; i++) {
+        right[i] = input[i + right_start];
+    }
+    if(full_len & 1) {
+        left[half_len - 1] &= 0xf0;
+        right[0] &= 0x0f;
+    }
+    return 0;
+}
+
+__always_inline void concat(uint8_t* output, const uint8_t* left, const uint8_t* right,uint8_t full_len) {
+    const int half_len = (full_len >> 1) + (full_len & 1);
+    const int right_start = full_len - half_len;
+    for (int i = 0; i < half_len; i++) {
+        output[i] = left[i];
+    }
+    for (int i = 0; i < half_len; i++) {
+        output[i + right_start] = right[i];
+    }
+    if(full_len & 1) {
+        output[half_len - 1] = (left[half_len - 1] & 0xf0) | (right[0] & 0x0f);
+    }
+}
+
+__always_inline void split_19(uint8_t(*left)[10],uint8_t(*right)[10],const uint8_t* input19) {
     (*left)[0] = input19[0];
     (*left)[1] = input19[1];
     (*left)[2] = input19[2];
@@ -276,8 +325,8 @@ __always_inline void split_19(uint8_t(*left)[10],uint8_t(*right)[10],uint8_t inp
     (*right)[9] = input19[18];
 }
 
-__always_inline void xor_assign_10(uint8_t* out, uint8_t* in) {
-    for (int i = 0; i < 10; i++) {
+__always_inline void xor_assign(uint8_t* out, uint8_t* in,uint8_t len) {
+    for (int i = 0; i < len; i++) {
         out[i] ^= in[i];
     }
 }
@@ -357,7 +406,12 @@ __always_inline void print_full_connection_id(const char* name, const uint8_t* c
 
 uint8_t temporary[16];
 
-__always_inline int connection_id_decrypt(struct quiclb_connection_id* connection_id, uint8_t* round_keys, const char* context,struct stat_counters* c) {
+// output length should be same as input length
+__always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connection_id_bytes,uint8_t input_len, const char* context,struct stat_counters* c) {
+    if(input_len == 0 || input_len > 20) {
+        bpf_printk("%s: input_len %d > 20, invalid for current implementation", context, input_len);
+        return -EINVAL;
+    }
     struct __crypto_ctx_value *v = crypto_ctx_value_lookup();
     if (!v) {
         bpf_printk("%s: no crypto context found", context);
@@ -369,12 +423,7 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
         return -ENOENT;
     }
     bpf_printk("%s: crypto context found, ctx=%p", context, ctx);
-    uint8_t* connection_id_bytes = (uint8_t*)connection_id;
     print_full_connection_id("encrypted_conn_id", connection_id_bytes);
-    uint8_t left[10],right[10];
-    split_19(&left, &right, &connection_id_bytes[1]);
-    print_half("left_2", left);
-    print_half("right_2", right);
     struct bpf_dynptr temporary_dynptr;
     int ret = bpf_dynptr_from_mem(&temporary,sizeof(temporary), 0, &temporary_dynptr);
     if (ret < 0) {
@@ -382,22 +431,47 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
         return ret;
     }
     int aes_result = 0;
-#define DO_AES_ECB()    \
- /*bpf_dynptr_write(&temporary_dynptr, 0, &temporary, sizeof(temporary), 0);*/\
- aes_result =  bpf_crypto_encrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL);\
+  #define CHECK_AES_RESULT()    \
   if(aes_result < 0) { \
     bpf_printk("%s: bpf_crypto_encrypt failed with %d", context, aes_result);  \
     return aes_result; \
- }\
- c->quiclb_encrypt_success_call_total++;\
- /*bpf_dynptr_read(&temporary, sizeof(temporary), &temporary_dynptr, 0, 0);*/
- 
+  }
+#define DO_AES_ECB()    \
+ aes_result =  bpf_crypto_encrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL);\
+  CHECK_AES_RESULT();\
+ c->quiclb_encrypt_success_call_total++;
+
+    const int full_len = input_len - 1;
+    // see 4.4.1.  Special Case: Single Pass Encryption
+    if(full_len == 16) { // special case for 16 byte connection ID see 
+      bpf_printk("%s: full_len is 16, using direct encryption", context);
+      __builtin_memcpy(temporary, &connection_id_bytes[1], 16);
+      aes_result = bpf_crypto_decrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL);
+      CHECK_AES_RESULT();
+      c->quiclb_decrypt_success_call_total++;
+      output[0] = connection_id_bytes[0]; // first byte is not encrypted
+      __builtin_memcpy(&output[1], temporary, 16);
+      print_full_connection_id("decrypted_conn_id", output);
+      return 0;
+    }
+
+    // see 4.4.2.  General Case: Four-Pass Encryption
+    const int input_is_odd = full_len & 1;
+    const int half_len = (full_len >> 1) + input_is_odd;
+    uint8_t left[10],right[10];
+    int err =  split(left, right, &connection_id_bytes[1],full_len);
+    if(err < 0) {
+        bpf_printk("%s: split failed with %d", context, err);
+        return err;
+    }
+    print_half("left_2", left);
+    print_half("right_2", right);
 #define ROUND(n,input,output) \
-    expand_result(&temporary, input, n);\
+    expand(&temporary, input, full_len , n);\
     print_key("pass_" #n "_key", temporary); \
     DO_AES_ECB(); \
-    xor_assign_10(output, temporary);\
-    output[n%2 == 0? 9: 0] &= n%2 == 0? 0xf0 : 0x0f;
+    xor_assign(output, temporary, half_len);\
+    if(input_is_odd) { output[n%2 == 0? half_len - 1: 0] &= n%2 == 0? 0xf0 : 0x0f; }
 
     // right_2 -> left_1
     ROUND(4,right,left);
@@ -412,32 +486,10 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
     ROUND(1,left,right);
     print_half("right_0", right);
 
-    uint8_t connection_id_result[20];
-    connection_id_result[0] = connection_id_bytes[0]; 
-    connection_id_result[1] = left[0]; 
-    connection_id_result[2] = left[1];
-    connection_id_result[3] = left[2];
-    connection_id_result[4] = left[3];
-    connection_id_result[5] = left[4];
-    connection_id_result[6] = left[5];
-    connection_id_result[7] = left[6];
-    connection_id_result[8] = left[7];
-    connection_id_result[9] = left[8];
-    connection_id_result[10] = (left[9] & 0xf0) | (right[0] & 0x0f);
-    connection_id_result[11] = right[1];
-    connection_id_result[12] = right[2];
-    connection_id_result[13] = right[3];
-    connection_id_result[14] = right[4];
-    connection_id_result[15] = right[5];
-    connection_id_result[16] = right[6];
-    connection_id_result[17] = right[7];
-    connection_id_result[18] = right[8];
-    connection_id_result[19] = right[9];
-    print_full_connection_id("decrypted_conn_id", connection_id_result);
-    struct quiclb_connection_id* result = (struct quiclb_connection_id*)connection_id_result;
-    const int index = QUICLB_CONNECTION_ID_SERVER_ID(result->connection_id);
-    bpf_printk("%s: decrypted connection_id index=%d", context, index);
-    return index; // 0-15
+    output[0] = connection_id_bytes[0]; // first byte is not encrypted
+    concat(&output[1], left, right, full_len);
+    print_full_connection_id("decrypted_conn_id", output);
+    return 0;
 }
 
 
@@ -466,13 +518,14 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
                                                struct stat_counters* c,
                                                const char* context
                                               ) {
-
-    int dest_idx_ = connection_id_decrypt(conn_id, NULL, context,c);
-    if(dest_idx_ < 0) {
+    uint8_t output[QUICLB_CONNECTION_ID_SIZE];
+    int err = connection_id_decrypt(output, (const uint8_t*)conn_id,20, context,c);
+    if(err < 0) {
       ++c->quiclb_invalid_crypto_context_total;
-      bpf_printk("%s: connection_id_decrypt failed with %d", context, dest_idx_);
+      bpf_printk("%s: connection_id_decrypt failed with %d", context, err);
       return NULL;
     }
+    const int dest_idx_ = QUICLB_CONNECTION_ID_SERVER_ID(((struct quiclb_connection_id*)(output))->connection_id);
     const int dest_idx = dest_idx_ + 1; // dest_idx is 1-based index
     bpf_printk("%s conn_id dest_idx=%d", context, dest_idx);
     if(dest_idx > config->num_dests) {
