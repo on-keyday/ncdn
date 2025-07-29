@@ -12,28 +12,28 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:82
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:83
 )
 
-type StatCounters struct { // ../c/lb.c:30
-	RxPacketTotal                   uint64 // ../c/lb.c:31
-	RxTotalSize                     uint64 // ../c/lb.c:32
-	TooShortPacketTotal             uint64 // ../c/lb.c:34
-	NonIpv4PacketTotal              uint64 // ../c/lb.c:35
-	IpOptionPacketTotal             uint64 // ../c/lb.c:36
-	NonSupportedProtoPacketTotal    uint64 // ../c/lb.c:37
-	NoVipMatchTotal                 uint64 // ../c/lb.c:38
-	FailedAdjustHeadTotal           uint64 // ../c/lb.c:39
-	FailedAdjustTailTotal           uint64 // ../c/lb.c:40
-	QuiclbShortPacketTotal          uint64 // ../c/lb.c:42
-	QuiclbLongPacketTotal           uint64 // ../c/lb.c:43
-	QuiclbInitialRoutingPacketTotal uint64 // ../c/lb.c:44
-	QuiclbTooShortLongPacketTotal   uint64 // ../c/lb.c:45
-	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:46
-	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:47
-	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:48
-	QuiclbEncryptSuccessCallTotal   uint64 // ../c/lb.c:49
-	QuiclbDecryptSuccessCallTotal   uint64 // ../c/lb.c:50
+type StatCounters struct { // ../c/lb.c:31
+	RxPacketTotal                   uint64 // ../c/lb.c:32
+	RxTotalSize                     uint64 // ../c/lb.c:33
+	TooShortPacketTotal             uint64 // ../c/lb.c:35
+	NonIpv4PacketTotal              uint64 // ../c/lb.c:36
+	IpOptionPacketTotal             uint64 // ../c/lb.c:37
+	NonSupportedProtoPacketTotal    uint64 // ../c/lb.c:38
+	NoVipMatchTotal                 uint64 // ../c/lb.c:39
+	FailedAdjustHeadTotal           uint64 // ../c/lb.c:40
+	FailedAdjustTailTotal           uint64 // ../c/lb.c:41
+	QuiclbShortPacketTotal          uint64 // ../c/lb.c:43
+	QuiclbLongPacketTotal           uint64 // ../c/lb.c:44
+	QuiclbInitialRoutingPacketTotal uint64 // ../c/lb.c:45
+	QuiclbTooShortLongPacketTotal   uint64 // ../c/lb.c:46
+	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:47
+	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:48
+	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:49
+	QuiclbEncryptSuccessCallTotal   uint64 // ../c/lb.c:50
+	QuiclbDecryptSuccessCallTotal   uint64 // ../c/lb.c:51
 }
 
 func StatCountersAssertLayout(s *DWARFStruct) error {
@@ -229,9 +229,9 @@ func (c *StatCounters) String() string {
 	return buf.String()
 }
 
-type LbConfig struct { // ../c/lb.c:63
-	VipAddress uint32 // ../c/lb.c:64
-	NumDests   uint32 // ../c/lb.c:65
+type LbConfig struct { // ../c/lb.c:64
+	VipAddress uint32 // ../c/lb.c:65
+	NumDests   uint32 // ../c/lb.c:66
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -262,12 +262,54 @@ func LbConfigAssertLayout(s *DWARFStruct) error {
 	return nil
 }
 
+type TestDecrypt struct { // ../c/lb.c:557
+	ConnectionId    [20]uint8 // ../c/lb.c:558
+	Len             uint8     // ../c/lb.c:559
+	IsShortServerId uint8     // ../c/lb.c:560
+}
+
+func TestDecryptAssertLayout(s *DWARFStruct) error {
+	if s == nil {
+		return fmt.Errorf("DWARFStruct is nil")
+	}
+
+	gosize := unsafe.Sizeof(TestDecrypt{})
+	if gosize != uintptr(s.Size) {
+		return fmt.Errorf("size mismatch: go: %d, dwarf: %d", gosize, s.Size)
+	}
+
+	fs := s.Fields
+
+	var goff uintptr
+	var doff int64
+	goff = unsafe.Offsetof(TestDecrypt{}.ConnectionId)
+	doff = fs["connection_id"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go ConnectionId: %d, dwarf connection_id: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(TestDecrypt{}.Len)
+	doff = fs["len"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go Len: %d, dwarf len: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(TestDecrypt{}.IsShortServerId)
+	doff = fs["is_short_server_id"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go IsShortServerId: %d, dwarf is_short_server_id: %d", goff, doff)
+	}
+
+	return nil
+}
+
 func LbAssertLayout(m map[string]*DWARFStruct) error {
 	if err := StatCountersAssertLayout(m["stat_counters"]); err != nil {
 		return fmt.Errorf("stat_counters: %v", err)
 	}
 	if err := LbConfigAssertLayout(m["lb_config"]); err != nil {
 		return fmt.Errorf("lb_config: %v", err)
+	}
+	if err := TestDecryptAssertLayout(m["test_decrypt"]); err != nil {
+		return fmt.Errorf("test_decrypt: %v", err)
 	}
 	return nil
 }

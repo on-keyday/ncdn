@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/cilium/ebpf"
-	"github.com/yzp0n/ncdn/tool/util"
 )
 
 type CryptoInitBinding struct {
@@ -51,15 +50,11 @@ func InitCrypto(binPath string, cryptoMap string, sharedKey []byte) error {
 		return fmt.Errorf("failed to bind spec: %w", err)
 	}
 
-	derivedKey, err := util.DeriveKey(sharedKey, "quic-lb")
-	if err != nil {
-		return fmt.Errorf("failed to derive key: %w", err)
-	}
-	if len(derivedKey) != 16 {
-		return fmt.Errorf("derived key must be 16 bytes, got %d bytes", len(derivedKey))
+	if len(sharedKey) != 16 {
+		return fmt.Errorf("shared key must be 16 bytes, got %d bytes", len(sharedKey))
 	}
 	var quicLBContext QuiclbSharedKey
-	copy(quicLBContext.Key[:], derivedKey)
+	copy(quicLBContext.Key[:], sharedKey)
 
 	_, err = bindings.CryptoInit.Run(&ebpf.RunOptions{
 		Context: &quicLBContext,

@@ -38,6 +38,7 @@ func XdpRetValToString(retval uint32) string {
 
 type Bindings struct {
 	LBMain           *ebpf.Program `ebpf:"lb_main"`
+	TestDecrypt      *ebpf.Program `ebpf:"test_decrypt"`
 	StatCountersMap  *ebpf.Map     `ebpf:"stat_counters_map"`
 	XdpcapHook       *ebpf.Map     `ebpf:"xdpcap_hook"`
 	DestinationArray *ebpf.Map     `ebpf:"destinations_map"`

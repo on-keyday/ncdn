@@ -6,6 +6,7 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <stdbool.h>
 
 
 #include <bpf/bpf_helpers.h>
@@ -235,17 +236,7 @@ __always_inline void aes128_decrypt(uint8_t state[16], uint8_t* round_keys) {
 
 */
 
-__always_inline void expand(uint8_t(*out)[16],uint8_t* input, uint8_t full_len,uint8_t pass) {
-  const int half_len = (full_len >> 1) + (full_len & 1);
-  for(int i = 0; i < half_len; i++) {
-    (*out)[i] = input[i];
-  }
-  for(int i = half_len; i < 16; i++) {
-    (*out)[i] = 0;
-  }
-  (*out)[14] = full_len; // length
-  (*out)[15] = pass;
-}
+
 
 /*
 __always_inline void expand_result(uint8_t(*out)[16],uint8_t input_10[10],uint8_t pass){
@@ -268,39 +259,7 @@ __always_inline void expand_result(uint8_t(*out)[16],uint8_t input_10[10],uint8_
 }
 */
 
-__always_inline int split(uint8_t* left,uint8_t* right,const uint8_t* input,uint8_t full_len) {
-    if(full_len < 5 || full_len > 19) {
-      return -EINVAL;
-    }
-    const uint8_t half_len = (full_len >> 1) + (full_len & 1);
-    const uint8_t right_start = full_len - half_len;
-    for (int i = 0; i < half_len; i++) {
-        left[i] = input[i];
-    }
-    for (int i = 0; i < half_len; i++) {
-        right[i] = input[i + right_start];
-    }
-    if(full_len & 1) {
-        left[half_len - 1] &= 0xf0;
-        right[0] &= 0x0f;
-    }
-    return 0;
-}
-
-__always_inline void concat(uint8_t* output, const uint8_t* left, const uint8_t* right,uint8_t full_len) {
-    const int half_len = (full_len >> 1) + (full_len & 1);
-    const int right_start = full_len - half_len;
-    for (int i = 0; i < half_len; i++) {
-        output[i] = left[i];
-    }
-    for (int i = 0; i < half_len; i++) {
-        output[i + right_start] = right[i];
-    }
-    if(full_len & 1) {
-        output[half_len - 1] = (left[half_len - 1] & 0xf0) | (right[0] & 0x0f);
-    }
-}
-
+/*
 __always_inline void split_19(uint8_t(*left)[10],uint8_t(*right)[10],const uint8_t* input19) {
     (*left)[0] = input19[0];
     (*left)[1] = input19[1];
@@ -323,6 +282,67 @@ __always_inline void split_19(uint8_t(*left)[10],uint8_t(*right)[10],const uint8
     (*right)[7] = input19[16];
     (*right)[8] = input19[17];
     (*right)[9] = input19[18];
+}
+*/
+
+// 普通にメモリコピーのループを使うと最適化により
+// error: lb.c:294:15: in function test_decrypt i32 (ptr): A call to built-in function 'memset' is not supported.
+// のようなエラーになるためvolatileを使う
+#define VOLATILE(x) ((volatile uint8_t*)(x))
+#define HALF_LEN(x) ((((x) / 2) + ((x) % 2)))
+#define CHECK_VOLATILE(x,cmp,ret) if(*VOLATILE(&x) > cmp) { \
+    debugk("ASSERTION FAILURE: %s > %d", #x, cmp); \
+    return ret; \
+}
+#define DEFINE_HALF_LEN(ret) uint8_t half_len_ = HALF_LEN(full_len);/*CHECK_VOLATILE(half_len_,10,ret)*/\
+const uint8_t half_len = half_len_;
+
+__always_inline void expand(uint8_t out[16],uint8_t* input, uint8_t full_len,uint8_t pass) {
+  DEFINE_HALF_LEN();
+  for(int i = 0; i < half_len; i++) {
+     VOLATILE(out)[i] = input[i];
+  }
+  for(int i = half_len; i < 16; i++) {
+     VOLATILE(out)[i] = 0;
+  }
+  out[14] = full_len; // length
+  out[15] = pass;
+}
+
+__always_inline int split(uint8_t* left,uint8_t* right,const uint8_t* input,uint8_t full_len) {
+    if(full_len < 5 || full_len > 19) {
+      return -EINVAL;
+    }
+    DEFINE_HALF_LEN(-EINVAL);
+    const uint8_t right_start = full_len - half_len;
+    //CHECK_VOLATILE(right_start, 10, -EINVAL);
+    for (uint8_t i = 0; i < half_len; i++) {
+        VOLATILE(left)[i] = input[i];
+    }
+    for (uint8_t i = 0; i < half_len; i++) {
+        // uint8_t offset = ();
+        //CHECK_VOLATILE(offset, 18, -EINVAL);
+        VOLATILE(right)[i] = input[i + right_start];
+    }
+    if(full_len & 1) {
+        left[half_len - 1] &= 0xf0;
+        right[0] &= 0x0f;
+    }
+    return 0;
+}
+
+__always_inline void concat(uint8_t* output, const uint8_t* left, const uint8_t* right,uint8_t full_len) {
+    DEFINE_HALF_LEN();
+    const int right_start = full_len - half_len;
+    for (int i = 0; i < half_len; i++) {
+       VOLATILE(output)[i] = left[i];
+    }
+    for (int i = 0; i < half_len; i++) {
+       VOLATILE(output)[i + right_start] = right[i];
+    }
+    if(full_len & 1) {
+        output[half_len - 1] = (left[half_len - 1] & 0xf0) | (right[0] & 0x0f);
+    }
 }
 
 __always_inline void xor_assign(uint8_t* out, uint8_t* in,uint8_t len) {
@@ -354,7 +374,7 @@ __always_inline void print_half(const char* name, uint8_t* data) {
            (uint64_t)(data[6]) << 8 |
            (uint64_t)(data[7]);
     low = (data[8] << 8) | data[9];
-    bpf_printk("DEBUG: %s=%016lx%04x", name, high, low);
+    debugk("DEBUG: %s=%016lx%04x", name, high, low);
 }
 
 __always_inline void print_key(const char* name, const uint8_t* key) {
@@ -375,7 +395,7 @@ __always_inline void print_key(const char* name, const uint8_t* key) {
           ((uint64_t)(key[13]) << 16) |
           ((uint64_t)(key[14]) << 8) |
           ((uint64_t)(key[15]));
-    bpf_printk("DEBUG: %s=%016lx%016lx", name, high, low);
+    debugk("DEBUG: %s=%016lx%016lx", name, high, low);
 }
 
 __always_inline void print_full_connection_id(const char* name, const uint8_t* connection_id) {
@@ -401,39 +421,40 @@ __always_inline void print_full_connection_id(const char* name, const uint8_t* c
           ((uint32_t)(connection_id[17]) << 16) |
           ((uint32_t)(connection_id[18]) << 8) |
           ((uint32_t)(connection_id[19]));
-    bpf_printk("DEBUG: %s=%016lx%016lx%08x",name, high, middle, low);
+    debugk("DEBUG: %s=%016lx%016lx%08x",name, high, middle, low);
 }
 
 uint8_t temporary[16];
 
 // output length should be same as input length
-__always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connection_id_bytes,uint8_t input_len, const char* context,struct stat_counters* c) {
+__always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connection_id_bytes,uint8_t input_len,bool short_server_id, const char* context,struct stat_counters* c) {
     if(input_len == 0 || input_len > 20) {
-        bpf_printk("%s: input_len %d > 20, invalid for current implementation", context, input_len);
+        debugk("%s: input_len %d > 20, invalid for current implementation", context, input_len);
         return -EINVAL;
     }
+    debugk("%s: input_len=%d, short_server_id=%d", context, input_len, short_server_id);
     struct __crypto_ctx_value *v = crypto_ctx_value_lookup();
     if (!v) {
-        bpf_printk("%s: no crypto context found", context);
+        debugk("%s: no crypto context found", context);
         return -ENOENT;
     }
     struct bpf_crypto_ctx *ctx = (struct bpf_crypto_ctx*) v->ctx;
     if(!ctx) {
-        bpf_printk("%s: crypto context is NULL", context);
+        debugk("%s: crypto context is NULL", context);
         return -ENOENT;
     }
-    bpf_printk("%s: crypto context found, ctx=%p", context, ctx);
+    debugk("%s: crypto context found, ctx=%p", context, ctx);
     print_full_connection_id("encrypted_conn_id", connection_id_bytes);
     struct bpf_dynptr temporary_dynptr;
     int ret = bpf_dynptr_from_mem(&temporary,sizeof(temporary), 0, &temporary_dynptr);
     if (ret < 0) {
-        bpf_printk("%s: bpf_dynptr_from_mem failed with %d", context, ret);
+        debugk("%s: bpf_dynptr_from_mem failed with %d", context, ret);
         return ret;
     }
     int aes_result = 0;
   #define CHECK_AES_RESULT()    \
   if(aes_result < 0) { \
-    bpf_printk("%s: bpf_crypto_encrypt failed with %d", context, aes_result);  \
+    debugk("%s: bpf_crypto_encrypt failed with %d", context, aes_result);  \
     return aes_result; \
   }
 #define DO_AES_ECB()    \
@@ -444,7 +465,7 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
     const int full_len = input_len - 1;
     // see 4.4.1.  Special Case: Single Pass Encryption
     if(full_len == 16) { // special case for 16 byte connection ID see 
-      bpf_printk("%s: full_len is 16, using direct encryption", context);
+      debugk("%s: full_len is 16, using direct encryption", context);
       __builtin_memcpy(temporary, &connection_id_bytes[1], 16);
       aes_result = bpf_crypto_decrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL);
       CHECK_AES_RESULT();
@@ -457,17 +478,18 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
 
     // see 4.4.2.  General Case: Four-Pass Encryption
     const int input_is_odd = full_len & 1;
-    const int half_len = (full_len >> 1) + input_is_odd;
+    DEFINE_HALF_LEN(-EINVAL);
+    debugk("%s: full_len=%d, half_len=%d, input_is_odd=%d", context, full_len, half_len, input_is_odd);
     uint8_t left[10],right[10];
     int err =  split(left, right, &connection_id_bytes[1],full_len);
     if(err < 0) {
-        bpf_printk("%s: split failed with %d", context, err);
+        debugk("%s: split failed with %d", context, err);
         return err;
     }
     print_half("left_2", left);
     print_half("right_2", right);
 #define ROUND(n,input,output) \
-    expand(&temporary, input, full_len , n);\
+    expand(temporary, input, full_len , n);\
     print_key("pass_" #n "_key", temporary); \
     DO_AES_ECB(); \
     xor_assign(output, temporary, half_len);\
@@ -482,9 +504,16 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
     // right_1 -> left_0
     ROUND(2,right,left);
     print_half("left_0", left);
-    // left_0 -> right_0
-    ROUND(1,left,right);
-    print_half("right_0", right);
+    // the internet draft says:
+    // As the load balancer has no need for the nonce, it can conclude after
+    // 3 passes as long as the server ID is entirely contained in left_0
+    // (i.e., the nonce is at least as large as the server ID).  If the
+    // server ID is longer, a fourth pass is necessary:
+    if(!short_server_id) {
+       // left_0 -> right_0
+       ROUND(1,left,right);
+       print_half("right_0", right);
+    }
 
     output[0] = connection_id_bytes[0]; // first byte is not encrypted
     concat(&output[1], left, right, full_len);
@@ -501,10 +530,10 @@ struct stat_counters* c,
     const char* conn_id_bytes = (const char*)(conn_id);
     uint32_t key = conn_id_bytes[0];
     uint32_t dest_idx = (key % config->num_dests) + 1;
-    bpf_printk("%s (initial) dest_idx=%d",context, dest_idx);
+    debugk("%s (initial) dest_idx=%d",context, dest_idx);
     struct destination_entry* dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
     if (!dest) {
-      bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
+      debugk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
       ++c->quiclb_no_dest_entry_total;
       return NULL;
     }
@@ -519,27 +548,80 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
                                                const char* context
                                               ) {
     uint8_t output[QUICLB_CONNECTION_ID_SIZE];
-    int err = connection_id_decrypt(output, (const uint8_t*)conn_id,20, context,c);
+    int err = connection_id_decrypt(output, (const uint8_t*)conn_id,20,false, context,c);
     if(err < 0) {
       ++c->quiclb_invalid_crypto_context_total;
-      bpf_printk("%s: connection_id_decrypt failed with %d", context, err);
+      debugk("%s: connection_id_decrypt failed with %d", context, err);
       return NULL;
     }
     const int dest_idx_ = QUICLB_CONNECTION_ID_SERVER_ID(((struct quiclb_connection_id*)(output))->connection_id);
     const int dest_idx = dest_idx_ + 1; // dest_idx is 1-based index
-    bpf_printk("%s conn_id dest_idx=%d", context, dest_idx);
+    debugk("%s conn_id dest_idx=%d", context, dest_idx);
     if(dest_idx > config->num_dests) {
-       bpf_printk("idx %d >= num_dests %d", dest_idx, config->num_dests);
+       debugk("idx %d >= num_dests %d", dest_idx, config->num_dests);
        return handle_initial(conn_id, config, c, context);
     }
 
     struct destination_entry* entry = bpf_map_lookup_elem(&destinations_map, &dest_idx);
     if(!entry) {
-      bpf_printk("no destination entry for %d", dest_idx);
+      debugk("no destination entry for %d", dest_idx);
       return NULL;
     }
-    bpf_printk("found dest entry for %d", dest_idx);
+    debugk("found dest entry for %d", dest_idx);
     return entry;
+}
+
+struct test_decrypt { /* go: */
+  uint8_t connection_id[20];
+  uint8_t len;
+  uint8_t is_short_server_id; // 1 if short server id, 0 if long server id
+} PACKED;
+
+SEC("xdp")
+int test_decrypt(struct xdp_md* ctx) {
+  void* data_raw = (void*)(uint64_t)ctx->data;
+  void* data_end = (void*)(uint64_t)ctx->data_end;
+  if (data_raw + sizeof(struct test_decrypt) >
+      data_end) {
+    return -EINVAL;
+  }
+  struct test_decrypt* data = (struct test_decrypt*)data_raw;
+  struct stat_counters c;
+  uint8_t input_output[QUICLB_CONNECTION_ID_SIZE + 1];
+  for(int i = 0; i < QUICLB_CONNECTION_ID_SIZE; i++) {
+    input_output[i] = data->connection_id[i];
+  }
+  int res;
+#define DO_DECRYPT(n) case n: res = connection_id_decrypt(input_output, input_output,  n ,data->is_short_server_id,"test", &c);break;
+  switch(data->len) {
+    DO_DECRYPT(1)
+    DO_DECRYPT(2)
+    DO_DECRYPT(3)
+    DO_DECRYPT(4)
+    DO_DECRYPT(5)
+    DO_DECRYPT(6)
+    DO_DECRYPT(7)
+    DO_DECRYPT(8)
+    DO_DECRYPT(9)
+    DO_DECRYPT(10)
+    DO_DECRYPT(11)
+    DO_DECRYPT(12)
+    DO_DECRYPT(13)
+    DO_DECRYPT(14)
+    DO_DECRYPT(15)
+    DO_DECRYPT(16)
+    DO_DECRYPT(17)
+    DO_DECRYPT(18)
+    DO_DECRYPT(19)
+    DO_DECRYPT(20)
+    default:
+      debugk("ASSERTION FAILURE: len %d is not in range [1,20]", data->len);
+      return -EINVAL;
+  }
+  for(int i = 0; i < QUICLB_CONNECTION_ID_SIZE; i++) {
+    data->connection_id[i] = input_output[i];
+  }
+  return res;
 }
 
 SEC("xdp")
@@ -618,7 +700,7 @@ int lb_main(struct xdp_md* ctx) {
       debugk("dest_idx=%d", dest_idx);
       dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
       if (!dest) {
-        bpf_printk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
+        debugk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
         EXIT(XDP_DROP);
       }
   
@@ -720,7 +802,7 @@ int lb_main(struct xdp_md* ctx) {
   if (ctx->data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
           sizeof(struct iphdr) >
       ctx->data_end) {
-    bpf_printk("NOT REACHED!!!");
+    debugk("NOT REACHED!!!");
     EXIT(XDP_DROP);
   }
 

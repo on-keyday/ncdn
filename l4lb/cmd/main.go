@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/yzp0n/ncdn/l4lb/l4lbdrv"
+	"github.com/yzp0n/ncdn/tool/util"
 	"golang.org/x/sys/unix"
 )
 
@@ -97,7 +98,12 @@ func main() {
 
 	dests, err := parseDest(*deststr)
 	if err != nil {
-		slog.Error("Failed to parse dest string", slog.String("err", err.Error()))
+		log.Panicf("Failed to parse dest string: %v", err)
+	}
+
+	derivedKey, err := util.DeriveKey([]byte(*sharedKey), "quic-lb")
+	if err != nil {
+		log.Panicf("Failed to derive key: %v", err)
 	}
 
 	cfg := &l4lbdrv.Config{
@@ -108,7 +114,7 @@ func main() {
 		InterfaceName:  *xdpif,
 		VIP:            netip.MustParseAddr(*vip),
 		Dests:          dests,
-		SharedKey:      []byte(*sharedKey),
+		SharedKey:      derivedKey,
 	}
 	lb, err := l4lbdrv.New(cfg)
 	if err != nil {
