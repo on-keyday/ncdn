@@ -383,14 +383,14 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
     }
     int aes_result = 0;
 #define DO_AES_ECB()    \
- bpf_dynptr_write(&temporary_dynptr, 0, &temporary, sizeof(temporary), 0);\
+ /*bpf_dynptr_write(&temporary_dynptr, 0, &temporary, sizeof(temporary), 0);*/\
  aes_result =  bpf_crypto_encrypt(ctx, &temporary_dynptr, &temporary_dynptr, NULL);\
   if(aes_result < 0) { \
     bpf_printk("%s: bpf_crypto_encrypt failed with %d", context, aes_result);  \
     return aes_result; \
  }\
  c->quiclb_encrypt_success_call_total++;\
- bpf_dynptr_read(&temporary, sizeof(temporary), &temporary_dynptr, 0, 0);
+ /*bpf_dynptr_read(&temporary, sizeof(temporary), &temporary_dynptr, 0, 0);*/
  
 #define ROUND(n,input,output) \
     expand_result(&temporary, input, n);\
