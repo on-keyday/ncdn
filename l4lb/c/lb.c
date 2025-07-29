@@ -369,7 +369,6 @@ __always_inline int connection_id_decrypt(struct quiclb_connection_id* connectio
         return -ENOENT;
     }
     bpf_printk("%s: crypto context found, ctx=%p", context, ctx);
-    // 20 byteの接続IDを16バイトに分割してQUIC-LBの接続IDを復号化する
     uint8_t* connection_id_bytes = (uint8_t*)connection_id;
     print_full_connection_id("encrypted_conn_id", connection_id_bytes);
     uint8_t left[10],right[10];
@@ -584,6 +583,8 @@ int lb_main(struct xdp_md* ctx) {
       }
 
       // TODO: validate destination port?
+      // QUIC fixed bitとして0x40というのがあるがあれはgrease拡張等で自由に反転できてしまうため
+      // 判定として信用しちゃだめだと思われる see https://datatracker.ietf.org/doc/html/rfc9287
       struct udphdr* udp = (struct udphdr*)(ip + 1);
       const char* quic_first_byte = (const char*)(udp + 1);
       const int is_long_header = (quic_first_byte[0] & 0x80) == 0x80 ? 1 : 0;
