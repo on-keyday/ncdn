@@ -65,4 +65,7 @@ func TestCrypto(t *testing.T) {
 	}
 
 	runTest(mustDecodeHex("0720b1d07b359d3c"), mustDecodeHex("07ed793aee080dbf"), false)
+	runTest(mustDecodeHex("2fcc381bc74cb4fbad2823a3d1f8fed2"), mustDecodeHex("2fed793a51d49b8f5fab65ee080dbf48"), false)
+	runTest(mustDecodeHex("504dd2d05a7b0de9b2b9907afb5ecf8cc3"), mustDecodeHex("50ed793a51d49b8f5fee080dbf48c0d1e5"), false)
+	runTest(mustDecodeHex("125779c9cc86beb3a3a4a3ca96fce4bfe0cdbc"), mustDecodeHex("12ed793a51d49b8f5fabee080dbf48c0d1e55d"), false)
 }
