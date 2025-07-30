@@ -554,3 +554,39 @@ DEBUG: round 2: left_1=778d08860be9217e608b right_1=7390373a5b617f55f801
 DEBUG: round 3: right_1=7390373a5b617f55f801 left_2=316fa3f340484312da34
 DEBUG: round 4:  left_2=316fa3f340484312da34 right_2=e90c33cd4bd71bf0bca5
 
+sudo mount -t virtiofs host_ncdn /mnt/ncdn
+
+
+format Flags:
+    has_dns :u1
+    has_connect :u1
+    has_request_sent :u1
+    has_response_first :u1
+    has_full :u1
+    reserved :u3
+
+format Metric:
+    id :u32
+    start_time :u64
+    metric :MetricBody
+
+format MetricBody:
+    flags :Flags
+    if flags.has_dns == 1:
+      dns_duration :u64
+    if flags.has_connect == 1:
+      connect_duration :u64
+    if flags.has_request_sent == 1:
+      request_sent_duration :u64
+    if flags.has_response_first == 1:
+      response_first_byte_duration :u64
+    if flags.has_full == 1:
+      full_duration :u64
+    response_body_len :u32
+    response_body :[response_body_len]u8
+
+format MetricsFile:
+    metrics_len :u32
+    metrics :[metrics_len]Metric
+    start_time :u64
+    end_time :u64

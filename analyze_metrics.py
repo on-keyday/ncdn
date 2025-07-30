@@ -6,12 +6,12 @@ import seaborn as sns
 import glob
 import json
 
-#LB = "metrics/20250730063930/lb_exist_*.json"
-#NO_LB = "metrics/20250730065416/lb_not_exist_*.json"
+LB = "metrics/20250730063930/lb_exist_*.json"
+NO_LB = "metrics/20250730065416/lb_not_exist_*.json"
 #LB= "metrics/20250730082526/lb_exist_*.json"
 #NO_LB = "metrics/20250730082526/lb_not_exist_*.json"
-LB="metrics/20250730084603/lb_exist_*.json"
-NO_LB="metrics/20250730084603/lb_not_exist_*.json"
+#LB="metrics/20250730084603/lb_exist_*.json"
+#NO_LB="metrics/20250730084603/lb_not_exist_*.json"
 
 def load_metrics(file_pattern):
     """
@@ -63,6 +63,8 @@ def calculate_statistics(df):
     for metric in metrics:
         stats_dict[metric] = {
             "unit": "nanoseconds",
+            "data_count": len(df[metric]),
+            'sum': float(df[metric].sum()),
             'mean': float(df[metric].mean()),
             'median': float(df[metric].median()),
             'variance': float(df[metric].var()),

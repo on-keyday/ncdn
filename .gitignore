@@ -10,3 +10,4 @@ vm_images/
 .venv/
 metrics/
 metrics.tar.zst
+metrics.tar
