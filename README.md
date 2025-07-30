@@ -37,7 +37,7 @@ chmod +x llvm.sh
 # QUIC clientの試し方
 ```
 go build -o ./secrets/qclient ./tool/quicclient
-sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U ./secrets/qclient 192.0.2.10:8889 ./ca/certs/20250719194728/root_ca.crt
+sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U ./secrets/qclient -serverAddress 192.0.2.10:8889 -requestCount 1 -rootCA /mnt/ncdn/ca/certs/20250719194728/root_ca.crt
 ```
 
 

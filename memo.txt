@@ -169,7 +169,7 @@ RetryPacketについて
 
 
 go build -o ./secrets/qclient ./tool/quicclient
-sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U ./secrets/qclient 192.0.2.10:8889 /mnt/ncdn/ca/certs/20250719194728/root_ca.crt
+sudo env QUIC_GO_LOG_LEVEL=debug ip netns exec U ./secrets/qclient -requestCount 1  -serverAddress 192.0.2.10:8889 -rootCA /mnt/ncdn/ca/certs/20250719194728/root_ca.crt
 
 ./gen_certs.sh 20250719194728 20250719194728 true
 

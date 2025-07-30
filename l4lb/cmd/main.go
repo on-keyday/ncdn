@@ -26,6 +26,7 @@ var xdpif = flag.String("interface", "net0", "Interface to attach lb prog to")
 var vip = flag.String("vip", "192.0.2.10", "VIP address to load balance")
 var deststr = flag.String("dests", "", "Comma separated list of destination IP and MAC addresses. (Example: 192.168.88.10;00:00:5e:00:53:01,)")
 var sharedKey = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation (TODO: move into secure place)")
+var pidFile = flag.String("pidFile", "/run/ncdn/l4lb.pid", "Path to PID file for l4lb process")
 
 func parseDest(deststr string) ([]l4lbdrv.DestinationEntry, error) {
 	commas := strings.Split(deststr, ",")
@@ -76,6 +77,19 @@ func FSType(path string) (int64, error) {
 
 func main() {
 	flag.Parse()
+	if *pidFile != "" {
+		if err := os.MkdirAll("/run/ncdn", 0755); err != nil {
+			log.Panicf("Failed to create /run/ncdn directory: %v", err)
+		}
+		if err := os.WriteFile(*pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644); err != nil {
+			log.Panicf("Failed to write pid file %q: %v", *pidFile, err)
+		}
+		defer func() {
+			if err := os.Remove(*pidFile); err != nil {
+				log.Panicf("Failed to remove pid file %q: %v", *pidFile, err)
+			}
+		}()
+	}
 	data, err := os.ReadFile("/proc/self/mountinfo")
 	if err != nil {
 		log.Panicf("Failed to read /proc/self/mountinfo: %v", err)

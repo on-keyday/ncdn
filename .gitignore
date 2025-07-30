@@ -7,3 +7,6 @@ ca/
 dpdk/
 llvm.sh
 vm_images/
+.venv/
+metrics/
+metrics.tar.zst
