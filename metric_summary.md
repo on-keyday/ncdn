@@ -7,10 +7,11 @@
 
 環境
 + 貧弱な環境...ちゃんとテストするんだったらもっとちゃんと整備したほうがいい
+```
 CPU: N100 
-OS: Ubuntu 22.04 with Linux kernel 6.15 on KVM on Arch Linux
+OS: Ubuntu 24.04 with Linux kernel 6.15 on KVM on Arch Linux
 CPU数: 2 (仮想化により,物理は4CPUあるはずだが...)
-
+```
 
 # 直列テストシナリオ
 負荷が少ないため全体的に処理速度が速くまた有意な差は個々のリクエストメトリクスレベルでは確認できなかったが
