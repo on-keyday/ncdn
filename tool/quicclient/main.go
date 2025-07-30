@@ -22,6 +22,7 @@ var serverAddress = flag.String("serverAddress", "localhost:4433", "Server addre
 var rootCA = flag.String("rootCA", "path/to/rootCA.pem", "Path to the root CA certificate")
 var parallelRequests = flag.Bool("parallel", false, "Send requests in parallel")
 var metricsFile = flag.String("metricsFile", "metrics.json", "File to save metrics")
+var parallelLimit = flag.Int("parallelLimit", 0, "Maximum number of parallel requests (0 for no limit)")
 
 type Metrics struct {
 	ID                        int           `json:"id"`
@@ -35,17 +36,22 @@ type Metrics struct {
 }
 
 type metricsOutput struct {
-	Data      []*Metrics `json:"data"`
-	Summary   Metrics    `json:"summary"`
-	Variance  Metrics    `json:"variance"`
-	StartTime time.Time  `json:"start_time"`
-	EndTime   time.Time  `json:"end_time"`
+	Data          []*Metrics `json:"data"`
+	Summary       Metrics    `json:"summary"`
+	Variance      Metrics    `json:"variance"`
+	StartTime     time.Time  `json:"start_time"`
+	EndTime       time.Time  `json:"end_time"`
+	ParallelLimit *int       `json:"parallel_limit,omitempty"`
 }
 
 func main() {
 	flag.Parse()
 	if *requestCount <= 0 {
 		fmt.Println("Request count must be a positive integer")
+		return
+	}
+	if *parallelLimit < 0 {
+		fmt.Println("Parallel limit must be a non-negative integer")
 		return
 	}
 	fmt.Println("Starting QUIC LB client...")
@@ -77,9 +83,13 @@ func main() {
 	var mu sync.Mutex
 	var metrics []*Metrics
 
-	request := func(i int, wg *sync.WaitGroup) {
+	request := func(i int, wg *sync.WaitGroup, fence chan struct{}) {
 		if wg != nil {
 			defer wg.Done()
+		}
+		if fence != nil {
+			fence <- struct{}{}        // Acquire a slot in the fence
+			defer func() { <-fence }() // Release the slot in the fence
 		}
 		req, _ := http.NewRequest(http.MethodGet, targetURL, nil)
 		var dnsend time.Time
@@ -139,15 +149,19 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
+	var fence chan struct{}
+	if *parallelLimit > 0 {
+		fence = make(chan struct{}, *parallelLimit)
+	}
 
 	start := time.Now()
 
 	for i := 0; i < *requestCount; i++ {
 		if *parallelRequests {
 			wg.Add(1)
-			go request(i, &wg)
+			go request(i, &wg, fence)
 		} else {
-			request(i, nil)
+			request(i, nil, nil)
 		}
 	}
 	if *parallelRequests {
@@ -219,6 +233,11 @@ func main() {
 			Variance:  varianceMetrics,
 			StartTime: start,
 			EndTime:   end,
+		}
+		if *parallelRequests {
+			output.ParallelLimit = parallelLimit
+		} else {
+			output.ParallelLimit = nil
 		}
 		enc := json.NewEncoder(file)
 		if err := enc.Encode(output); err != nil {

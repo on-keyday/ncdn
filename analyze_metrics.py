@@ -6,12 +6,25 @@ import seaborn as sns
 import glob
 import json
 
-LB = "metrics/20250730063930/lb_exist_*.json"
-NO_LB = "metrics/20250730065416/lb_not_exist_*.json"
+# 直列テストシナリオ
+# 負荷が少ないため全体的に処理速度が速くまた有意な差も以下条件では確認できなかった
+#LB = "metrics/20250730063930/lb_exist_*.json"
+#NO_LB = "metrics/20250730065416/lb_not_exist_*.json"
+
+# 並列テストシナリオ
+# 1000000回を並列数無制限(可能な限り)で実行
+# こちらの場合テスト環境のノイズの影響が強すぎたと思われ有意な差が計算上は出たが
+# あんまり意味のあるデータではないように思われる(以下2パターンで真逆の結果が出るなどしていた)
 #LB= "metrics/20250730082526/lb_exist_*.json"
 #NO_LB = "metrics/20250730082526/lb_not_exist_*.json"
 #LB="metrics/20250730084603/lb_exist_*.json"
 #NO_LB="metrics/20250730084603/lb_not_exist_*.json"
+
+# 100000回を並列回数1000に制限して実行
+# 直列実行シナリオと同じく有意な差はないがやはり環境要因が大きなファクターを占めているため
+# 高負荷環境試験は別途ちゃんと調整して行う方が良いであろう(本番環境もってかないとわかんない....)
+LB="metrics/20250730122515/lb_exist_*.json"
+NO_LB="metrics/20250730122515/lb_not_exist_*.json"
 
 def load_metrics(file_pattern):
     """
@@ -84,8 +97,8 @@ print("Load Balancer Exists Metrics Statistics:")
 print(json.dumps(stats_lb, indent=2))
 print("Load Balancer Does Not Exist Metrics Statistics:")
 print(json.dumps(stats_no_lb, indent=2))
-print("H(0): LBが存在する場合、各メトリックの平均値は変わらない")
-print("H(1): LBが存在する場合、各メトリックの平均値は有意に大きくなる。")
+print("H(0): LBが存在する場合でも、各メトリックの平均値はない場合と変わらない")
+print("H(1): LBが存在する場合、各メトリックの平均値はない場合に比べて有意に大きくなる。")
 alpha = 0.05 # 有意水準
 # Levene's test
 for metric in stats_lb.keys():
