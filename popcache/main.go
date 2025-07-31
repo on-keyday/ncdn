@@ -15,6 +15,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yzp0n/ncdn/httprps"
+	lbconnid "github.com/yzp0n/ncdn/popcache/connid"
 	"github.com/yzp0n/ncdn/types"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/ipv4"
@@ -156,7 +157,7 @@ func main() {
 	tr := &quic.Transport{
 		Conn:                  pkt,
 		ConnectionIDLength:    20,
-		ConnectionIDGenerator: NewQUICLBConnIDGenerator(uint8(*lbNodeId), []byte(*sharedSecret)),
+		ConnectionIDGenerator: lbconnid.NewQUICLBConnIDGenerator(uint32(*lbNodeId), []byte(*sharedSecret), 17),
 	}
 
 	tlsConf := &tls.Config{

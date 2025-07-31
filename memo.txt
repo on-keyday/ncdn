@@ -590,3 +590,11 @@ format MetricsFile:
     metrics :[metrics_len]Metric
     start_time :u64
     end_time :u64
+
+
+# draftのECB単体バージョン
+format LBConnectionID:
+  first_byte :FirstByteOfQUICLB
+  padding1 :[3]u8
+  server_id :u32
+  padding2 :[9]u8

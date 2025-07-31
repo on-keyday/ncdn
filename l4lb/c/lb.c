@@ -15,7 +15,7 @@
 
 #include <stdint.h>
 #include <sys/types.h>
-#include "errno.h"
+#include <errno.h>
 
 #define PACKED __attribute__((__packed__))
 #define ALIGN8 __attribute__((aligned(8)))
@@ -43,6 +43,7 @@ struct stat_counters { /* go:Add,String */
   uint64_t tcp_packet_total; // HELP Number of TCP packets received.
   uint64_t mtu_exceeded_total; // HELP Number of packets dropped due to MTU exceeded.
 
+  uint64_t quiclb_no_dest_port_match_total; // HELP Number of QUIC-LB packets received without matching destination port.
   uint64_t quiclb_short_packet_total; // HELP Number of QUIC-LB short packets received.
   uint64_t quiclb_long_packet_total; // HELP Number of QUIC-LB long packets received.
   uint64_t quiclb_initial_routing_packet_total; // HELP Number of QUIC-LB initial routing packets received.
@@ -52,6 +53,7 @@ struct stat_counters { /* go:Add,String */
   uint64_t quiclb_invalid_crypto_context_total; // HELP Number of QUIC-LB packets received with invalid crypto context.
   uint64_t quiclb_encrypt_success_call_total; // HELP Number of QUIC-LB packets that called bpf_crypto_encrypt.
   uint64_t quiclb_decrypt_success_call_total; // HELP Number of QUIC-LB packets that called bpf_crypto_decrypt.
+  uint64_t quiclb_connid_cache_hit_total; // HELP Number of QUIC-LB connection ID cache hits.
 } ALIGN8;
 // clang-format on
 
@@ -68,8 +70,12 @@ struct lb_config { /* go: */
   uint32_t vip_address;
   uint32_t num_dests;
   uint16_t mtu;
-  uint16_t __padding; // Padding to align to 8 bytes
+  uint16_t quic_dest_port;
+  uint8_t flags;
+  uint8_t padding[3]; // padding to align to 8 bytes
 } PACKED;
+
+#define LB_CONFIG_FLAG_CONNID_CACHE_ENABLED (1 << 0)
 
 struct {
   __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -116,191 +122,40 @@ struct quic_short_packet {
    uint8_t first_byte;
 } PACKED;
 
-#define QUICLB_CONNECTION_ID_SIZE 20
+#define QUICLB_CONNECTION_ID_SIZE 17
 #define QUICLB_CONNECTION_ID_CONFIG_ROTATION(x) (((x) & 0xe0) >> 5)
 #define QUICLB_CONNECTION_ID_RANDOM_VALUE(x) ((x) & 0x1f)
-#define QUICLB_CONNECTION_ID_SERVER_ID(x) (((x)[0] >> 4) & 0x0f)
+#define QUICLB_CONNECTION_ID_SERVER_ID(x) ((((uint32_t)(x[0]) << 24) | \
+   ((uint32_t)(x[1]) << 16) | \
+   ((uint32_t)(x[2]) << 8) | \
+   ((uint32_t)(x[3]))))
+
+// big-endian format
 struct quiclb_connection_id {
   uint8_t first_byte; // 3 bit: config_rotation, 5 bit: random value
-  uint8_t connection_id[3]; // first 4 bits is server id and remaining 20 bits is connection id
-  uint8_t nonce_message_authentication_code[16]; // nonce padding 7 bit + 121 bit MAC
-} PACKED; // 20 bytes total
+  uint8_t server_id[4]; // 4 byte server id, to ensure server id space enough large
+  uint8_t nonce[12]; // 12 byte padding, can be used for future extensions
+} PACKED; // 17 bytes total, for optimization
 
-/*
-//clang-format off
-uint8_t inv_sbox[256] = {
-0x52,0x09,0x6a,0xd5,0x30,0x36,0xa5,0x38,0xbf,0x40,0xa3,0x9e,0x81,0xf3,0xd7,0xfb,
-0x7c,0xe3,0x39,0x82,0x9b,0x2f,0xff,0x87,0x34,0x8e,0x43,0x44,0xc4,0xde,0xe9,0xcb,
-0x54,0x7b,0x94,0x32,0xa6,0xc2,0x23,0x3d,0xee,0x4c,0x95,0x0b,0x42,0xfa,0xc3,0x4e,
-0x08,0x2e,0xa1,0x66,0x28,0xd9,0x24,0xb2,0x76,0x5b,0xa2,0x49,0x6d,0x8b,0xd1,0x25,
-0x72,0xf8,0xf6,0x64,0x86,0x68,0x98,0x16,0xd4,0xa4,0x5c,0xcc,0x5d,0x65,0xb6,0x92,
-0x6c,0x70,0x48,0x50,0xfd,0xed,0xb9,0xda,0x5e,0x15,0x46,0x57,0xa7,0x8d,0x9d,0x84,
-0x90,0xd8,0xab,0x00,0x8c,0xbc,0xd3,0x0a,0xf7,0xe4,0x58,0x05,0xb8,0xb3,0x45,0x06,
-0xd0,0x2c,0x1e,0x8f,0xca,0x3f,0x0f,0x02,0xc1,0xaf,0xbd,0x03,0x01,0x13,0x8a,0x6b,
-0x3a,0x91,0x11,0x41,0x4f,0x67,0xdc,0xea,0x97,0xf2,0xcf,0xce,0xf0,0xb4,0xe6,0x73,
-0x96,0xac,0x74,0x22,0xe7,0xad,0x35,0x85,0xe2,0xf9,0x37,0xe8,0x1c,0x75,0xdf,0x6e,
-0x47,0xf1,0x1a,0x71,0x1d,0x29,0xc5,0x89,0x6f,0xb7,0x62,0x0e,0xaa,0x18,0xbe,0x1b,
-0xfc,0x56,0x3e,0x4b,0xc6,0xd2,0x79,0x20,0x9a,0xdb,0xc0,0xfe,0x78,0xcd,0x5a,0xf4,
-0x1f,0xdd,0xa8,0x33,0x88,0x07,0xc7,0x31,0xb1,0x12,0x10,0x59,0x27,0x80,0xec,0x5f,
-0x60,0x51,0x7f,0xa9,0x19,0xb5,0x4a,0x0d,0x2d,0xe5,0x7a,0x9f,0x93,0xc9,0x9c,0xef,
-0xa0,0xe0,0x3b,0x4d,0xae,0x2a,0xf5,0xb0,0xc8,0xeb,0xbb,0x3c,0x83,0x53,0x99,0x61,
-0x17,0x2b,0x04,0x7e,0xba,0x77,0xd6,0x26,0xe1,0x69,0x14,0x63,0x55,0x21,0x0c,0x7d,
-};
-//clang-format on
+// LRUキャッシュの定義
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 1024);
+    __type(key, struct quiclb_connection_id);
+    __type(value, __u32);
+} connid_cache SEC(".maps");
 
-__always_inline void inv_subbytes(uint8_t* s0) {
-    s0[0] = inv_sbox[s0[0]];
-    s0[1] = inv_sbox[s0[1]];
-    s0[2] = inv_sbox[s0[2]];
-    s0[3] = inv_sbox[s0[3]];
-    s0[4] = inv_sbox[s0[4]];
-    s0[5] = inv_sbox[s0[5]];  
-    s0[6] = inv_sbox[s0[6]];
-    s0[7] = inv_sbox[s0[7]];
-    s0[8] = inv_sbox[s0[8]];
-    s0[9] = inv_sbox[s0[9]];
-    s0[10] = inv_sbox[s0[10]];
-    s0[11] = inv_sbox[s0[11]];
-    s0[12] = inv_sbox[s0[12]];
-    s0[13] = inv_sbox[s0[13]];
-    s0[14] = inv_sbox[s0[14]];
-    s0[15] = inv_sbox[s0[15]];
-}
-
-__always_inline void inv_shiftrows(uint8_t* s0) {
-    uint8_t s[4];
-    for (int r = 0; r < 4; r++) {
-        s[0] = s0[0*4 + r];
-        s[1] = s0[1*4 + r];
-        s[2] = s0[2*4 + r];
-        s[3] = s0[3*4 + r];
-        s0[0*4 + r] = s[(4-r) % 4];
-        s0[1*4 + r] = s[(5-r) % 4];
-        s0[2*4 + r] = s[(6-r) % 4];
-        s0[3*4 + r] = s[(7-r) % 4];
-    }
-}
-
-__always_inline uint8_t xtime(uint8_t x) {
-    // GF(2^8)上でのx * {02}の乗算
-    return (x << 1) ^ (((x >> 7) & 1) * 0x1b);
-}
-
-// ミックスカラムは行列積で実装
-__always_inline void inv_mix_columns(uint8_t* state) {
-    for (int c = 0; c < 4; c++) {
-        uint8_t s0 = state[4*c + 0];
-        uint8_t s1 = state[4*c + 1];
-        uint8_t s2 = state[4*c + 2];
-        uint8_t s3 = state[4*c + 3];
-
-        state[4*c + 0] = xtime(xtime(xtime(s0))) ^ xtime(xtime(s1)) ^ xtime(xtime(xtime(s1))) ^ s1 ^ xtime(xtime(s2)) ^ xtime(xtime(xtime(s2))) ^ s2 ^ xtime(xtime(xtime(s3))) ^ xtime(s3);
-        state[4*c + 1] = xtime(xtime(xtime(s0))) ^ xtime(s0) ^ xtime(xtime(xtime(s1))) ^ xtime(xtime(s1)) ^ s1 ^ xtime(xtime(xtime(s2))) ^ xtime(s2) ^ xtime(xtime(xtime(s3))) ^ xtime(xtime(s3)) ^ s3;
-        state[4*c + 2] = xtime(xtime(s0)) ^ s0 ^ xtime(xtime(xtime(s1))) ^ xtime(s1) ^ xtime(xtime(s2)) ^ xtime(xtime(xtime(s2))) ^ s2 ^ xtime(xtime(s3)) ^ xtime(xtime(xtime(s3))) ^ s3;
-        state[4*c + 3] = xtime(s0) ^ xtime(xtime(s0)) ^ s0 ^ xtime(s1) ^ xtime(xtime(s1)) ^ s1 ^ xtime(s2) ^ xtime(xtime(s2)) ^ s2 ^ xtime(s3) ^ xtime(xtime(s3)) ^ s3;
-    }
-}
-
-__always_inline void add_round_key(uint8_t* state, uint8_t* round_key) {
-    state[0] ^= round_key[0];
-    state[1] ^= round_key[1];
-    state[2] ^= round_key[2];
-    state[3] ^= round_key[3];
-    state[4] ^= round_key[4];
-    state[5] ^= round_key[5];
-    state[6] ^= round_key[6];
-    state[7] ^= round_key[7];
-    state[8] ^= round_key[8];
-    state[9] ^= round_key[9];
-    state[10] ^= round_key[10];
-    state[11] ^= round_key[11];
-    state[12] ^= round_key[12];
-    state[13] ^= round_key[13];
-    state[14] ^= round_key[14];
-    state[15] ^= round_key[15];
-}
-
-__always_inline void aes128_decrypt(uint8_t state[16], uint8_t* round_keys) {
-    // 最後のラウンドキーを適用
-    add_round_key(state, &round_keys[10 * 16]);
-
-    // 逆のラウンドを実行
-    for (int r = 9; r > 0; r--) {
-        inv_shiftrows(state);
-        inv_subbytes(state);
-        add_round_key(state, &round_keys[r * 16]);
-        inv_mix_columns(state);
-    }
-
-    // 最初のラウンドキーを適用
-    inv_shiftrows(state);
-    inv_subbytes(state);
-    add_round_key(state, round_keys);
-}
-
-
-*/
-
-
-
-/*
-__always_inline void expand_result(uint8_t(*out)[16],uint8_t input_10[10],uint8_t pass){
-   (*out)[0] = input_10[0];
-   (*out)[1] = input_10[1];
-   (*out)[2] = input_10[2];
-   (*out)[3] = input_10[3];
-   (*out)[4] = input_10[4];
-   (*out)[5] = input_10[5];
-   (*out)[6] = input_10[6];
-   (*out)[7] = input_10[7];
-   (*out)[8] = input_10[8];
-   (*out)[9] = input_10[9];
-   (*out)[10] = 0;
-   (*out)[11] = 0;
-   (*out)[12] = 0;
-   (*out)[13] = 0;
-   (*out)[14] = 19; // length
-   (*out)[15] = pass;
-}
-*/
-
-/*
-__always_inline void split_19(uint8_t(*left)[10],uint8_t(*right)[10],const uint8_t* input19) {
-    (*left)[0] = input19[0];
-    (*left)[1] = input19[1];
-    (*left)[2] = input19[2];
-    (*left)[3] = input19[3];
-    (*left)[4] = input19[4];
-    (*left)[5] = input19[5];
-    (*left)[6] = input19[6];
-    (*left)[7] = input19[7];
-    (*left)[8] = input19[8];
-    (*left)[9] = input19[9] & 0xf0;
-  
-    (*right)[0] = input19[9] & 0x0f;
-    (*right)[1] = input19[10];
-    (*right)[2] = input19[11];
-    (*right)[3] = input19[12];
-    (*right)[4] = input19[13];
-    (*right)[5] = input19[14];
-    (*right)[6] = input19[15];
-    (*right)[7] = input19[16];
-    (*right)[8] = input19[17];
-    (*right)[9] = input19[18];
-}
-*/
 
 // 普通にメモリコピーのループを使うと最適化により
 // error: lb.c:294:15: in function test_decrypt i32 (ptr): A call to built-in function 'memset' is not supported.
 // のようなエラーになるためvolatileを使う
 #define VOLATILE(x) ((volatile uint8_t*)(x))
-#define HALF_LEN(x) ((((x) / 2) + ((x) % 2)))
+#define HALF_LEN(x) (((x) + 1) / 2)
 #define CHECK_VOLATILE(x,cmp,ret) if(*VOLATILE(&x) > cmp) { \
     debugk("ASSERTION FAILURE: %s > %d", #x, cmp); \
     return ret; \
 }
-#define DEFINE_HALF_LEN(ret) uint8_t half_len_ = HALF_LEN(full_len);/*CHECK_VOLATILE(half_len_,10,ret)*/\
-const uint8_t half_len = half_len_;
+#define DEFINE_HALF_LEN(ret) const uint8_t half_len = HALF_LEN(full_len);
 
 __always_inline void expand(uint8_t out[16],uint8_t* input, uint8_t full_len,uint8_t pass) {
   DEFINE_HALF_LEN();
@@ -318,15 +173,12 @@ __always_inline int split(uint8_t* left,uint8_t* right,const uint8_t* input,uint
     if(full_len < 5 || full_len > 19) {
       return -EINVAL;
     }
-    DEFINE_HALF_LEN(-EINVAL);
+    DEFINE_HALF_LEN();
     const uint8_t right_start = full_len - half_len;
-    //CHECK_VOLATILE(right_start, 10, -EINVAL);
     for (uint8_t i = 0; i < half_len; i++) {
         VOLATILE(left)[i] = input[i];
     }
     for (uint8_t i = 0; i < half_len; i++) {
-        // uint8_t offset = ();
-        //CHECK_VOLATILE(offset, 18, -EINVAL);
         VOLATILE(right)[i] = input[i + right_start];
     }
     if(full_len & 1) {
@@ -483,7 +335,7 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
 
     // see 4.4.2.  General Case: Four-Pass Encryption
     const int input_is_odd = full_len & 1;
-    DEFINE_HALF_LEN(-EINVAL);
+    DEFINE_HALF_LEN();
     debugk("%s: full_len=%d, half_len=%d, input_is_odd=%d", context, full_len, half_len, input_is_odd);
     uint8_t left[10],right[10];
     int err =  split(left, right, &connection_id_bytes[1],full_len);
@@ -527,12 +379,11 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
 }
 
 
-__always_inline struct destination_entry* handle_initial(struct quiclb_connection_id* conn_id,
+__always_inline struct destination_entry* handle_initial(const uint8_t* conn_id_bytes,
 struct lb_config* config,
 struct stat_counters* c,
                                                const char* context) {
      // fast path to roundrobin based on connection ID TODO: improve for security
-    const char* conn_id_bytes = (const char*)(conn_id);
     uint32_t key = conn_id_bytes[0];
     uint32_t dest_idx = (key % config->num_dests) + 1;
     debugk("%s (initial) dest_idx=%d",context, dest_idx);
@@ -552,19 +403,45 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
                                                struct stat_counters* c,
                                                const char* context
                                               ) {
-    uint8_t output[QUICLB_CONNECTION_ID_SIZE];
-    int err = connection_id_decrypt(output, (const uint8_t*)conn_id,20,false, context,c);
-    if(err < 0) {
-      ++c->quiclb_invalid_crypto_context_total;
-      debugk("%s: connection_id_decrypt failed with %d", context, err);
-      return NULL;
+    uint64_t* cached_server_id;
+    if(config->flags & LB_CONFIG_FLAG_CONNID_CACHE_ENABLED) {
+      cached_server_id = bpf_map_lookup_elem(&connid_cache, conn_id);
+    } else {
+      cached_server_id = NULL;
     }
-    const int dest_idx_ = QUICLB_CONNECTION_ID_SERVER_ID(((struct quiclb_connection_id*)(output))->connection_id);
-    const int dest_idx = dest_idx_ + 1; // dest_idx is 1-based index
-    debugk("%s conn_id dest_idx=%d", context, dest_idx);
-    if(dest_idx > config->num_dests) {
-       debugk("idx %d >= num_dests %d", dest_idx, config->num_dests);
-       return handle_initial(conn_id, config, c, context);
+    uint32_t dest_idx = 0;
+    if(!cached_server_id) {
+      uint8_t output[QUICLB_CONNECTION_ID_SIZE];
+      const uint8_t* conn_id_bytes  = (const uint8_t*)conn_id;
+      int err = connection_id_decrypt(output, conn_id_bytes, QUICLB_CONNECTION_ID_SIZE, false, context, c);
+      if(err < 0) {
+        ++c->quiclb_invalid_crypto_context_total;
+        debugk("%s: connection_id_decrypt failed with %d", context, err);
+        return NULL;
+      }
+      const int dest_idx_ = QUICLB_CONNECTION_ID_SERVER_ID(((struct quiclb_connection_id*)(output))->server_id);
+      dest_idx = dest_idx_ + 1; // dest_idx is 1-based index
+      debugk("%s conn_id dest_idx=%d", context, dest_idx);
+      if(dest_idx > config->num_dests) {
+        debugk("idx %d >= num_dests %d", dest_idx, config->num_dests);
+        return handle_initial(conn_id_bytes, config, c, context);
+      } 
+      // update cache
+      int cache_err = bpf_map_update_elem(&connid_cache, conn_id, &dest_idx, BPF_ANY);
+      if(cache_err < 0) {
+        debugk("%s: bpf_map_update_elem failed with %d, but continue", context, cache_err);
+      }
+    } else {
+      if(*cached_server_id > config->num_dests) {
+        debugk("ASSERTION FAILURE: cached_server_id %lu > num_dests %d", *cached_server_id, config->num_dests);
+        int cache_err = bpf_map_delete_elem(&connid_cache, conn_id);
+        if(cache_err < 0) {
+          debugk("%s: bpf_map_delete_elem failed with %d", context, cache_err);
+        }
+        return NULL;
+      }
+      ++c->quiclb_connid_cache_hit_total;
+      dest_idx = *cached_server_id;
     }
 
     struct destination_entry* entry = bpf_map_lookup_elem(&destinations_map, &dest_idx);
@@ -781,7 +658,7 @@ int lb_main(struct xdp_md* ctx) {
   
   }
   else if(ip->protocol == IPPROTO_UDP) {
-     // Now, we've verified that the packet is a TCP packet destined to the VIP.
+      // Now, we've verified that the packet is a UDP packet destined to the VIP.
       // Record them in the stats as they are eligible for load balancing.
       ++c->rx_packet_total;
       c->rx_total_size += data_end - data;
@@ -792,10 +669,14 @@ int lb_main(struct xdp_md* ctx) {
         EXIT(XDP_PASS);
       }
 
-      // TODO: validate destination port?
       // QUIC fixed bitとして0x40というのがあるがあれはgrease拡張等で自由に反転できてしまうため
       // 判定として信用しちゃだめだと思われる see https://datatracker.ietf.org/doc/html/rfc9287
       struct udphdr* udp = (struct udphdr*)(ip + 1);
+      if(config->quic_dest_port != 0) {
+        if(udp->dest != config->quic_dest_port) {
+          EXIT(XDP_PASS);
+        }
+      }
       const char* quic_first_byte = (const char*)(udp + 1);
       const int is_long_header = (quic_first_byte[0] & 0x80) == 0x80 ? 1 : 0;
       if(is_long_header) {
@@ -815,7 +696,7 @@ int lb_main(struct xdp_md* ctx) {
             ++c->quiclb_no_connection_id_total;
             EXIT(XDP_PASS);
           }
-          dest = handle_initial((struct quiclb_connection_id*)(quic+1) , config, c, "long");
+          dest = handle_initial((const uint8_t*)(quic+1) , config, c, "long");
           if (!dest) {
             ++c->quiclb_no_dest_entry_total;
             EXIT(XDP_DROP);

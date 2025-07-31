@@ -1,0 +1,14 @@
+config.word.map("LbconnectionIdversion3","LBConnectionIDVersion3")
+config.word.map("LbconnectionIdhead","LBConnectionIDHead")
+config.word.map("FirstByteOfQuiclb","FirstByteOfQUICLB")
+config.go.package = "lbconnid"
+format FirstByteOfQUICLB:
+  config_rotation :u3
+  random :u5
+format LBConnectionIDHead:
+  first_byte :FirstByteOfQUICLB
+  server_id :u32 # 4 byte server id, to ensure server id space enough large
+
+format LBConnectionIDVersion3:
+   head :LBConnectionIDHead
+   nonce :[12]u8
