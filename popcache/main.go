@@ -16,6 +16,7 @@ import (
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yzp0n/ncdn/httprps"
 	"github.com/yzp0n/ncdn/types"
+	"golang.org/x/net/http2"
 	"golang.org/x/net/ipv4"
 )
 
@@ -40,6 +41,44 @@ func (c *ObservedPacketConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, o
 func (c *ObservedPacketConn) ReadBatch(ms []ipv4.Message, flags int) (int, error) {
 	return c.bt.ReadBatch(ms, flags)
 }
+
+/*
+type ObservedListener struct {
+	lis net.Listener
+}
+
+type ObservedNetConn struct {
+	net.Conn
+}
+
+func (c *ObservedNetConn) Read(b []byte) (n int, err error) {
+	log.Printf("Read from %s", c.RemoteAddr())
+	n, err = c.Conn.Read(b)
+	if err != nil {
+		log.Printf("Read error from %s: %v", c.RemoteAddr(), err)
+	} else {
+		log.Printf("Read %d bytes from %s", n, c.RemoteAddr())
+	}
+	return n, err
+}
+
+func (l *ObservedListener) Accept() (net.Conn, error) {
+	conn, err := l.lis.Accept()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Accepted connection from %s", conn.RemoteAddr())
+	return &ObservedNetConn{Conn: conn}, nil
+}
+
+func (l *ObservedListener) Close() error {
+	return l.lis.Close()
+}
+
+func (l *ObservedListener) Addr() net.Addr {
+	return l.lis.Addr()
+}
+*/
 
 func main() {
 	flag.Parse()
@@ -120,7 +159,14 @@ func main() {
 		ConnectionIDGenerator: NewQUICLBConnIDGenerator(uint8(*lbNodeId), []byte(*sharedSecret)),
 	}
 
-	qlis, err := tr.Listen(http3.ConfigureTLSConfig(&tls.Config{Certificates: []tls.Certificate{cert}}), &quic.Config{})
+	tlsConf := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			return nil
+		},
+	}
+
+	qlis, err := tr.Listen(http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
 	if err != nil {
 		log.Fatalf("Failed to start QUIC listener: %v", err)
 	}
@@ -132,8 +178,33 @@ func main() {
 		}
 	}()
 
+	tlsServ := &http.Server{
+		Addr:      *listenAddr,
+		TLSConfig: tlsConf,
+		ConnState: func(conn net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				log.Printf("New connection from %s", conn.RemoteAddr())
+			case http.StateClosed:
+				log.Printf("Connection closed from %s", conn.RemoteAddr())
+			}
+		},
+	}
+
+	lis, err := net.Listen("tcp", *listenAddr)
+	if err != nil {
+		log.Fatalf("Failed to listen on %s: %v", *listenAddr, err)
+	}
+
+	lis = tls.NewListener(lis, tlsConf)
+
+	err = http2.ConfigureServer(tlsServ, &http2.Server{})
+	if err != nil {
+		log.Fatalf("Failed to configure HTTP/2 server: %v", err)
+	}
+
 	log.Printf("Listening on %s...", *listenAddr)
-	if err := http.ListenAndServe(*listenAddr, nil); err != nil {
+	if err := tlsServ.Serve(lis); err != nil {
 		log.Fatal(err)
 	}
 }

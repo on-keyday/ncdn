@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"os"
@@ -23,6 +25,8 @@ var rootCA = flag.String("rootCA", "path/to/rootCA.pem", "Path to the root CA ce
 var parallelRequests = flag.Bool("parallel", false, "Send requests in parallel")
 var metricsFile = flag.String("metricsFile", "metrics.json", "File to save metrics")
 var parallelLimit = flag.Int("parallelLimit", 0, "Maximum number of parallel requests (0 for no limit)")
+var mode = flag.String("mode", "QUIC", "mode of client (TCP or QUIC)")
+var debug = flag.Bool("debug", false, "Enable debug output")
 
 type Metrics struct {
 	ID                        int           `json:"id"`
@@ -66,22 +70,52 @@ func main() {
 	if !rootCertPool.AppendCertsFromPEM(rootCABytes) {
 		panic("Failed to append root CA")
 	}
-	tr := &http3.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs: rootCertPool,
-		},
-		QUICConfig: &quic.Config{},
+	var client *http.Client
+	switch *mode {
+	case "TCP":
+		proto := &http.Protocols{}
+		proto.SetHTTP1(true)
+		proto.SetHTTP2(true)
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: rootCertPool,
+			},
+			Protocols: proto,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			},
+		}
+		client = &http.Client{
+			Transport: tr,
+		}
+	case "QUIC":
+		tr := &http3.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: rootCertPool,
+			},
+			QUICConfig: &quic.Config{},
+		}
+		client = &http.Client{
+			Transport: tr,
+		}
+	default:
+		fmt.Println("Unknown mode:", *mode)
+		return
 	}
-	client := &http.Client{
-		Transport: tr,
-	}
-
-	fmt.Print("Starting request to QUIC LB...")
+	fmt.Printf("Running %s test\n", *mode)
+	fmt.Printf("Starting request to %s LB...\n", *mode)
 
 	// client.Timeout = 10 * time.Second
 	targetURL := fmt.Sprintf("https://%s/statusz", *serverAddress)
 	var mu sync.Mutex
 	var metrics []*Metrics
+
+	abs := func(d time.Duration) time.Duration {
+		if d < 0 {
+			return -d
+		}
+		return d
+	}
 
 	request := func(i int, wg *sync.WaitGroup, fence chan struct{}) {
 		if wg != nil {
@@ -91,6 +125,9 @@ func main() {
 			fence <- struct{}{}        // Acquire a slot in the fence
 			defer func() { <-fence }() // Release the slot in the fence
 		}
+		if *debug {
+			fmt.Printf("DEBUG: Request %d started\n", i)
+		}
 		req, _ := http.NewRequest(http.MethodGet, targetURL, nil)
 		var dnsend time.Time
 		var connectend time.Time
@@ -99,15 +136,37 @@ func main() {
 		req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
 			DNSDone: func(httptrace.DNSDoneInfo) {
 				dnsend = time.Now()
+				if *debug {
+					fmt.Printf("DEBUG: DNS lookup done for request %d at %s\n", i, dnsend)
+				}
+			},
+			TLSHandshakeStart: func() {
+				if *debug {
+					fmt.Printf("DEBUG: TLS handshake started for request %d\n", i)
+				}
+			},
+			TLSHandshakeDone: func(tls.ConnectionState, error) {
+				if *debug {
+					fmt.Printf("DEBUG: TLS handshake done for request %d at %s\n", i, time.Now())
+				}
 			},
 			GotConn: func(httptrace.GotConnInfo) {
 				connectend = time.Now()
+				if *debug {
+					fmt.Printf("DEBUG: Connection established for request %d at %s\n", i, connectend)
+				}
 			},
 			WroteRequest: func(httptrace.WroteRequestInfo) {
 				requestend = time.Now()
+				if *debug {
+					fmt.Printf("DEBUG: Request sent for request %d at %s\n", i, requestend)
+				}
 			},
 			GotFirstResponseByte: func() {
 				firstbyte = time.Now()
+				if *debug {
+					fmt.Printf("DEBUG: First response byte received for request %d at %s\n", i, firstbyte)
+				}
 			},
 		}))
 
@@ -126,14 +185,17 @@ func main() {
 			panic(err)
 		}
 		end := time.Now()
-		dnsDuration := dnsend.Sub(start)
-		if dnsDuration < 0 {
-			dnsDuration = 0
+		clampZero := func(d time.Duration) time.Duration {
+			if d < 0 {
+				return 0
+			}
+			return d
 		}
-		connectDuration := connectend.Sub(start)
-		requestDuration := requestend.Sub(start)
-		firstByteDuration := firstbyte.Sub(start)
-		fullDuration := end.Sub(start)
+		dnsDuration := clampZero(dnsend.Sub(start))
+		connectDuration := clampZero(connectend.Sub(start))
+		requestDuration := clampZero(requestend.Sub(start))
+		firstByteDuration := clampZero(firstbyte.Sub(start))
+		fullDuration := clampZero(end.Sub(start))
 		mu.Lock()
 		metrics = append(metrics, &Metrics{
 			ID:                        i,
@@ -146,6 +208,10 @@ func main() {
 			ResponseBody:              string(data),
 		})
 		mu.Unlock()
+		if *debug {
+			fmt.Printf("DEBUG: Request %d completed: DNS=%s, Connect=%s, RequestSent=%s, FirstByte=%s, Full=%s\n",
+				i, dnsDuration, connectDuration, requestDuration, firstByteDuration, fullDuration)
+		}
 	}
 
 	var wg sync.WaitGroup
@@ -181,12 +247,7 @@ func main() {
 		summaryMetics.FullDuration += m.FullDuration
 	}
 	var varianceMetrics Metrics // 絶対値バージョン
-	abs := func(d time.Duration) time.Duration {
-		if d < 0 {
-			return -d
-		}
-		return d
-	}
+
 	for _, m := range metrics {
 		varianceMetrics.DNSDuration += abs(m.DNSDuration - summaryMetics.DNSDuration/time.Duration(totalRequest))
 		varianceMetrics.ConnectDuration += abs(m.ConnectDuration - summaryMetics.ConnectDuration/time.Duration(totalRequest))

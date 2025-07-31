@@ -27,6 +27,7 @@ var vip = flag.String("vip", "192.0.2.10", "VIP address to load balance")
 var deststr = flag.String("dests", "", "Comma separated list of destination IP and MAC addresses. (Example: 192.168.88.10;00:00:5e:00:53:01,)")
 var sharedKey = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation (TODO: move into secure place)")
 var pidFile = flag.String("pidFile", "/run/ncdn/l4lb.pid", "Path to PID file for l4lb process")
+var mtu = flag.Uint("mtu", 1500, "Maximum Transmission Unit (MTU) for the interface")
 
 func parseDest(deststr string) ([]l4lbdrv.DestinationEntry, error) {
 	commas := strings.Split(deststr, ",")
@@ -109,6 +110,15 @@ func main() {
 		log.Panicf("Expected BPF filesystem type %d, got %d", 0xcafe4a11, typ)
 	}
 	//*/
+	if *mtu < 68 {
+		log.Panicf("MTU must be at least 68 bytes, got %d", *mtu)
+	}
+	if *mtu > 9000 {
+		log.Printf("Warning: MTU is set to %d bytes, which is larger than the typical Ethernet MTU of 1500 bytes. Ensure that your network supports this MTU.", *mtu)
+	}
+	if *mtu > 65535 {
+		log.Panicf("MTU must not exceed 65535 bytes, got %d", *mtu)
+	}
 
 	dests, err := parseDest(*deststr)
 	if err != nil {
@@ -129,6 +139,7 @@ func main() {
 		VIP:            netip.MustParseAddr(*vip),
 		Dests:          dests,
 		SharedKey:      derivedKey,
+		MTU:            uint16(*mtu),
 	}
 	lb, err := l4lbdrv.New(cfg)
 	if err != nil {

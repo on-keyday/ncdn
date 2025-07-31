@@ -6,6 +6,7 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include <stdbool.h>
 
 
@@ -39,6 +40,8 @@ struct stat_counters { /* go:Add,String */
   uint64_t no_vip_match_total; // HELP Number of packets dropped due to their dest IP address not matching any known VIP.
   uint64_t failed_adjust_head_total; // HELP Number of xdp_adjust_head failures.
   uint64_t failed_adjust_tail_total; // HELP Number of xdp_adjust_tail failures.
+  uint64_t tcp_packet_total; // HELP Number of TCP packets received.
+  uint64_t mtu_exceeded_total; // HELP Number of packets dropped due to MTU exceeded.
 
   uint64_t quiclb_short_packet_total; // HELP Number of QUIC-LB short packets received.
   uint64_t quiclb_long_packet_total; // HELP Number of QUIC-LB long packets received.
@@ -64,6 +67,8 @@ struct {
 struct lb_config { /* go: */
   uint32_t vip_address;
   uint32_t num_dests;
+  uint16_t mtu;
+  uint16_t __padding; // Padding to align to 8 bytes
 } PACKED;
 
 struct {
@@ -624,6 +629,75 @@ int test_decrypt(struct xdp_md* ctx) {
   return res;
 }
 
+__always_inline void compute_ip_checksum(struct iphdr* ip) {
+    // Reset checksum
+    ip->check = 0;
+    uint32_t  sum = 0;
+    for(int i = 0; i < sizeof(struct iphdr) / 2; i++) {
+        // Calculate checksum using 16-bit words
+        __u16* word = (__u16*)((uint8_t*)ip + i * 2);
+        sum += *word;
+    }
+    // Fold 32-bit sum to 16 bits
+    sum = (sum >> 16) + (sum & 0xffff);
+    ip->check = ~sum;
+}
+
+
+__always_inline void send_mtu_exceeded(struct xdp_md* md,const struct lb_config* config) {
+    void* data = (void*)(uint64_t)md->data;
+    void* data_end = (void*)(uint64_t)md->data_end;
+    const int hdr_size = sizeof(struct ethhdr) + 
+                         sizeof(struct iphdr) + 
+                         sizeof(struct icmphdr) +    
+                         sizeof(struct iphdr) +
+                         8;
+    if (data + hdr_size > data_end) {
+        debugk("ASSERTION FAILURE: packet too short for MTU exceeded response");
+        return;
+    }
+    struct ethhdr* eth = data;
+    uint8_t tmp_mac[ETH_ALEN];
+    memcpy(tmp_mac, eth->h_source, ETH_ALEN);
+    memcpy(eth->h_source, eth->h_dest, ETH_ALEN);
+    memcpy(eth->h_dest, tmp_mac, ETH_ALEN);
+    struct iphdr* ip = (struct iphdr*)(eth + 1);
+    uint8_t original_ip_header[sizeof(struct iphdr) + 8];
+    memcpy(original_ip_header, ip, sizeof(struct iphdr) + 8);
+    // Swap source and destination IP addresses
+    __be32 temp = ip->saddr;
+    ip->id = 0; // Set ID to 0 for MTU exceeded response
+    ip->saddr = config->vip_address; // Use VIP as source address
+    ip->daddr = temp; // Use original source address as destination address
+    ip->protocol = IPPROTO_ICMP; // Change protocol to ICMP
+    ip->tot_len = htons(sizeof(struct iphdr) + sizeof(struct icmphdr) + sizeof(struct iphdr) + 8);
+    compute_ip_checksum(ip);
+    struct icmphdr* icmp = (struct icmphdr*)(ip + 1);
+    icmp->type = ICMP_DEST_UNREACH;
+    icmp->code = ICMP_FRAG_NEEDED;
+    icmp->un.frag.mtu = htons(config->mtu - sizeof(struct iphdr));
+    debugk("DEBUG: Sending MTU exceeded response with mtu %d", config->mtu - sizeof(struct iphdr));
+    icmp->checksum = 0; // checksum is not needed for XDP programs
+    struct iphdr* original_ip = (struct iphdr*)(icmp + 1);
+    // Copy the original IP header after the ICMP header
+    memcpy(original_ip, original_ip_header, sizeof(struct iphdr) + 8);
+    uint32_t sum = 0;
+    const int hdr_size_icmp = sizeof(struct icmphdr) + sizeof(struct iphdr) + 8;
+    for(int i = 0; i < hdr_size_icmp / 2; i++) {
+        // Calculate checksum using 16-bit words
+        __u16* word = (__u16*)(icmp) + i;
+        sum += *word;
+    }
+    sum = (sum >> 16) + (sum & 0xffff);
+    icmp->checksum =(uint16_t)~sum; // Final checksum
+    int current_size = data_end - data;
+    if (current_size > hdr_size) {
+        bpf_xdp_adjust_tail(md,  hdr_size - current_size);
+    }
+    int new_size = md->data_end - md->data;
+    debugk("DEBUG: MTU exceeded response size adjusted from %d to %d", current_size, new_size);
+}
+
 SEC("xdp")
 int lb_main(struct xdp_md* ctx) {
   
@@ -683,6 +757,7 @@ int lb_main(struct xdp_md* ctx) {
       // Now, we've verified that the packet is a TCP packet destined to the VIP.
       // Record them in the stats as they are eligible for load balancing.
       ++c->rx_packet_total;
+      ++c->tcp_packet_total;
       c->rx_total_size += data_end - data;
 
       if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
@@ -791,6 +866,21 @@ int lb_main(struct xdp_md* ctx) {
   debugk("dest mac=%02x:%02x:%02x", dest->mac_address[0], dest->mac_address[1], dest->mac_address[2]);
   debugk("         %02x:%02x:%02x", dest->mac_address[3], dest->mac_address[4], dest->mac_address[5]);
 
+  // calculate encapsulation size
+  int current_data_len = ctx->data_end - ctx->data;
+  uint16_t encap_size = current_data_len + sizeof(struct iphdr) - sizeof(struct ethhdr);
+  if(ETH_ZLEN > encap_size) {
+    encap_size = ETH_ZLEN;
+  }
+  debugk("encap_size=%d", encap_size);
+  if(encap_size > config->mtu) {
+    debugk("encap_size %d > mtu %d, sending ICMP MTU exceeded", encap_size, config->mtu);
+    send_mtu_exceeded(ctx,config);
+    ++c->mtu_exceeded_total;
+    EXIT(XDP_TX);
+  }
+
+
   // make room for the additional IP header (IPIP encapsulation)
   if (bpf_xdp_adjust_head(ctx, -(int)sizeof(struct iphdr))) {
     ++c->failed_adjust_head_total;
@@ -833,12 +923,7 @@ int lb_main(struct xdp_md* ctx) {
   ip2->daddr = dest->ip_address;
 
   // Calculate the checksum of the IPIP header.
-  uint32_t sum = 0;
-  for (int i = 0; i < sizeof(struct iphdr) / 2; i++) {
-    sum += ((uint16_t*)ip2)[i];
-  }
-  sum = (sum & 0xffff) + (sum >> 16);
-  ip2->check = ~sum;
+  compute_ip_checksum(ip2);
 
   // Drop padding of the original packet if needed
   ssize_t padding = ETH_ZLEN - (sizeof(struct ethhdr) + iphdr_tot_len);

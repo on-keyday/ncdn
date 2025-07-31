@@ -28,7 +28,8 @@ import datetime
 # 高負荷環境試験は別途ちゃんと調整して行う方が良いであろう(本番環境もってかないとわかんない....)
 #LB="metrics/20250730122515/lb_exist_*.json"
 #NO_LB="metrics/20250730122515/lb_not_exist_*.json"
-ANALYSIS_CONFIG= [{
+"""
+{
     "description": "直列テストシナリオ",
     "LB":"metrics/20250730063930/lb_exist_*.json",
     "NO_LB":"metrics/20250730065416/lb_not_exist_*.json"
@@ -48,7 +49,66 @@ ANALYSIS_CONFIG= [{
     "LB":"metrics/20250730122515/lb_exist_*.json",
     "NO_LB":"metrics/20250730122515/lb_not_exist_*.json"
 }
-]
+"""
+def make_config(prefix :str,name :str):
+    return [
+    {
+        "description": f"{name}-QUICLBありなし",
+        "A": {
+            "file": f"{prefix}/lb_exist_quic_*.json",
+            "metricsName": "LBありQUIC"
+        },
+        "B": {
+            "file": f"{prefix}/lb_not_exist_quic_*.json",
+            "metricsName": "LBなしQUIC"
+        }
+    },
+    {
+        "description": f"{name}-TCPLBありなし",
+        "A": {
+            "file": f"{prefix}/lb_exist_tcp_*.json",
+            "metricsName": "LBありTCP"
+        },
+        "B": {
+            "file": f"{prefix}/lb_not_exist_tcp_*.json",
+            "metricsName": "LBなしTCP"
+        }
+    },
+    {
+        "description": f"{name}-QUICとTCP LBなし",
+        "A": {
+            "file": f"{prefix}/lb_not_exist_quic_*.json",
+            "metricsName": "LBなしQUIC"
+        },
+        "B": {
+            "file": f"{prefix}/lb_not_exist_tcp_*.json",
+            "metricsName": "LBなしTCP"
+        }
+    },
+    {
+        "description": f"{name}-QUICとTCP LBあり",
+        "A": {
+            "file": f"{prefix}/lb_exist_quic_*.json",
+            "metricsName": "LBありQUIC"
+        },
+        "B": {
+            "file": f"{prefix}/lb_exist_tcp_*.json",
+            "metricsName": "LBありTCP"
+        }
+    }
+    ]
+
+#ANALYSIS_CONFIG = make_config("metrics/20250730214825")
+
+# 以下有効
+# 並列テストシナリオ(制限1000)の結果
+#ANALYSIS_CONFIG = make_config("metrics/20250730223645","並列テストシナリオ(制限1000)")
+#ANALYSIS_CONFIG = make_config("metrics/20250730230715","並列テストシナリオ(制限1000)")
+#ANALYSIS_CONFIG = make_config("metrics/20250730234124","並列テストシナリオ(制限1000)")
+#ANALYSIS_CONFIG = make_config("metrics/20250730235159","並列テストシナリオ(制限1000)")
+#ANALYSIS_CONFIG = make_config("metrics/20250731000704","並列テストシナリオ(制限1000)")
+# 直列テストシナリオ
+ANALYSIS_CONFIG = make_config("metrics/20250731002329","直列テストシナリオ")
 
 def load_metrics(file_pattern):
     """
@@ -116,22 +176,28 @@ def calculate_statistics(df):
         }
     return stats_dict
 
-def run_cycle(LB :str,NO_LB :str):
-    lbdf = load_metrics(LB)
-    noldf = load_metrics(NO_LB)
-    stats_lb = calculate_statistics(lbdf)
-    stats_no_lb = calculate_statistics(noldf)
-    print("Load Balancer Exists Metrics Statistics:")
-    print(json.dumps(stats_lb, indent=2))
-    print("Load Balancer Does Not Exist Metrics Statistics:")
-    print(json.dumps(stats_no_lb, indent=2))
-    print("H(0): LBが存在する場合でも、各メトリックの平均値はない場合と変わらない")
-    print("H(1): LBが存在する場合、各メトリックの平均値はない場合に比べて有意に大きくなる。")
+
+
+def run_cycle(A :dict[str, str],B :dict[str, str]):
+    fileA = A['file']
+    fileB = B['file']
+    dfA = load_metrics(fileA)
+    dfB = load_metrics(fileB)
+    statsA = calculate_statistics(dfA)
+    statsB = calculate_statistics(dfB)
+    metricsNameA = A['metricsName']
+    metricsNameB = B['metricsName']
+    print(f"{metricsNameA}:")
+    print(json.dumps(statsA, indent=2))
+    print(f"{metricsNameB}:")
+    print(json.dumps(statsB, indent=2))
+    print(f"H(0): 「{metricsNameA}」と「{metricsNameB}」に有意な差がない")
+    print(f"H(1): 「{metricsNameA}」のほうが「{metricsNameB}」よりも有意に大きい")
     alpha = 0.05 # 有意水準
     # Levene's test
-    for metric in stats_lb.keys():
+    for metric in statsA.keys():
         print(f"\nLevene's test for {metric}:")
-        levene_stat, levene_p_value = stats.levene(lbdf[metric], noldf[metric])
+        levene_stat, levene_p_value = stats.levene(dfA[metric], dfB[metric])
         print(f"  Statistic: {levene_stat}")
         print(f"  P-value: {levene_p_value}")
         #if levene_p_value < alpha:
@@ -141,11 +207,11 @@ def run_cycle(LB :str,NO_LB :str):
         #    print("  => P-valueが有意水準以上であるため、分散が等しいか等しくないかどうか証拠が足りない")
         #    use_equal_var = True
         use_equal_var = False
-        t_stat, p_value = stats.ttest_ind(lbdf[metric], noldf[metric], equal_var=use_equal_var,alternative='greater')
-        print(f"{metric}: p-value = {p_value}")
+        t_stat, p_value = stats.ttest_ind(dfA[metric], dfB[metric], equal_var=use_equal_var,alternative='greater')
+        print(f"{metric}: Statistic: {t_stat} P-value: {p_value}")
 
         if p_value < alpha:
-            print(f"  => P-valueが有意水準より小さいため、2つのグループの平均は統計的に有意に異なりLBが存在する場合オーバヘッドがあるといえる")
+            print(f"  => P-valueが有意水準より小さいため、2つのグループの平均は統計的に有意に異なり統計上は「{metricsNameA}」の{metric}の方が「{metricsNameB}」より大きい")
         else:
             print(f"  => P-valueが有意水準以上であるため、2つのグループの平均は統計的に有意に異なるかどうか証拠が足りない")
 
@@ -154,6 +220,6 @@ for config in ANALYSIS_CONFIG:
     #print(f"Running analysis for LB: {config['LB']} and NO_LB: {config['NO_LB']}")
     print(f"Description: {config['description']}")
     print("\n```")
-    run_cycle(config['LB'], config['NO_LB'])
+    run_cycle(config['A'], config['B'])
     print("\n```")
 
