@@ -72,7 +72,8 @@ struct lb_config { /* go: */
   uint16_t mtu;
   uint16_t quic_dest_port;
   uint8_t flags;
-  uint8_t padding[3]; // padding to align to 8 bytes
+  uint8_t server_id_hash_key; 
+  uint8_t padding[2]; // padding to align to 8 bytes
 } PACKED;
 
 #define LB_CONFIG_FLAG_CONNID_CACHE_ENABLED (1 << 0)
@@ -255,29 +256,33 @@ __always_inline void print_key(const char* name, const uint8_t* key) {
     debugk("DEBUG: %s=%016lx%016lx", name, high, low);
 }
 
-__always_inline void print_full_connection_id(const char* name, const uint8_t* connection_id) {
+__always_inline void print_full_connection_id(const char* name, const uint8_t* connection_id,uint8_t len) {
     uint64_t high, middle;
     uint32_t low;
-    high = (uint64_t)(connection_id[0]) << 56 |
-           (uint64_t)(connection_id[1]) << 48 |
-           (uint64_t)(connection_id[2]) << 40 |
-           (uint64_t)(connection_id[3]) << 32 |
-           (uint64_t)(connection_id[4]) << 24 |
-           (uint64_t)(connection_id[5]) << 16 |
-           (uint64_t)(connection_id[6]) << 8 |
-           (uint64_t)(connection_id[7]);
-    middle = (uint64_t)(connection_id[8]) << 56 |
-             (uint64_t)(connection_id[9]) << 48 |
-             (uint64_t)(connection_id[10]) << 40 |
-             (uint64_t)(connection_id[11]) << 32 |
-             (uint64_t)(connection_id[12]) << 24 |
-             (uint64_t)(connection_id[13]) << 16 |
-             (uint64_t)(connection_id[14]) << 8 |
-             (uint64_t)(connection_id[15]);
-    low = ((uint32_t)(connection_id[16]) << 24) |
-          ((uint32_t)(connection_id[17]) << 16) |
-          ((uint32_t)(connection_id[18]) << 8) |
-          ((uint32_t)(connection_id[19]));
+#define ASSIGN(VAR,TYPE,SHIFT,INDEX) if(INDEX < len) { VAR |= ((TYPE)(connection_id[INDEX]) << SHIFT); }
+    high = 0;
+    ASSIGN(high, uint64_t, 56, 0);
+    ASSIGN(high, uint64_t, 48, 1);
+    ASSIGN(high, uint64_t, 40, 2);
+    ASSIGN(high, uint64_t, 32, 3);
+    ASSIGN(high, uint64_t, 24, 4);
+    ASSIGN(high, uint64_t, 16, 5);
+    ASSIGN(high, uint64_t, 8, 6);
+    ASSIGN(high, uint64_t, 0, 7);
+    middle = 0;
+    ASSIGN(middle, uint64_t, 56, 8);
+    ASSIGN(middle, uint64_t, 48, 9);
+    ASSIGN(middle, uint64_t, 40, 10);
+    ASSIGN(middle, uint64_t, 32, 11);
+    ASSIGN(middle, uint64_t, 24, 12);
+    ASSIGN(middle, uint64_t, 16, 13);
+    ASSIGN(middle, uint64_t, 8, 14);
+    ASSIGN(middle, uint64_t, 0, 15);
+    low = 0;
+    ASSIGN(low, uint32_t, 24, 16);
+    ASSIGN(low, uint32_t, 16, 17);
+    ASSIGN(low, uint32_t, 8, 18);
+    ASSIGN(low, uint32_t, 0, 19);
     debugk("DEBUG: %s=%016lx%016lx%08x",name, high, middle, low);
 }
 
@@ -290,6 +295,11 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
         return -EINVAL;
     }
     debugk("%s: input_len=%d, short_server_id=%d", context, input_len, short_server_id);
+    uint8_t rotation = QUICLB_CONNECTION_ID_CONFIG_ROTATION(connection_id_bytes[0]);
+    if(rotation == 7) {
+        debugk("%s: rotation is 7, which is not supported", context);
+        return -ENOTSUP;
+    }
     struct __crypto_ctx_value *v = crypto_ctx_value_lookup();
     if (!v) {
         debugk("%s: no crypto context found", context);
@@ -301,7 +311,7 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
         return -ENOENT;
     }
     debugk("%s: crypto context found, ctx=%p", context, ctx);
-    print_full_connection_id("encrypted_conn_id", connection_id_bytes);
+    print_full_connection_id("encrypted_conn_id", connection_id_bytes, input_len);
     struct bpf_dynptr temporary_dynptr;
     int ret = bpf_dynptr_from_mem(&temporary,sizeof(temporary), 0, &temporary_dynptr);
     if (ret < 0) {
@@ -329,7 +339,7 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
       c->quiclb_decrypt_success_call_total++;
       output[0] = connection_id_bytes[0]; // first byte is not encrypted
       __builtin_memcpy(&output[1], temporary, 16);
-      print_full_connection_id("decrypted_conn_id", output);
+      print_full_connection_id("decrypted_conn_id", output, input_len);
       return 0;
     }
 
@@ -374,18 +384,23 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
 
     output[0] = connection_id_bytes[0]; // first byte is not encrypted
     concat(&output[1], left, right, full_len);
-    print_full_connection_id("decrypted_conn_id", output);
+    print_full_connection_id("decrypted_conn_id", output, input_len);
     return 0;
 }
 
 
-__always_inline struct destination_entry* handle_initial(const uint8_t* conn_id_bytes,
+__always_inline uint32_t hash_server_id(struct lb_config* config,uint32_t src_ip,uint16_t src_port, uint8_t connid_first) {
+    // hash the server id based on src_ip, src_port and first byte of connection id
+    uint32_t hash = (src_ip + src_port + connid_first + config->server_id_hash_key) % config->num_dests;
+    debugk("DEBUG: hash_server_id: src_ip=%u, src_port=%u, connid_first=%u, hash=%u", src_ip, src_port, connid_first, hash);
+    return hash;
+}
+
+__always_inline struct destination_entry* handle_initial(uint32_t server_id,
 struct lb_config* config,
 struct stat_counters* c,
                                                const char* context) {
-     // fast path to roundrobin based on connection ID TODO: improve for security
-    uint32_t key = conn_id_bytes[0];
-    uint32_t dest_idx = (key % config->num_dests) + 1;
+    uint32_t dest_idx = server_id % config->num_dests + 1; // dest_idx is 1-based index
     debugk("%s (initial) dest_idx=%d",context, dest_idx);
     struct destination_entry* dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
     if (!dest) {
@@ -401,9 +416,11 @@ struct stat_counters* c,
 __always_inline struct destination_entry* handle_connection_id(struct quiclb_connection_id* conn_id,
                                                struct lb_config* config,
                                                struct stat_counters* c,
-                                               const char* context
+                                               const char* context,
+                                               uint32_t src_ip,
+                                               uint16_t src_port
                                               ) {
-    uint64_t* cached_server_id;
+    uint32_t* cached_server_id;
     if(config->flags & LB_CONFIG_FLAG_CONNID_CACHE_ENABLED) {
       cached_server_id = bpf_map_lookup_elem(&connid_cache, conn_id);
     } else {
@@ -413,6 +430,11 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
     if(!cached_server_id) {
       uint8_t output[QUICLB_CONNECTION_ID_SIZE];
       const uint8_t* conn_id_bytes  = (const uint8_t*)conn_id;
+      uint8_t rotation = QUICLB_CONNECTION_ID_CONFIG_ROTATION(conn_id_bytes[0]);
+      if(rotation == 7) {
+        debugk("%s: rotation is 7, handle with original routing info", context);
+        return handle_initial(hash_server_id(config, src_ip, src_port, conn_id_bytes[5/*nonce pos*/]), config, c, context);
+      }
       int err = connection_id_decrypt(output, conn_id_bytes, QUICLB_CONNECTION_ID_SIZE, false, context, c);
       if(err < 0) {
         ++c->quiclb_invalid_crypto_context_total;
@@ -424,8 +446,8 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
       debugk("%s conn_id dest_idx=%d", context, dest_idx);
       if(dest_idx > config->num_dests) {
         debugk("idx %d >= num_dests %d", dest_idx, config->num_dests);
-        return handle_initial(conn_id_bytes, config, c, context);
-      } 
+        return handle_initial(dest_idx, config, c, context);
+      }
       // update cache
       int cache_err = bpf_map_update_elem(&connid_cache, conn_id, &dest_idx, BPF_ANY);
       if(cache_err < 0) {
@@ -645,10 +667,9 @@ int lb_main(struct xdp_md* ctx) {
 
       struct tcphdr* tcp = (struct tcphdr*)(ip + 1);
 
-      uint32_t key = ip->saddr + tcp->source;
       debugk("incoming packet: ip=%pI4 port=%u", &ip->saddr, ntohs(tcp->source));
 
-      uint32_t dest_idx = (key % config->num_dests) + 1;
+      uint32_t dest_idx = hash_server_id(config, ip->saddr, ntohs(tcp->source), 0);
       debugk("dest_idx=%d", dest_idx);
       dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
       if (!dest) {
@@ -696,7 +717,8 @@ int lb_main(struct xdp_md* ctx) {
             ++c->quiclb_no_connection_id_total;
             EXIT(XDP_PASS);
           }
-          dest = handle_initial((const uint8_t*)(quic+1) , config, c, "long");
+          uint32_t server_id = hash_server_id(config, ip->saddr, ntohs(udp->source), ((const uint8_t*)(quic+1))[0]);
+          dest = handle_initial(server_id, config, c, "long");
           if (!dest) {
             ++c->quiclb_no_dest_entry_total;
             EXIT(XDP_DROP);
@@ -708,11 +730,10 @@ int lb_main(struct xdp_md* ctx) {
             ++c->quiclb_too_short_long_packet_total;
             EXIT(XDP_PASS);
           }
-          // TODO: add validation of mac or other validation logic?
           struct quiclb_connection_id* conn_id =
               (struct quiclb_connection_id*)(quic + 1);
      
-          dest = handle_connection_id(conn_id, config,c, "long");
+          dest = handle_connection_id(conn_id, config,c, "long", ip->saddr, ntohs(udp->source));
           if (!dest) {
             EXIT(XDP_DROP);
           }
@@ -730,7 +751,7 @@ int lb_main(struct xdp_md* ctx) {
         struct quiclb_connection_id* conn_id =
             (struct quiclb_connection_id*)(quic + 1);
 
-        dest = handle_connection_id(conn_id,config,c,"short");
+        dest = handle_connection_id(conn_id,config,c,"short", ip->saddr, ntohs(udp->source));
 
         if (!dest) {
           EXIT(XDP_DROP);

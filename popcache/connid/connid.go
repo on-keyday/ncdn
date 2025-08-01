@@ -7,13 +7,15 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/quic-go/quic-go"
 )
 
 type QUICLBConnIDGenerator struct {
+	rw        sync.RWMutex // Ensure thread-safe access to the generator
 	serverID  uint32
-	sharedKey cipher.Block
+	sharedKey cipher.Block // maybe nil, if no shared key is used
 	connIDLen uint8
 	rotation  uint8 // Rotation counter for the first byte
 }
@@ -26,14 +28,26 @@ func printDebugInfo(format string, args ...interface{}) {
 	}
 }
 
+const FirstByteOfQUICLBSize = 1  // 1 byte for first byte
+const LBConnectionIDHeadSize = 4 // 1 byte for first byte, 4 bytes for server ID, 12 bytes for padding
+const LeastRequiredNonceSize = 4
+const MinConnectionIDSize = FirstByteOfQUICLBSize + LBConnectionIDHeadSize + LeastRequiredNonceSize // Minimum size of the connection ID
+const MaxConnectionIDSize = 20
+
+var _ [MaxConnectionIDSize - MinConnectionIDSize]uint8 // must be positive
+
 func NewQUICLBConnIDGenerator(serverID uint32, sharedKey []byte, connIDLen uint8) *QUICLBConnIDGenerator {
-	if connIDLen < 5+4 || connIDLen > 20 {
+	if connIDLen < MinConnectionIDSize || connIDLen > MaxConnectionIDSize {
 		panic(fmt.Errorf("connIDLen must be between 9 and 20, got %d", connIDLen))
 	}
-	printDebugInfo("DEBUG: Derived AES key: %x\n", sharedKey)
-	block, err := aes.NewCipher(sharedKey)
-	if err != nil {
-		panic(fmt.Errorf("failed to create AES cipher: %w", err))
+	printDebugInfo("DEBUG: AES key: %x\n", sharedKey)
+	var block cipher.Block
+	if len(sharedKey) != 0 {
+		var err error
+		block, err = aes.NewCipher(sharedKey)
+		if err != nil {
+			panic(fmt.Errorf("failed to create AES cipher: %w", err))
+		}
 	}
 	return &QUICLBConnIDGenerator{
 		serverID:  serverID,
@@ -92,6 +106,10 @@ func generateConnectionID(key cipher.Block, plainCID []byte) ([]byte, error) {
 		return nil, fmt.Errorf("invalid connection ID length: %d", len(plainCID))
 	}
 	printDebugInfo("DEBUG: Plain CID: %x\n", plainCID)
+	if key == nil {
+		printDebugInfo("DEBUG: No encryption key provided, returning plain CID\n")
+		return plainCID, nil // No encryption, return the plain CID
+	}
 	var fullLen uint8 = uint8(len(plainCID) - 1) // Exclude the first octet
 	if fullLen == 16 {
 		var buffer [17]byte
@@ -145,13 +163,21 @@ func (g *QUICLBConnIDGenerator) GenerateConnectionID() (quic.ConnectionID, error
 	if _, err := rand.Read(cid[:g.connIDLen]); err != nil {
 		return quic.ConnectionID{}, fmt.Errorf("generating conn ID failed: %w", err)
 	}
+	g.rw.RLock()
+	rotation := g.rotation
+	sharedKey := g.sharedKey
+	g.rw.RUnlock()
+	if sharedKey == nil {
+		printDebugInfo("DEBUG: No shared key, set rotation bit 0b111\n")
+		rotation = 7 // Set rotation to 0b111 if no shared key is used
+	}
 	v := &LBConnectionIDHead{}
 	v.Decode(cid[:])
-	v.FirstByte.SetConfigRotation(g.rotation)
+	v.FirstByte.SetConfigRotation(rotation)
 	v.ServerId = g.serverID
 	plainCIDHead := v.MustEncode()
 	copy(cid[:], plainCIDHead)
-	cipherCID, err := generateConnectionID(g.sharedKey, cid[:g.connIDLen])
+	cipherCID, err := generateConnectionID(sharedKey, cid[:g.connIDLen])
 	if err != nil {
 		return quic.ConnectionID{}, fmt.Errorf("generating conn ID failed: %w", err)
 	}
@@ -170,16 +196,27 @@ func (g *QUICLBConnIDGenerator) Rotation() uint8 {
 	return g.rotation
 }
 
-// Caller must gurantee the rotated shared key is shared with the LB.
+func (g *QUICLBConnIDGenerator) NextRotation() uint8 {
+	// Return the next rotation value, which is incremented by 1 and wraps around at 7
+	return (g.rotation + 1) % 7
+}
+
+// Caller must guarantee the rotated shared key is shared with the LB.
 // and the new shared key must be the same length as the original one.
 func (g *QUICLBConnIDGenerator) RotateKey(newSharedKey []byte) error {
-	if len(newSharedKey) != g.sharedKey.BlockSize() {
-		return fmt.Errorf("new shared key must be %d bytes long", g.sharedKey.BlockSize())
+	if g.sharedKey != nil {
+		g.rw.RLock()
+		sharedKey := g.sharedKey
+		g.rw.RUnlock()
+		if len(newSharedKey) != sharedKey.BlockSize() {
+			return fmt.Errorf("new shared key must be %d bytes long", sharedKey.BlockSize())
+		}
 	}
 	block, err := aes.NewCipher(newSharedKey)
 	if err != nil {
 		return fmt.Errorf("failed to create new AES cipher: %w", err)
 	}
+	g.rw.Lock()
 	g.sharedKey = block
 	/*
 		   spec says
@@ -207,7 +244,11 @@ func (g *QUICLBConnIDGenerator) RotateKey(newSharedKey []byte) error {
 			```
 			so rotation bit should be less than 7= 0b111
 	*/
-	g.rotation = (g.rotation + 1) % 7
-	fmt.Printf("DEBUG: New AES key: %x\n", newSharedKey)
+	newRotation := g.NextRotation()
+	g.rotation = newRotation
+	g.rw.Unlock()
+	printDebugInfo("DEBUG: New AES key: %x rotation: %d\n", newSharedKey, newRotation)
 	return nil
 }
+
+var _ quic.ConnectionIDGenerator = &QUICLBConnIDGenerator{}

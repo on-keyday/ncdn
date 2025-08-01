@@ -16,6 +16,7 @@ import (
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yzp0n/ncdn/httprps"
 	lbconnid "github.com/yzp0n/ncdn/popcache/connid"
+	"github.com/yzp0n/ncdn/tool/util"
 	"github.com/yzp0n/ncdn/types"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/ipv4"
@@ -154,10 +155,15 @@ func main() {
 		log.Fatalf("lbNodeId must be between 0 and 15, got %d", *lbNodeId)
 	}
 
+	derivedKey, err := util.DeriveKey([]byte(*sharedSecret), "quic-lb")
+	if err != nil {
+		log.Fatalf("Failed to derive key: %v", err)
+	}
+
 	tr := &quic.Transport{
 		Conn:                  pkt,
 		ConnectionIDLength:    20,
-		ConnectionIDGenerator: lbconnid.NewQUICLBConnIDGenerator(uint32(*lbNodeId), []byte(*sharedSecret), 17),
+		ConnectionIDGenerator: lbconnid.NewQUICLBConnIDGenerator(uint32(*lbNodeId), derivedKey, 17),
 	}
 
 	tlsConf := &tls.Config{

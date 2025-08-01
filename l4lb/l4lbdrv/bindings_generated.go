@@ -12,7 +12,7 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:88
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:95
 )
 
 type StatCounters struct { // ../c/lb.c:32
@@ -27,15 +27,17 @@ type StatCounters struct { // ../c/lb.c:32
 	FailedAdjustTailTotal           uint64 // ../c/lb.c:42
 	TcpPacketTotal                  uint64 // ../c/lb.c:43
 	MtuExceededTotal                uint64 // ../c/lb.c:44
-	QuiclbShortPacketTotal          uint64 // ../c/lb.c:46
-	QuiclbLongPacketTotal           uint64 // ../c/lb.c:47
-	QuiclbInitialRoutingPacketTotal uint64 // ../c/lb.c:48
-	QuiclbTooShortLongPacketTotal   uint64 // ../c/lb.c:49
-	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:50
-	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:51
-	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:52
-	QuiclbEncryptSuccessCallTotal   uint64 // ../c/lb.c:53
-	QuiclbDecryptSuccessCallTotal   uint64 // ../c/lb.c:54
+	QuiclbNoDestPortMatchTotal      uint64 // ../c/lb.c:46
+	QuiclbShortPacketTotal          uint64 // ../c/lb.c:47
+	QuiclbLongPacketTotal           uint64 // ../c/lb.c:48
+	QuiclbInitialRoutingPacketTotal uint64 // ../c/lb.c:49
+	QuiclbTooShortLongPacketTotal   uint64 // ../c/lb.c:50
+	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:51
+	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:52
+	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:53
+	QuiclbEncryptSuccessCallTotal   uint64 // ../c/lb.c:54
+	QuiclbDecryptSuccessCallTotal   uint64 // ../c/lb.c:55
+	QuiclbConnidCacheHitTotal       uint64 // ../c/lb.c:56
 }
 
 func StatCountersAssertLayout(s *DWARFStruct) error {
@@ -107,6 +109,11 @@ func StatCountersAssertLayout(s *DWARFStruct) error {
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go MtuExceededTotal: %d, dwarf mtu_exceeded_total: %d", goff, doff)
 	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbNoDestPortMatchTotal)
+	doff = fs["quiclb_no_dest_port_match_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbNoDestPortMatchTotal: %d, dwarf quiclb_no_dest_port_match_total: %d", goff, doff)
+	}
 	goff = unsafe.Offsetof(StatCounters{}.QuiclbShortPacketTotal)
 	doff = fs["quiclb_short_packet_total"].Offset
 	if goff != uintptr(doff) {
@@ -152,6 +159,11 @@ func StatCountersAssertLayout(s *DWARFStruct) error {
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go QuiclbDecryptSuccessCallTotal: %d, dwarf quiclb_decrypt_success_call_total: %d", goff, doff)
 	}
+	goff = unsafe.Offsetof(StatCounters{}.QuiclbConnidCacheHitTotal)
+	doff = fs["quiclb_connid_cache_hit_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go QuiclbConnidCacheHitTotal: %d, dwarf quiclb_connid_cache_hit_total: %d", goff, doff)
+	}
 
 	return nil
 }
@@ -168,6 +180,7 @@ func (c *StatCounters) Add(other *StatCounters) {
 	c.FailedAdjustTailTotal += other.FailedAdjustTailTotal
 	c.TcpPacketTotal += other.TcpPacketTotal
 	c.MtuExceededTotal += other.MtuExceededTotal
+	c.QuiclbNoDestPortMatchTotal += other.QuiclbNoDestPortMatchTotal
 	c.QuiclbShortPacketTotal += other.QuiclbShortPacketTotal
 	c.QuiclbLongPacketTotal += other.QuiclbLongPacketTotal
 	c.QuiclbInitialRoutingPacketTotal += other.QuiclbInitialRoutingPacketTotal
@@ -177,6 +190,7 @@ func (c *StatCounters) Add(other *StatCounters) {
 	c.QuiclbInvalidCryptoContextTotal += other.QuiclbInvalidCryptoContextTotal
 	c.QuiclbEncryptSuccessCallTotal += other.QuiclbEncryptSuccessCallTotal
 	c.QuiclbDecryptSuccessCallTotal += other.QuiclbDecryptSuccessCallTotal
+	c.QuiclbConnidCacheHitTotal += other.QuiclbConnidCacheHitTotal
 }
 
 func (c *StatCounters) String() string {
@@ -215,6 +229,9 @@ func (c *StatCounters) String() string {
 	if c.MtuExceededTotal != 0 {
 		buf.WriteString(fmt.Sprintf("MtuExceededTotal=%d, ", c.MtuExceededTotal))
 	}
+	if c.QuiclbNoDestPortMatchTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbNoDestPortMatchTotal=%d, ", c.QuiclbNoDestPortMatchTotal))
+	}
 	if c.QuiclbShortPacketTotal != 0 {
 		buf.WriteString(fmt.Sprintf("QuiclbShortPacketTotal=%d, ", c.QuiclbShortPacketTotal))
 	}
@@ -242,6 +259,9 @@ func (c *StatCounters) String() string {
 	if c.QuiclbDecryptSuccessCallTotal != 0 {
 		buf.WriteString(fmt.Sprintf("QuiclbDecryptSuccessCallTotal=%d, ", c.QuiclbDecryptSuccessCallTotal))
 	}
+	if c.QuiclbConnidCacheHitTotal != 0 {
+		buf.WriteString(fmt.Sprintf("QuiclbConnidCacheHitTotal=%d, ", c.QuiclbConnidCacheHitTotal))
+	}
 	if strings.HasSuffix(buf.String(), ", ") {
 		buf.Truncate(buf.Len() - 2)
 	}
@@ -249,11 +269,14 @@ func (c *StatCounters) String() string {
 	return buf.String()
 }
 
-type LbConfig struct { // ../c/lb.c:67
-	VipAddress uint32 // ../c/lb.c:68
-	NumDests   uint32 // ../c/lb.c:69
-	Mtu        uint16 // ../c/lb.c:70
-	Padding    uint16 // ../c/lb.c:71
+type LbConfig struct { // ../c/lb.c:69
+	VipAddress      uint32   // ../c/lb.c:70
+	NumDests        uint32   // ../c/lb.c:71
+	Mtu             uint16   // ../c/lb.c:72
+	QuicDestPort    uint16   // ../c/lb.c:73
+	Flags           uint8    // ../c/lb.c:74
+	ServerIdHashKey uint8    // ../c/lb.c:75
+	Padding         [2]uint8 // ../c/lb.c:76
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -285,19 +308,34 @@ func LbConfigAssertLayout(s *DWARFStruct) error {
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go Mtu: %d, dwarf mtu: %d", goff, doff)
 	}
-	goff = unsafe.Offsetof(LbConfig{}.Padding)
-	doff = fs["__padding"].Offset
+	goff = unsafe.Offsetof(LbConfig{}.QuicDestPort)
+	doff = fs["quic_dest_port"].Offset
 	if goff != uintptr(doff) {
-		return fmt.Errorf("offset mismatch: go Padding: %d, dwarf __padding: %d", goff, doff)
+		return fmt.Errorf("offset mismatch: go QuicDestPort: %d, dwarf quic_dest_port: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(LbConfig{}.Flags)
+	doff = fs["flags"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go Flags: %d, dwarf flags: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(LbConfig{}.ServerIdHashKey)
+	doff = fs["server_id_hash_key"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go ServerIdHashKey: %d, dwarf server_id_hash_key: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(LbConfig{}.Padding)
+	doff = fs["padding"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go Padding: %d, dwarf padding: %d", goff, doff)
 	}
 
 	return nil
 }
 
-type TestDecrypt struct { // ../c/lb.c:579
-	ConnectionId    [20]uint8 // ../c/lb.c:580
-	Len             uint8     // ../c/lb.c:581
-	IsShortServerId uint8     // ../c/lb.c:582
+type TestDecrypt struct { // ../c/lb.c:478
+	ConnectionId    [20]uint8 // ../c/lb.c:479
+	Len             uint8     // ../c/lb.c:480
+	IsShortServerId uint8     // ../c/lb.c:481
 }
 
 func TestDecryptAssertLayout(s *DWARFStruct) error {

@@ -9,6 +9,6 @@ format LBConnectionIDHead:
   first_byte :FirstByteOfQUICLB
   server_id :u32 # 4 byte server id, to ensure server id space enough large
 
-format LBConnectionIDVersion3:
+format LBConnectionIDVersion3: # optimized for single pass encryption
    head :LBConnectionIDHead
    nonce :[12]u8
