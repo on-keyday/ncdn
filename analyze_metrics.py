@@ -108,7 +108,8 @@ def make_config(prefix :str,name :str):
 #ANALYSIS_CONFIG = make_config("metrics/20250730235159","並列テストシナリオ(制限1000)")
 #ANALYSIS_CONFIG = make_config("metrics/20250731000704","並列テストシナリオ(制限1000)")
 # 直列テストシナリオ
-ANALYSIS_CONFIG = make_config("metrics/20250731002329","直列テストシナリオ")
+# ANALYSIS_CONFIG = make_config("metrics/20250731002329","直列テストシナリオ")
+ANALYSIS_CONFIG = make_config("metrics/20250801170034","直列テストシナリオ")
 
 def load_metrics(file_pattern):
     """

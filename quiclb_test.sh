@@ -36,7 +36,7 @@ SKIP_LB=false
 if [ "$SKIP_LB" != true ]; then
 for i in $(seq 1 $TRIAL_COUNT); do
   echo "Trial $i"
-  # ip netns exec U ./secrets/qclient -mode QUIC -parallelLimit $PARALLEL_LIMIT $PARALLEL -metricsFile ${FILE_PREFIX}/lb_exist_quic_${i}${PARALLEL}.json -requestCount $REQ_COUNT -serverAddress 192.0.2.10:8889 -rootCA /mnt/ncdn/ca/certs/20250719194728/root_ca.crt
+  ip netns exec U ./secrets/qclient -mode QUIC -parallelLimit $PARALLEL_LIMIT $PARALLEL -metricsFile ${FILE_PREFIX}/lb_exist_quic_${i}${PARALLEL}.json -requestCount $REQ_COUNT -serverAddress 192.0.2.10:8889 -rootCA /mnt/ncdn/ca/certs/20250719194728/root_ca.crt
   ip netns exec U ./secrets/qclient -mode TCP -parallelLimit $PARALLEL_LIMIT $PARALLEL -metricsFile ${FILE_PREFIX}/lb_exist_tcp_${i}${PARALLEL}.json -requestCount $REQ_COUNT -serverAddress 192.0.2.10:8889 -rootCA /mnt/ncdn/ca/certs/20250719194728/root_ca.crt
 done
 fi

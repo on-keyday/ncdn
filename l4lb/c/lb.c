@@ -669,7 +669,7 @@ int lb_main(struct xdp_md* ctx) {
 
       debugk("incoming packet: ip=%pI4 port=%u", &ip->saddr, ntohs(tcp->source));
 
-      uint32_t dest_idx = hash_server_id(config, ip->saddr, ntohs(tcp->source), 0);
+      uint32_t dest_idx = hash_server_id(config, ip->saddr, ntohs(tcp->source), 0) + 1;
       debugk("dest_idx=%d", dest_idx);
       dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
       if (!dest) {
@@ -717,7 +717,7 @@ int lb_main(struct xdp_md* ctx) {
             ++c->quiclb_no_connection_id_total;
             EXIT(XDP_PASS);
           }
-          uint32_t server_id = hash_server_id(config, ip->saddr, ntohs(udp->source), ((const uint8_t*)(quic+1))[0]);
+          uint32_t server_id = hash_server_id(config, ip->saddr, ntohs(udp->source), ((const uint8_t*)(quic+1))[0]) + 1;
           dest = handle_initial(server_id, config, c, "long");
           if (!dest) {
             ++c->quiclb_no_dest_entry_total;
@@ -832,9 +832,11 @@ int lb_main(struct xdp_md* ctx) {
   if (padding > 0) {
     if (bpf_xdp_adjust_tail(ctx, -padding)) {
       ++c->failed_adjust_tail_total;
+      debugk("ASSERTION FAILURE: failed to adjust tail for padding");
       EXIT(XDP_DROP);
     }
   }
+  
 
   // Redirect the packet to the destination.
   // FIXME: depending on encap_size, it is possible that the encaped needs
