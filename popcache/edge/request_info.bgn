@@ -1,6 +1,28 @@
 config.go.package = "edge"
 input.endian = config.endian.little
 
+enum LogLevel:
+    :u8
+    TRACE = "TRACE"
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARN = "WARN"
+    ERROR = "ERROR"
+
+enum Protocol:
+    :u8
+    other 
+    http1_plain
+    http1
+    h2
+    h3
+
+format ProtocolInfo:
+    protocol :Protocol
+    if protocol == Protocol.other:
+        len :u8
+        protocol_name :[len]u8
+
 enum Method:
     :u8
     OTHER
@@ -37,7 +59,9 @@ format Body:
 
 format RequestInfo:
     popID :u32
+    protocol :ProtocolInfo
     remoteAddr :[16]u8
+    remotePort :u16
     method :MethodInfo
     path :PathInfo
     header :Header

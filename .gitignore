@@ -12,3 +12,5 @@ metrics/
 metrics.tar.zst
 metrics.tar
 metrics.json
+target/
+wasm/

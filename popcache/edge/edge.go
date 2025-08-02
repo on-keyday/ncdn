@@ -13,6 +13,7 @@ import (
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
 type EdgeComputer interface {
@@ -28,11 +29,9 @@ type EdgeComputer interface {
 var _ EdgeComputer = (*edgeComputing)(nil)
 
 type HandleContext struct {
-	mod         api.Module
-	req         *RequestInfo
-	encodedReq  []byte
-	resp        *ResponseInfo
-	encodedResp []byte
+	mod  api.Module
+	req  *RequestInfo
+	resp *ResponseInfo
 }
 
 type edgeComputing struct {
@@ -65,11 +64,25 @@ type HandlerFunc func(c context.Context, mod api.Module, offset, size uint32) ui
 
 func getRequestInfo(r *http.Request) (*RequestInfo, error) {
 	info := &RequestInfo{}
-	remoteAddrParsed, err := netip.ParseAddr(r.RemoteAddr)
+	remoteAddrParsed, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse remote address %s: %w", r.RemoteAddr, err)
 	}
-	info.RemoteAddr = remoteAddrParsed.As16()
+	switch r.ProtoMajor {
+	case 1:
+		info.Protocol.Protocol = Protocol_Http1
+	case 2:
+		info.Protocol.Protocol = Protocol_H2
+	case 3:
+		info.Protocol.Protocol = Protocol_H3
+	default:
+		info.Protocol.Protocol = Protocol_Other
+		if !info.Protocol.SetProtocolName([]byte(r.Proto)) {
+			return nil, fmt.Errorf("failed to set protocol name for %s", r.Proto)
+		}
+	}
+	info.RemoteAddr = remoteAddrParsed.Addr().As16()
+	info.RemotePort = remoteAddrParsed.Port()
 	switch r.Method {
 	case http.MethodGet:
 		info.Method.Method = Method_Get
@@ -146,10 +159,15 @@ func getResponseInfo(p *http.Response) (*ResponseInfo, error) {
 }
 
 func (r *edgeComputing) initRequestHandler() error {
+	_, err := wasi_snapshot_preview1.Instantiate(context.Background(), r.rt)
+	if err != nil {
+		return fmt.Errorf("failed to instantiate wasi_snapshot_preview1: %w", err)
+	}
 	ncdn := r.rt.NewHostModuleBuilder("ncdn")
 	ncdn.NewFunctionBuilder().WithFunc(r.getRequestInfo).Export("get_request_info")
 	ncdn.NewFunctionBuilder().WithFunc(r.getResponseInfo).Export("get_response_info")
-	_, err := ncdn.Instantiate(context.Background())
+	ncdn.NewFunctionBuilder().WithFunc(r.logOutput).Export("log_output")
+	_, err = ncdn.Instantiate(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to instantiate ncdn module: %w", err)
 	}
@@ -204,6 +222,32 @@ func (r *edgeComputing) Unregister(method, path string) error {
 
 type requestIDKey struct{}
 
+func (r *edgeComputing) logOutput(c context.Context, mod api.Module, logLevel, pointer, size uint32) uint32 {
+	level := LogLevel(logLevel)
+	data, ok := mod.Memory().Read(pointer, size)
+	if !ok {
+		log.Printf("Failed to read log data from memory at pointer %d with size %d", pointer, size)
+		return 0
+	}
+	message := string(data)
+	fmt.Printf("[%s] %s\n", level.String(), message)
+	return uint32(len(data))
+}
+
+type limitedWriter struct {
+	buffer []byte
+	offset int
+}
+
+func (w *limitedWriter) Write(p []byte) (n int, err error) {
+	if w.offset+len(p) > len(w.buffer) {
+		return 0, fmt.Errorf("buffer overflow: trying to write %d bytes to a buffer of size %d", len(p), len(w.buffer))
+	}
+	copy(w.buffer[w.offset:], p)
+	w.offset += len(p)
+	return len(p), nil
+}
+
 func (r *edgeComputing) getRequestInfo(c context.Context, mod api.Module, pointer, size uint32) uint32 {
 	key, ok := c.Value(requestIDKey{}).(uint64)
 	if !ok {
@@ -221,23 +265,17 @@ func (r *edgeComputing) getRequestInfo(c context.Context, mod api.Module, pointe
 		log.Printf("No request info found for request ID %d", key)
 		return 0
 	}
-	if handleCtx.encodedReq == nil {
-		encoded, err := handleCtx.req.Encode()
-		if err != nil {
-			log.Printf("Failed to marshal request info for request ID %d: %v", key, err)
-			return 0
-		}
-		handleCtx.encodedReq = encoded
-	}
-	length := len(handleCtx.encodedReq)
-	if length >= int(size) {
-		length = int(size)
-	}
-	if !mod.Memory().Write(pointer, handleCtx.encodedReq[:length]) {
-		log.Printf("Failed to write request info to module memory for request ID %d", key)
+	buf, ok := mod.Memory().Read(pointer, size)
+	if !ok {
+		log.Printf("Failed to read request info from memory at pointer %d with size %d", pointer, size)
 		return 0
 	}
-	return uint32(length)
+	limited := &limitedWriter{buffer: buf}
+	if err := handleCtx.req.Write(limited); err != nil {
+		log.Printf("Failed to encode request info for request ID %d: %v", key, err)
+		return 0
+	}
+	return uint32(limited.offset)
 }
 
 func (r *edgeComputing) getResponseInfo(c context.Context, mod api.Module, pointer, size uint32) uint32 {
@@ -257,26 +295,20 @@ func (r *edgeComputing) getResponseInfo(c context.Context, mod api.Module, point
 		log.Printf("No response info found for request ID %d", key)
 		return 0
 	}
-	if handleCtx.encodedResp == nil {
-		encoded, err := handleCtx.resp.Encode()
-		if err != nil {
-			log.Printf("Failed to marshal response info for request ID %d: %v", key, err)
-			return 0
-		}
-		handleCtx.encodedResp = encoded
-	}
-	length := len(handleCtx.encodedResp)
-	if length >= int(size) {
-		length = int(size)
-	}
-	if !mod.Memory().Write(pointer, handleCtx.encodedResp[:length]) {
-		log.Printf("Failed to write response info to module memory for request ID %d", key)
+	buf, ok := mod.Memory().Read(pointer, size)
+	if !ok {
+		log.Printf("Failed to read response info from memory at pointer %d with size %d", pointer, size)
 		return 0
 	}
-	return uint32(length)
+	limited := &limitedWriter{buffer: buf}
+	if err := handleCtx.resp.Write(limited); err != nil {
+		log.Printf("Failed to encode response info for request ID %d: %v", key, err)
+		return 0
+	}
+	return uint32(limited.offset)
 }
 
-var NoEdgeFunctionError = errors.New("no edge function registered for this request")
+var ErrNoEdgeFunction = errors.New("no edge function registered for this request")
 
 func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint64, error) {
 	key := p.Method + " " + p.URL.Path
@@ -284,7 +316,7 @@ func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint
 	compiled, ok := r.compiled[key]
 	r.registerRW.RUnlock()
 	if !ok {
-		return 0, fmt.Errorf("%w: %s %s", NoEdgeFunctionError, p.Method, p.URL.Path)
+		return 0, fmt.Errorf("%w: %s %s", ErrNoEdgeFunction, p.Method, p.URL.Path)
 	}
 	conf := wazero.NewModuleConfig()
 	mod, err := r.rt.InstantiateModule(ctx, compiled, conf)

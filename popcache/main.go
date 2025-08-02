@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	_ "embed"
+
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/tetratelabs/wazero"
@@ -90,6 +92,9 @@ func (l *ObservedListener) Addr() net.Addr {
 }
 */
 
+//go:embed wasm/edge_app.wasm
+var edgeApp []byte
+
 func main() {
 	flag.Parse()
 	log.Printf("QUIC_GO_LOG_LEVEL=%s", os.Getenv("QUIC_GO_LOG_LEVEL"))
@@ -128,18 +133,24 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	ec := edge.NewEdgeComputing(wazero.NewRuntime(context.Background()))
+	err = ec.Register(context.Background(), "GET", "/index.html", edgeApp)
+	if err != nil {
+		log.Fatalf("Failed to register edge function: %v", err)
+	}
 	c := cache.NewCache()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		reqID, err := ec.StartRequest(r.Context(), r)
 		var handleRequest func(*http.Request)
 		var handleResponse func(*http.Response)
 		if err != nil {
-			if !errors.Is(err, edge.NoEdgeFunctionError) {
+			if !errors.Is(err, edge.ErrNoEdgeFunction) {
 				log.Printf("Failed to start request: %v", err)
 			}
+			log.Printf("No edge function registered for %s, serving directly from origin", r.URL.Path)
 			handleRequest = func(req *http.Request) {}
 			handleResponse = func(resp *http.Response) {}
 		} else {
+			log.Printf("Edge function started for %s with request ID %d", r.URL.Path, reqID)
 			defer func() {
 				if err := ec.FinishRequest(r.Context(), reqID); err != nil {
 					log.Printf("Failed to finish request: %v", err)

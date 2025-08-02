@@ -10,6 +10,58 @@ import (
 	"reflect"
 )
 
+type LogLevel uint8
+
+const (
+	LogLevel_Trace LogLevel = 0
+	LogLevel_Debug LogLevel = 1
+	LogLevel_Info  LogLevel = 2
+	LogLevel_Warn  LogLevel = 3
+	LogLevel_Error LogLevel = 4
+)
+
+func (t LogLevel) String() string {
+	switch t {
+	case LogLevel_Trace:
+		return "TRACE"
+	case LogLevel_Debug:
+		return "DEBUG"
+	case LogLevel_Info:
+		return "INFO"
+	case LogLevel_Warn:
+		return "WARN"
+	case LogLevel_Error:
+		return "ERROR"
+	}
+	return fmt.Sprintf("LogLevel(%d)", t)
+}
+
+type Protocol uint8
+
+const (
+	Protocol_Other      Protocol = 0
+	Protocol_Http1Plain Protocol = 1
+	Protocol_Http1      Protocol = 2
+	Protocol_H2         Protocol = 3
+	Protocol_H3         Protocol = 4
+)
+
+func (t Protocol) String() string {
+	switch t {
+	case Protocol_Other:
+		return "Other"
+	case Protocol_Http1Plain:
+		return "Http1Plain"
+	case Protocol_Http1:
+		return "Http1"
+	case Protocol_H2:
+		return "H2"
+	case Protocol_H3:
+		return "H3"
+	}
+	return fmt.Sprintf("Protocol(%d)", t)
+}
+
 type Method uint8
 
 const (
@@ -33,41 +85,41 @@ func (t Method) String() string {
 	return fmt.Sprintf("Method(%d)", t)
 }
 
-type union2_MethodInfo interface {
+type union2_ProtocolInfo interface {
 	isunion1_()
 }
 type union_3_t struct {
-	Len        uint8
-	MethodName []uint8
+	Len          uint8
+	ProtocolName []uint8
 }
-type MethodInfo struct {
-	Method  Method
-	union1_ union2_MethodInfo
+type ProtocolInfo struct {
+	Protocol Protocol
+	union1_  union2_ProtocolInfo
 }
-type VisitorRWGCX interface {
-	Visit(v VisitorRWGCX, name string, field any)
+type VisitorJDPCC interface {
+	Visit(v VisitorJDPCC, name string, field any)
 }
-type VisitorRWGCXFunc func(v VisitorRWGCX, name string, field any)
+type VisitorJDPCCFunc func(v VisitorJDPCC, name string, field any)
 
-func (f VisitorRWGCXFunc) Visit(v VisitorRWGCX, name string, field any) {
+func (f VisitorJDPCCFunc) Visit(v VisitorJDPCC, name string, field any) {
 	f(v, name, field)
 }
 
-type VisitorRWGCXVisitable interface {
-	Visit(v VisitorRWGCX)
+type VisitorJDPCCVisitable interface {
+	Visit(v VisitorJDPCC)
 }
 
-func VisitorRWGCXToMap(v any) interface{} {
+func VisitorJDPCCToMap(v any) interface{} {
 	if v == nil {
 		return nil
 	}
-	if inter, ok := v.(VisitorRWGCXVisitable); ok {
+	if inter, ok := v.(VisitorJDPCCVisitable); ok {
 		if p := reflect.ValueOf(inter); p.Kind() == reflect.Pointer && p.IsNil() {
 			return nil
 		}
 		m := map[string]interface{}{}
-		inter.Visit(VisitorRWGCXFunc(func(v VisitorRWGCX, name string, field any) {
-			m[name] = VisitorRWGCXToMap(field)
+		inter.Visit(VisitorJDPCCFunc(func(v VisitorJDPCC, name string, field any) {
+			m[name] = VisitorJDPCCToMap(field)
 		}))
 		return m
 	}
@@ -79,7 +131,7 @@ func VisitorRWGCXToMap(v any) interface{} {
 			if index.Kind() == reflect.Struct && index.CanAddr() {
 				index = index.Addr()
 			}
-			m = append(m, VisitorRWGCXToMap(index.Interface()))
+			m = append(m, VisitorJDPCCToMap(index.Interface()))
 		}
 		return m
 	}
@@ -88,11 +140,22 @@ func VisitorRWGCXToMap(v any) interface{} {
 		if val.IsNil() {
 			return nil
 		}
-		return VisitorRWGCXToMap(val.Elem().Interface())
+		return VisitorJDPCCToMap(val.Elem().Interface())
 	}
 	return v
 }
 
+type union5_MethodInfo interface {
+	isunion4_()
+}
+type union_6_t struct {
+	Len        uint8
+	MethodName []uint8
+}
+type MethodInfo struct {
+	Method  Method
+	union4_ union5_MethodInfo
+}
 type String struct {
 	Len  uint16
 	Data []uint8
@@ -120,15 +183,17 @@ type PathInfo struct {
 }
 type RequestInfo struct {
 	PopId      uint32
+	Protocol   ProtocolInfo
 	RemoteAddr [16]uint8
+	RemotePort uint16
 	Method     MethodInfo
 	Path       PathInfo
 	Header     Header
 }
 
 func (t *union_3_t) isunion1_() {}
-func (t *MethodInfo) Len() *uint8 {
-	if true == (t.Method == Method_Other) {
+func (t *ProtocolInfo) Len() *uint8 {
+	if true == (t.Protocol == Protocol_Other) {
 		if _, ok := t.union1_.(*union_3_t); !ok {
 			return nil // not set
 		}
@@ -137,8 +202,8 @@ func (t *MethodInfo) Len() *uint8 {
 	}
 	return nil
 }
-func (t *MethodInfo) SetLen(v uint8) bool {
-	if true == (t.Method == Method_Other) {
+func (t *ProtocolInfo) SetLen(v uint8) bool {
+	if true == (t.Protocol == Protocol_Other) {
 		if _, ok := t.union1_.(*union_3_t); !ok {
 			t.union1_ = &union_3_t{}
 		}
@@ -147,12 +212,143 @@ func (t *MethodInfo) SetLen(v uint8) bool {
 	}
 	return false
 }
-func (t *MethodInfo) MethodName() *[]uint8 {
-	if true == (t.Method == Method_Other) {
+func (t *ProtocolInfo) ProtocolName() *[]uint8 {
+	if true == (t.Protocol == Protocol_Other) {
 		if _, ok := t.union1_.(*union_3_t); !ok {
 			return nil // not set
 		}
-		tmp := []uint8(t.union1_.(*union_3_t).MethodName)
+		tmp := []uint8(t.union1_.(*union_3_t).ProtocolName)
+		return &tmp
+	}
+	return nil
+}
+func (t *ProtocolInfo) SetProtocolName(v []uint8) bool {
+	if true == (t.Protocol == Protocol_Other) {
+		if len(v) > int(^uint8(0)) {
+			return false
+		}
+		if _, ok := t.union1_.(*union_3_t); !ok {
+			t.union1_ = &union_3_t{}
+		}
+		t.union1_.(*union_3_t).Len = uint8(len(v))
+		t.union1_.(*union_3_t).ProtocolName = []uint8(v)
+		return true
+	}
+	return false
+}
+func (t *ProtocolInfo) Visit(v VisitorJDPCC) {
+	v.Visit(v, "Protocol", &t.Protocol)
+	v.Visit(v, "Len", (t.Len()))
+	v.Visit(v, "ProtocolName", (t.ProtocolName()))
+}
+func (t *ProtocolInfo) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJDPCCToMap(t))
+}
+func (t *ProtocolInfo) Write(w io.Writer) (err error) {
+	if n, err := w.Write([]byte{byte(t.Protocol)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.Protocol: %w", err)
+	}
+	if t.Protocol == Protocol_Other {
+		if _, ok := t.union1_.(*union_3_t); !ok {
+			return fmt.Errorf("encode t.union1_: union is not set to union_3_t")
+		}
+		if n, err := w.Write([]byte{byte(t.union1_.(*union_3_t).Len)}); err != nil || n != 1 {
+			return fmt.Errorf("encode t.union1_.(*union_3_t).Len: %w", err)
+		}
+		len_ProtocolName := int(t.union1_.(*union_3_t).Len)
+		if len(t.union1_.(*union_3_t).ProtocolName) != len_ProtocolName {
+			return fmt.Errorf("encode ProtocolName: expect %d bytes but got %d bytes", len_ProtocolName, len(t.union1_.(*union_3_t).ProtocolName))
+		}
+		if n, err := w.Write(t.union1_.(*union_3_t).ProtocolName); err != nil || n != len(t.union1_.(*union_3_t).ProtocolName) {
+			return fmt.Errorf("encode ProtocolName: %w", err)
+		}
+	}
+	return nil
+}
+func (t *ProtocolInfo) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 1))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *ProtocolInfo) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *ProtocolInfo) Read(r io.Reader) (err error) {
+	tmpProtocol := [1]byte{}
+	n_Protocol, err := io.ReadFull(r, tmpProtocol[:])
+	if err != nil {
+		return fmt.Errorf("read Protocol: expect 1 byte but read %d bytes: %w", n_Protocol, err)
+	}
+	t.Protocol = Protocol(tmpProtocol[0])
+	if t.Protocol == Protocol_Other {
+		t.union1_ = &union_3_t{}
+		tmpLen := [1]byte{}
+		n_Len, err := io.ReadFull(r, tmpLen[:])
+		if err != nil {
+			return fmt.Errorf("read Len: expect 1 byte but read %d bytes: %w", n_Len, err)
+		}
+		t.union1_.(*union_3_t).Len = uint8(tmpLen[0])
+		len_ProtocolName := int(t.union1_.(*union_3_t).Len)
+		if len_ProtocolName != 0 {
+			tmpProtocolName := make([]byte, len_ProtocolName)
+			n_ProtocolName, err := io.ReadFull(r, tmpProtocolName[:])
+			if err != nil {
+				return fmt.Errorf("read ProtocolName: expect %d bytes but read %d bytes: %w", len_ProtocolName, n_ProtocolName, err)
+			}
+			t.union1_.(*union_3_t).ProtocolName = tmpProtocolName[:]
+		} else {
+			t.union1_.(*union_3_t).ProtocolName = nil
+		}
+	}
+	return nil
+}
+
+func (t *ProtocolInfo) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *ProtocolInfo) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode ProtocolInfo: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
+func (t *union_6_t) isunion4_() {}
+func (t *MethodInfo) Len() *uint8 {
+	if true == (t.Method == Method_Other) {
+		if _, ok := t.union4_.(*union_6_t); !ok {
+			return nil // not set
+		}
+		tmp := uint8(t.union4_.(*union_6_t).Len)
+		return &tmp
+	}
+	return nil
+}
+func (t *MethodInfo) SetLen(v uint8) bool {
+	if true == (t.Method == Method_Other) {
+		if _, ok := t.union4_.(*union_6_t); !ok {
+			t.union4_ = &union_6_t{}
+		}
+		t.union4_.(*union_6_t).Len = uint8(v)
+		return true
+	}
+	return false
+}
+func (t *MethodInfo) MethodName() *[]uint8 {
+	if true == (t.Method == Method_Other) {
+		if _, ok := t.union4_.(*union_6_t); !ok {
+			return nil // not set
+		}
+		tmp := []uint8(t.union4_.(*union_6_t).MethodName)
 		return &tmp
 	}
 	return nil
@@ -162,39 +358,39 @@ func (t *MethodInfo) SetMethodName(v []uint8) bool {
 		if len(v) > int(^uint8(0)) {
 			return false
 		}
-		if _, ok := t.union1_.(*union_3_t); !ok {
-			t.union1_ = &union_3_t{}
+		if _, ok := t.union4_.(*union_6_t); !ok {
+			t.union4_ = &union_6_t{}
 		}
-		t.union1_.(*union_3_t).Len = uint8(len(v))
-		t.union1_.(*union_3_t).MethodName = []uint8(v)
+		t.union4_.(*union_6_t).Len = uint8(len(v))
+		t.union4_.(*union_6_t).MethodName = []uint8(v)
 		return true
 	}
 	return false
 }
-func (t *MethodInfo) Visit(v VisitorRWGCX) {
+func (t *MethodInfo) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Method", &t.Method)
 	v.Visit(v, "Len", (t.Len()))
 	v.Visit(v, "MethodName", (t.MethodName()))
 }
 func (t *MethodInfo) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *MethodInfo) Write(w io.Writer) (err error) {
 	if n, err := w.Write([]byte{byte(t.Method)}); err != nil || n != 1 {
 		return fmt.Errorf("encode t.Method: %w", err)
 	}
 	if t.Method == Method_Other {
-		if _, ok := t.union1_.(*union_3_t); !ok {
-			return fmt.Errorf("encode t.union1_: union is not set to union_3_t")
+		if _, ok := t.union4_.(*union_6_t); !ok {
+			return fmt.Errorf("encode t.union4_: union is not set to union_6_t")
 		}
-		if n, err := w.Write([]byte{byte(t.union1_.(*union_3_t).Len)}); err != nil || n != 1 {
-			return fmt.Errorf("encode t.union1_.(*union_3_t).Len: %w", err)
+		if n, err := w.Write([]byte{byte(t.union4_.(*union_6_t).Len)}); err != nil || n != 1 {
+			return fmt.Errorf("encode t.union4_.(*union_6_t).Len: %w", err)
 		}
-		len_MethodName := int(t.union1_.(*union_3_t).Len)
-		if len(t.union1_.(*union_3_t).MethodName) != len_MethodName {
-			return fmt.Errorf("encode MethodName: expect %d bytes but got %d bytes", len_MethodName, len(t.union1_.(*union_3_t).MethodName))
+		len_MethodName := int(t.union4_.(*union_6_t).Len)
+		if len(t.union4_.(*union_6_t).MethodName) != len_MethodName {
+			return fmt.Errorf("encode MethodName: expect %d bytes but got %d bytes", len_MethodName, len(t.union4_.(*union_6_t).MethodName))
 		}
-		if n, err := w.Write(t.union1_.(*union_3_t).MethodName); err != nil || n != len(t.union1_.(*union_3_t).MethodName) {
+		if n, err := w.Write(t.union4_.(*union_6_t).MethodName); err != nil || n != len(t.union4_.(*union_6_t).MethodName) {
 			return fmt.Errorf("encode MethodName: %w", err)
 		}
 	}
@@ -222,23 +418,23 @@ func (t *MethodInfo) Read(r io.Reader) (err error) {
 	}
 	t.Method = Method(tmpMethod[0])
 	if t.Method == Method_Other {
-		t.union1_ = &union_3_t{}
+		t.union4_ = &union_6_t{}
 		tmpLen := [1]byte{}
 		n_Len, err := io.ReadFull(r, tmpLen[:])
 		if err != nil {
 			return fmt.Errorf("read Len: expect 1 byte but read %d bytes: %w", n_Len, err)
 		}
-		t.union1_.(*union_3_t).Len = uint8(tmpLen[0])
-		len_MethodName := int(t.union1_.(*union_3_t).Len)
+		t.union4_.(*union_6_t).Len = uint8(tmpLen[0])
+		len_MethodName := int(t.union4_.(*union_6_t).Len)
 		if len_MethodName != 0 {
 			tmpMethodName := make([]byte, len_MethodName)
 			n_MethodName, err := io.ReadFull(r, tmpMethodName[:])
 			if err != nil {
 				return fmt.Errorf("read MethodName: expect %d bytes but read %d bytes: %w", len_MethodName, n_MethodName, err)
 			}
-			t.union1_.(*union_3_t).MethodName = tmpMethodName[:]
+			t.union4_.(*union_6_t).MethodName = tmpMethodName[:]
 		} else {
-			t.union1_.(*union_3_t).MethodName = nil
+			t.union4_.(*union_6_t).MethodName = nil
 		}
 	}
 	return nil
@@ -265,17 +461,17 @@ func (t *String) SetData(v []uint8) bool {
 	t.Data = v
 	return true
 }
-func (t *String) Visit(v VisitorRWGCX) {
+func (t *String) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Len", &t.Len)
 	v.Visit(v, "Data", &t.Data)
 }
 func (t *String) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *String) Write(w io.Writer) (err error) {
-	tmp4 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp4[:], uint16(t.Len))
-	if n, err := w.Write(tmp4[:]); err != nil || n != 2 {
+	tmp7 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp7[:], uint16(t.Len))
+	if n, err := w.Write(tmp7[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Data := int(t.Len)
@@ -343,17 +539,17 @@ func (t *Body) SetBody(v []uint8) bool {
 	t.Body = v
 	return true
 }
-func (t *Body) Visit(v VisitorRWGCX) {
+func (t *Body) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Len", &t.Len)
 	v.Visit(v, "Body", &t.Body)
 }
 func (t *Body) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *Body) Write(w io.Writer) (err error) {
-	tmp5 := [4]byte{}
-	binary.LittleEndian.PutUint32(tmp5[:], uint32(t.Len))
-	if n, err := w.Write(tmp5[:]); err != nil || n != 4 {
+	tmp8 := [4]byte{}
+	binary.LittleEndian.PutUint32(tmp8[:], uint32(t.Len))
+	if n, err := w.Write(tmp8[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Body := int(t.Len)
@@ -413,12 +609,12 @@ func (t *Body) DecodeExact(d []byte) error {
 	}
 	return nil
 }
-func (t *Field) Visit(v VisitorRWGCX) {
+func (t *Field) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Key", &t.Key)
 	v.Visit(v, "Value", &t.Value)
 }
 func (t *Field) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *Field) Write(w io.Writer) (err error) {
 	if err := t.Key.Write(w); err != nil {
@@ -474,17 +670,17 @@ func (t *Header) SetFields(v []Field) bool {
 	t.Fields = v
 	return true
 }
-func (t *Header) Visit(v VisitorRWGCX) {
+func (t *Header) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Len", &t.Len)
 	v.Visit(v, "Fields", &t.Fields)
 }
 func (t *Header) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *Header) Write(w io.Writer) (err error) {
-	tmp6 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp6[:], uint16(t.Len))
-	if n, err := w.Write(tmp6[:]); err != nil || n != 2 {
+	tmp9 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp9[:], uint16(t.Len))
+	if n, err := w.Write(tmp9[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Fields := int(t.Len)
@@ -520,12 +716,12 @@ func (t *Header) Read(r io.Reader) (err error) {
 	}
 	t.Len = uint16(binary.LittleEndian.Uint16(tmpLen[:]))
 	len_Fields := int(t.Len)
-	for i_7 := 0; i_7 < len_Fields; i_7++ {
-		var tmp8_ Field
-		if err := tmp8_.Read(r); err != nil {
+	for i_10 := 0; i_10 < len_Fields; i_10++ {
+		var tmp11_ Field
+		if err := tmp11_.Read(r); err != nil {
 			return fmt.Errorf("read Fields: %w", err)
 		}
-		t.Fields = append(t.Fields, tmp8_)
+		t.Fields = append(t.Fields, tmp11_)
 	}
 	return nil
 }
@@ -543,17 +739,17 @@ func (t *Header) DecodeExact(d []byte) error {
 	}
 	return nil
 }
-func (t *ResponseInfo) Visit(v VisitorRWGCX) {
+func (t *ResponseInfo) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Status", &t.Status)
 	v.Visit(v, "Header", &t.Header)
 }
 func (t *ResponseInfo) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *ResponseInfo) Write(w io.Writer) (err error) {
-	tmp9 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp9[:], uint16(t.Status))
-	if n, err := w.Write(tmp9[:]); err != nil || n != 2 {
+	tmp12 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp12[:], uint16(t.Status))
+	if n, err := w.Write(tmp12[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Status: %w", err)
 	}
 	if err := t.Header.Write(w); err != nil {
@@ -609,13 +805,13 @@ func (t *PathInfo) SetQuery(v []Field) bool {
 	t.Query = v
 	return true
 }
-func (t *PathInfo) Visit(v VisitorRWGCX) {
+func (t *PathInfo) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Path", &t.Path)
 	v.Visit(v, "QueryLen", &t.QueryLen)
 	v.Visit(v, "Query", &t.Query)
 }
 func (t *PathInfo) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *PathInfo) Write(w io.Writer) (err error) {
 	if err := t.Path.Write(w); err != nil {
@@ -660,12 +856,12 @@ func (t *PathInfo) Read(r io.Reader) (err error) {
 	}
 	t.QueryLen = uint8(tmpQueryLen[0])
 	len_Query := int(t.QueryLen)
-	for i_10 := 0; i_10 < len_Query; i_10++ {
-		var tmp11_ Field
-		if err := tmp11_.Read(r); err != nil {
+	for i_13 := 0; i_13 < len_Query; i_13++ {
+		var tmp14_ Field
+		if err := tmp14_.Read(r); err != nil {
 			return fmt.Errorf("read Query: %w", err)
 		}
-		t.Query = append(t.Query, tmp11_)
+		t.Query = append(t.Query, tmp14_)
 	}
 	return nil
 }
@@ -683,24 +879,34 @@ func (t *PathInfo) DecodeExact(d []byte) error {
 	}
 	return nil
 }
-func (t *RequestInfo) Visit(v VisitorRWGCX) {
+func (t *RequestInfo) Visit(v VisitorJDPCC) {
 	v.Visit(v, "PopId", &t.PopId)
+	v.Visit(v, "Protocol", &t.Protocol)
 	v.Visit(v, "RemoteAddr", &t.RemoteAddr)
+	v.Visit(v, "RemotePort", &t.RemotePort)
 	v.Visit(v, "Method", &t.Method)
 	v.Visit(v, "Path", &t.Path)
 	v.Visit(v, "Header", &t.Header)
 }
 func (t *RequestInfo) MarshalJSON() ([]byte, error) {
-	return json.Marshal(VisitorRWGCXToMap(t))
+	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *RequestInfo) Write(w io.Writer) (err error) {
-	tmp12 := [4]byte{}
-	binary.LittleEndian.PutUint32(tmp12[:], uint32(t.PopId))
-	if n, err := w.Write(tmp12[:]); err != nil || n != 4 {
+	tmp15 := [4]byte{}
+	binary.LittleEndian.PutUint32(tmp15[:], uint32(t.PopId))
+	if n, err := w.Write(tmp15[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.PopId: %w", err)
+	}
+	if err := t.Protocol.Write(w); err != nil {
+		return fmt.Errorf("encode Protocol: %w", err)
 	}
 	if n, err := w.Write(t.RemoteAddr[:]); err != nil || n != len(t.RemoteAddr) {
 		return fmt.Errorf("encode RemoteAddr: %w", err)
+	}
+	tmp16 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp16[:], uint16(t.RemotePort))
+	if n, err := w.Write(tmp16[:]); err != nil || n != 2 {
+		return fmt.Errorf("encode t.RemotePort: %w", err)
 	}
 	if err := t.Method.Write(w); err != nil {
 		return fmt.Errorf("encode Method: %w", err)
@@ -714,7 +920,7 @@ func (t *RequestInfo) Write(w io.Writer) (err error) {
 	return nil
 }
 func (t *RequestInfo) Encode() ([]byte, error) {
-	w := bytes.NewBuffer(make([]byte, 0, 20))
+	w := bytes.NewBuffer(make([]byte, 0, 4))
 	if err := t.Write(w); err != nil {
 		return nil, err
 	}
@@ -734,10 +940,19 @@ func (t *RequestInfo) Read(r io.Reader) (err error) {
 		return fmt.Errorf("read PopId: expect 4 bytes but read %d bytes: %w", n_PopId, err)
 	}
 	t.PopId = uint32(binary.LittleEndian.Uint32(tmpPopId[:]))
+	if err := t.Protocol.Read(r); err != nil {
+		return fmt.Errorf("read Protocol: %w", err)
+	}
 	n_RemoteAddr, err := io.ReadFull(r, t.RemoteAddr[:])
 	if err != nil {
 		return fmt.Errorf("read RemoteAddr: expect %d bytes but read %d bytes: %w", 16, n_RemoteAddr, err)
 	}
+	tmpRemotePort := [2]byte{}
+	n_RemotePort, err := io.ReadFull(r, tmpRemotePort[:])
+	if err != nil {
+		return fmt.Errorf("read RemotePort: expect 2 bytes but read %d bytes: %w", n_RemotePort, err)
+	}
+	t.RemotePort = uint16(binary.LittleEndian.Uint16(tmpRemotePort[:]))
 	if err := t.Method.Read(r); err != nil {
 		return fmt.Errorf("read Method: %w", err)
 	}
