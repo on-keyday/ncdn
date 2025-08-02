@@ -1,4 +1,4 @@
-package gslbcore
+package geoloc
 
 import (
 	"context"
@@ -106,82 +106,102 @@ SKIPPED:
 	// GitHub クライアントの初期化
 	ctx := context.Background()
 	var httpClient *http.Client
+	/*
+		cloned := http.DefaultTransport.(*http.Transport).Clone()
+		defaultDialContext := cloned.DialContext
+		dialer := &net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver: &net.Resolver{
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					return defaultDialContext(ctx, network, "1.1.1.1:53")
+				},
+			},
+		}
+		cloned.DialContext = dialer.DialContext
+	*/
+	//httpClient = &http.Client{}
 	client := github.NewClient(httpClient)
 
 	release, _, err := client.Repositories.ListReleases(ctx, "P3TERX", "GeoLite.mmdb", &github.ListOptions{
 		Page:    1,
 		PerPage: 1,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch GeoLite.mmdb releases: %w", err)
-	}
-
-	var fetchCandidate = []string{"GeoLite2-ASN.mmdb", "GeoLite2-City.mmdb"}
-
-	var fetchCandidates []*FetchInfo
-
-	for _, rel := range release {
-		for _, asset := range rel.Assets {
-			if slices.Contains(fetchCandidate, asset.GetName()) {
-				fetchCandidates = append(fetchCandidates, &FetchInfo{
-					Name: asset.GetName(),
-					Url:  asset.GetBrowserDownloadURL(),
-				})
-			}
-		}
-	}
-
 	var useCandidates []*FetchInfo
 	var removeOldInfo []*FetchInfo
+	if err != nil {
+		slog.Error("Failed to fetch releases from GitHub", slog.String("error", err.Error()))
+		if len(oldFetchInfo) == 0 {
+			return nil, fmt.Errorf("failed to fetch releases from GitHub: %w", err)
+		}
+		slog.Info("Using old fetch info", slog.Int("count", len(oldFetchInfo)))
+		useCandidates = oldFetchInfo
+	} else {
 
-	if len(oldFetchInfo) > 0 {
-		var newFetchCandidates []*FetchInfo
-	OUTER:
-		for _, c := range fetchCandidates {
-			for _, old := range oldFetchInfo {
-				if old.Url == c.Url { // if the URL matches, we assume it's the same file
-					slog.Info("Found existing fetch info, reusing", slog.String("name", old.Name), slog.String("url", old.Url))
-					useCandidates = append(useCandidates, old)
-					continue OUTER
-				} else if old.Name == c.Name { // if the name matches but the URL does not, we consider it old
-					removeOldInfo = append(removeOldInfo, old) // if the URL does not match, we consider it old
+		var fetchCandidate = []string{"GeoLite2-ASN.mmdb", "GeoLite2-City.mmdb"}
+
+		var fetchCandidates []*FetchInfo
+
+		for _, rel := range release {
+			for _, asset := range rel.Assets {
+				if slices.Contains(fetchCandidate, asset.GetName()) {
+					fetchCandidates = append(fetchCandidates, &FetchInfo{
+						Name: asset.GetName(),
+						Url:  asset.GetBrowserDownloadURL(),
+					})
 				}
 			}
-			newFetchCandidates = append(newFetchCandidates, c)
-		}
-		fetchCandidates = newFetchCandidates
-	}
-
-	for _, c := range fetchCandidates {
-		slog.Info("Downloading GeoLite.mmdb from GitHub", slog.String("url", c.Url), slog.String("name", c.Name))
-
-		// http.DefaultClient.Timeout = 10 * 60 // 10 minutes
-		resp, err := http.Get(c.Url)
-		if err != nil {
-			return nil, fmt.Errorf("failed to download GeoLite.mmdb: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("failed to download GeoLite.mmdb: %s", resp.Status)
-		}
-		// save into temporary file
-		tmpFile, err := os.CreateTemp("", c.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create temporary file: %w", err)
-		}
-		// defer os.Remove(tmpFile.Name())
-
-		_, err = io.Copy(tmpFile, resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to save GeoLite.mmdb: %w", err)
 		}
 
-		slog.Info("downloaded successfully", slog.String("file", tmpFile.Name()))
-		c.SavedPath = tmpFile.Name()
+		if len(oldFetchInfo) > 0 {
+			var newFetchCandidates []*FetchInfo
+		OUTER:
+			for _, c := range fetchCandidates {
+				for _, old := range oldFetchInfo {
+					if old.Url == c.Url { // if the URL matches, we assume it's the same file
+						slog.Info("Found existing fetch info, reusing", slog.String("name", old.Name), slog.String("url", old.Url))
+						useCandidates = append(useCandidates, old)
+						continue OUTER
+					} else if old.Name == c.Name { // if the name matches but the URL does not, we consider it old
+						removeOldInfo = append(removeOldInfo, old) // if the URL does not match, we consider it old
+					}
+				}
+				newFetchCandidates = append(newFetchCandidates, c)
+			}
+			fetchCandidates = newFetchCandidates
+		}
 
-		tmpFile.Close()
+		for _, c := range fetchCandidates {
+			slog.Info("Downloading GeoLite.mmdb from GitHub", slog.String("url", c.Url), slog.String("name", c.Name))
 
-		useCandidates = append(useCandidates, c)
+			// http.DefaultClient.Timeout = 10 * 60 // 10 minutes
+			resp, err := http.Get(c.Url)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download GeoLite.mmdb: %w", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf("failed to download GeoLite.mmdb: %s", resp.Status)
+			}
+			// save into temporary file
+			tmpFile, err := os.CreateTemp("", c.Name)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create temporary file: %w", err)
+			}
+			// defer os.Remove(tmpFile.Name())
+
+			_, err = io.Copy(tmpFile, resp.Body)
+			if err != nil {
+				return nil, fmt.Errorf("failed to save GeoLite.mmdb: %w", err)
+			}
+
+			slog.Info("downloaded successfully", slog.String("file", tmpFile.Name()))
+			c.SavedPath = tmpFile.Name()
+
+			tmpFile.Close()
+
+			useCandidates = append(useCandidates, c)
+		}
 	}
 
 	dbs := &GeoLocationInfo{}
@@ -238,7 +258,7 @@ SKIPPED:
 		}
 	}
 
-	if fetchInfoPath != "" {
+	if fetchInfoPath != "" && len(removeOldInfo) > 0 {
 		slog.Info("Saving fetch info to file", slog.String("path", fetchInfoPath))
 		fetchInfoRaw, err := json.MarshalIndent(useCandidates, "", "  ")
 		if err != nil {
@@ -248,6 +268,8 @@ SKIPPED:
 			return nil, fmt.Errorf("failed to write fetch info file: %w", err)
 		}
 		slog.Info("Fetch info saved successfully")
+	} else {
+		slog.Info("No fetch info file specified or no old info to remove, skipping save")
 	}
 
 	runtime.KeepAlive(dbs)

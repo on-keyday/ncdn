@@ -27,9 +27,15 @@ var metricsFile = flag.String("metricsFile", "metrics.json", "File to save metri
 var parallelLimit = flag.Int("parallelLimit", 0, "Maximum number of parallel requests (0 for no limit)")
 var mode = flag.String("mode", "QUIC", "mode of client (TCP or QUIC)")
 var debug = flag.Bool("debug", false, "Enable debug output")
+var path = flag.String("path", "/statusz", "Path to request on the server")
+var showBody = flag.Bool("showBody", false, "Show response body in metrics output")
+var showHeaders = flag.Bool("showHeaders", false, "Include response headers in metrics output")
+var noRedirect = flag.Bool("noRedirect", false, "Disable HTTP redirects")
 
 type Metrics struct {
 	ID                        int           `json:"id"`
+	StatusCode                int           `json:"status_code,omitempty"`
+	ResponseHeaders           http.Header   `json:"response_headers,omitempty"`
 	StartTime                 time.Time     `json:"start_time,omitempty"`
 	DNSDuration               time.Duration `json:"dns_duration,omitempty"`
 	ConnectDuration           time.Duration `json:"connect_duration,omitempty"`
@@ -102,11 +108,16 @@ func main() {
 		fmt.Println("Unknown mode:", *mode)
 		return
 	}
+	if *noRedirect {
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // Prevents following redirects
+		}
+	}
 	fmt.Printf("Running %s test\n", *mode)
 	fmt.Printf("Starting request to %s LB...\n", *mode)
 
 	// client.Timeout = 10 * time.Second
-	targetURL := fmt.Sprintf("https://%s/statusz", *serverAddress)
+	targetURL := fmt.Sprintf("https://%s%s", *serverAddress, *path)
 	var mu sync.Mutex
 	var metrics []*Metrics
 
@@ -177,9 +188,6 @@ func main() {
 			panic(err)
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			panic("Unexpected status code: " + resp.Status)
-		}
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
 			panic(err)
@@ -199,6 +207,8 @@ func main() {
 		mu.Lock()
 		metrics = append(metrics, &Metrics{
 			ID:                        i,
+			StatusCode:                resp.StatusCode,
+			ResponseHeaders:           resp.Header.Clone(),
 			StartTime:                 start,
 			DNSDuration:               dnsDuration,
 			ConnectDuration:           connectDuration,
@@ -245,6 +255,15 @@ func main() {
 		summaryMetics.RequestSentDuration += m.RequestSentDuration
 		summaryMetics.ResponseFirstByteDuration += m.ResponseFirstByteDuration
 		summaryMetics.FullDuration += m.FullDuration
+		if *showHeaders {
+			fmt.Printf("Response Headers for Request ID %d:\n", m.ID)
+			for k, v := range m.ResponseHeaders {
+				fmt.Printf("  %s: %s\n", k, v)
+			}
+		}
+		if *showBody {
+			fmt.Printf("Response Body for Request ID %d:\n%s\n", m.ID, m.ResponseBody)
+		}
 	}
 	var varianceMetrics Metrics // 絶対値バージョン
 

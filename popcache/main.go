@@ -1,20 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"flag"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yzp0n/ncdn/httprps"
+	"github.com/yzp0n/ncdn/popcache/cache"
 	lbconnid "github.com/yzp0n/ncdn/popcache/connid"
 	"github.com/yzp0n/ncdn/tool/util"
 	"github.com/yzp0n/ncdn/types"
@@ -36,7 +40,7 @@ type ObservedPacketConn struct {
 }
 
 func (c *ObservedPacketConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int, err error) {
-	log.Printf("Write To %s", addr)
+	// log.Printf("Write To %s", addr)
 	return c.OOBCapablePacketConn.WriteMsgUDP(b, oob, addr)
 }
 
@@ -119,13 +123,61 @@ func main() {
 		// return 204
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.Handle("/", &httputil.ReverseProxy{
+	rev := &httputil.ReverseProxy{
 		// FIXME: actually cache stuff...
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetXForwarded()
 			r.Out.Header.Set("X-NCDN-PoPCache-NodeId", *nodeId)
 			r.SetURL(originURL)
 		},
+	}
+	c := cache.NewCache()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			rev.ServeHTTP(w, r)
+			return
+		}
+		key := r.URL.String()
+		if cached, found := c.Get(key); found {
+			log.Printf("Cache hit for %s", key)
+			for k, v := range cached.Header {
+				w.Header()[k] = v
+			}
+			w.Header().Set("X-NCDN-PoPCache-Hit", "true")
+			w.WriteHeader(cached.StatusCode)
+			_, _ = w.Write(cached.Body)
+			return
+		}
+		// Handle GET and HEAD requests
+		newRev := &httputil.ReverseProxy{
+			Rewrite: func(r *httputil.ProxyRequest) {
+				r.SetXForwarded()
+				r.Out.Header.Set("X-NCDN-PoPCache-NodeId", *nodeId)
+				r.SetURL(originURL)
+			},
+			ModifyResponse: func(resp *http.Response) error {
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Printf("Failed to read response body: %v", err)
+					return err
+				}
+				resp.Body.Close()                               // Close the original body
+				resp.Body = io.NopCloser(bytes.NewReader(body)) // Create a new body reader
+				cacheControl := resp.Header.Get("Cache-Control")
+				if !strings.Contains(cacheControl, "no-store") {
+					// Cache the response
+					c.Set(r.URL.String(), &cache.CacheEntry{
+						StatusCode: resp.StatusCode,
+						Header:     resp.Header.Clone(),
+						Body:       body,
+						StoredAt:   time.Now(),
+					})
+				}
+				resp.Header.Set("X-NCDN-PoPCache-Hit", "false")
+				return nil
+			},
+		}
+		newRev.ServeHTTP(w, r)
 	})
 
 	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)

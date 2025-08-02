@@ -11,3 +11,4 @@ vm_images/
 metrics/
 metrics.tar.zst
 metrics.tar
+metrics.json

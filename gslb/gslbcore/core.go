@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yzp0n/ncdn/tool/geoloc"
 	"github.com/yzp0n/ncdn/types"
 )
 
@@ -62,9 +63,9 @@ type GslbCore struct {
 	serial   uint32
 
 	// TODO: make it as interface?
-	geo                *GeoLocationInfo
-	popGeoLocations    []*GeoLocation
-	regionGeoLocations [][]*GeoLocation
+	geo                *geoloc.GeoLocationInfo
+	popGeoLocations    []*geoloc.GeoLocation
+	regionGeoLocations [][]*geoloc.GeoLocation
 }
 
 func New(cfg *Config) *GslbCore {
@@ -83,11 +84,11 @@ func New(cfg *Config) *GslbCore {
 		}
 	}
 
-	var geo *GeoLocationInfo
+	var geo *geoloc.GeoLocationInfo
 
 	if cfg.GeoLocationInfoPath != "" {
 		var err error
-		geo, err = FetchGeoLocation(cfg.GeoLocationInfoPath)
+		geo, err = geoloc.FetchGeoLocation(cfg.GeoLocationInfoPath)
 		if err != nil {
 			panic(fmt.Errorf("failed to load GeoLocationInfo: %w", err))
 		}
@@ -103,8 +104,8 @@ func New(cfg *Config) *GslbCore {
 		regions:            make([]*RegionState, len(cfg.Regions)),
 		serial:             0,
 		geo:                geo,
-		popGeoLocations:    make([]*GeoLocation, len(cfg.Pops)),
-		regionGeoLocations: make([][]*GeoLocation, len(cfg.Regions)),
+		popGeoLocations:    make([]*geoloc.GeoLocation, len(cfg.Pops)),
+		regionGeoLocations: make([][]*geoloc.GeoLocation, len(cfg.Regions)),
 	}
 	for i := range c.popstate {
 		c.popstate[i] = &types.PoPStatus{
@@ -132,7 +133,7 @@ func New(cfg *Config) *GslbCore {
 			geoLoc, err := c.geo.GeoLocation(cfg.Pops[i].Ip4)
 			if err != nil {
 				slog.Warn("Failed to lookup GeoLocation for PoP", slog.String("popId", cfg.Pops[i].Id), slog.String("error", err.Error()))
-				c.popGeoLocations[i] = &GeoLocation{
+				c.popGeoLocations[i] = &geoloc.GeoLocation{
 					ASN:  nil,
 					City: nil,
 				}
@@ -149,12 +150,12 @@ func New(cfg *Config) *GslbCore {
 			}
 		}
 		for i, r := range c.cfg.Regions {
-			c.regionGeoLocations[i] = make([]*GeoLocation, len(r.Prefices))
+			c.regionGeoLocations[i] = make([]*geoloc.GeoLocation, len(r.Prefices))
 			for j, p := range r.Prefices {
 				geoLoc, err := c.geo.GeoLocation(p.Addr())
 				if err != nil {
 					slog.Warn("Failed to lookup GeoLocation for region", slog.String("regionId", r.Id), slog.String("error", err.Error()))
-					c.regionGeoLocations[i][j] = &GeoLocation{
+					c.regionGeoLocations[i][j] = &geoloc.GeoLocation{
 						ASN:  nil,
 						City: nil,
 					}
@@ -290,7 +291,7 @@ func formatFloatPtr(f *float64) string {
 
 // in some senarios, we may need to calculate the cost of the area
 // for example: between Africa and Asia is more expensive than between Africa and Europe
-func calculateAreaCost(loc1g, loc2g *GeoLocation) float64 {
+func calculateAreaCost(loc1g, loc2g *geoloc.GeoLocation) float64 {
 	if loc1g == nil || loc2g == nil {
 		return math.MaxFloat64 // return a large value if either location is nil
 	}
@@ -304,7 +305,7 @@ func calculateAreaCost(loc1g, loc2g *GeoLocation) float64 {
 	return 0.0
 }
 
-func calculateLocationDistance(loc1g, loc2g *GeoLocation) float64 {
+func calculateLocationDistance(loc1g, loc2g *geoloc.GeoLocation) float64 {
 	if loc1g == nil || loc2g == nil {
 		return math.MaxFloat64 // return a large value if either location is nil
 	}
@@ -328,7 +329,7 @@ func calculateLocationDistance(loc1g, loc2g *GeoLocation) float64 {
 	return distance + calculateAreaCost(loc1g, loc2g) // add area cost to the distance
 }
 
-func debugLogGeoLocation(msg string, geoLoc *GeoLocation, srcIP netip.Addr, optionalAttrs ...any) {
+func debugLogGeoLocation(msg string, geoLoc *geoloc.GeoLocation, srcIP netip.Addr, optionalAttrs ...any) {
 	if geoLoc == nil {
 		slog.Debug(msg, slog.String("srcIP", srcIP.String()), slog.String("geoLocation", "nil"))
 		return
@@ -348,7 +349,7 @@ func debugLogGeoLocation(msg string, geoLoc *GeoLocation, srcIP netip.Addr, opti
 	)
 }
 
-func (c *GslbCore) collectCandidateRegions(srcIP netip.Addr, geoLoc *GeoLocation) []*RegionState {
+func (c *GslbCore) collectCandidateRegions(srcIP netip.Addr, geoLoc *geoloc.GeoLocation) []*RegionState {
 	var candidateRegions []*RegionState
 	for i, region := range c.regionGeoLocations {
 		for _, regionLoc := range region {
@@ -396,7 +397,7 @@ type SmallestInfo struct {
 	// Latency  int
 }
 
-func (c *GslbCore) collectPoPPhysicalDistance(geoLoc *GeoLocation, unreachableInfo *UnreachableInfo) ([]float64, *SmallestInfo) {
+func (c *GslbCore) collectPoPPhysicalDistance(geoLoc *geoloc.GeoLocation, unreachableInfo *UnreachableInfo) ([]float64, *SmallestInfo) {
 	var candidatePopIndex []float64
 	var smallestInfo = SmallestInfo{
 		Normal:   -1,
@@ -448,7 +449,7 @@ func (c *GslbCore) collectPoPPhysicalDistance(geoLoc *GeoLocation, unreachableIn
 	return candidatePopIndex, &smallestInfo
 }
 
-func (c *GslbCore) collectRegionPhysicalDistance(srcIP netip.Addr, geoLoc *GeoLocation) ([][]float64, int, int) {
+func (c *GslbCore) collectRegionPhysicalDistance(srcIP netip.Addr, geoLoc *geoloc.GeoLocation) ([][]float64, int, int) {
 	var candidateRegionIndex [][]float64
 	var smallestDistance = math.MaxFloat64
 	var smallestIndex = -1
@@ -573,7 +574,7 @@ func (c *GslbCore) Query(srcIP netip.Addr) []netip.Addr {
 
 	unreachablePops, globalPopLatencySum, totalRegions := c.detectUnreachablePops()
 	var (
-		geoLoc *GeoLocation
+		geoLoc *geoloc.GeoLocation
 		err    error
 	)
 

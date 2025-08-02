@@ -29,9 +29,9 @@
                 <h3 class="text-xl font-semibold mb-2">通信経路情報</h3>
                 <div id="connection-info" class="bg-gray-700 p-4 rounded-lg">
                     <p>クライアントIPアドレス: <span id="client-ip">{{ .RemoteAddr }}</span></p>
-                    <p>AS番号: <span id="as-number"></span></p>
-                    <p>ISP: <span id="isp"></span></p>
-                    <p>GeoIP情報: <span id="geoip"></span></p>
+                    <p>AS番号: <span id="as-number">{{ .ASN }}</span></p>
+                    <p>ISP: <span id="isp">{{ .ISP  }}</span></p>
+                    <p>GeoIP情報: <span id="geoip">{{ .GeoIP }}</span></p>
                     <p>Navigation処理時間(ブラウザ内部処理): <span id="nav-dur"></span></p>
                     <p>名前解決処理時間: <span id="resolv-dur"></span></p>
                     <p>セッション確立時間: <span id="conn-dur"></span></p>
