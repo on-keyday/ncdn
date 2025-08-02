@@ -1,0 +1,47 @@
+config.go.package = "edge"
+input.endian = config.endian.little
+
+enum Method:
+    :u8
+    OTHER
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+
+format MethodInfo:
+    method :Method
+    if method == Method.OTHER:
+        len :u8
+        method_name :[len]u8
+
+format PathInfo:
+    path :String
+    query_len :u8
+    query :[query_len]Field
+
+format String:
+    len :u16
+    data :[len]u8
+
+format Field:
+    key :String
+    value :String
+
+format Header:
+    len :u16
+    fields :[len]Field
+
+format Body:
+    len :u32
+    body :[len]u8
+
+format RequestInfo:
+    popID :u32
+    remoteAddr :[16]u8
+    method :MethodInfo
+    path :PathInfo
+    header :Header
+
+format ResponseInfo:
+    status :u16
+    header :Header
