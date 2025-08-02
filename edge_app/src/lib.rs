@@ -10,6 +10,8 @@ extern "C" {
     // get_request_info(pointer: u32, size: u32) -> u32
     fn get_request_info(pointer: *mut u8, size: u32) -> u32;
     fn log_output(level: u32, pointer: *const u8, size: u32) -> u32;
+    fn save_buffer_pointer(pointer: *const (), size: u32);
+    fn get_buffer_pointer(pointer: *mut *const u8,size: *mut u32);
 
     // get_response_info(pointer: u32, size: u32) -> u32
     //fn get_response_info(pointer: *mut u8, size: u32) -> u32;
@@ -91,6 +93,33 @@ pub extern "C" fn on_request() {
         }
         Err(e) => {
             log::error!("[Wasm] Failed to decode request info: {}", e);
+        }
+    }
+    buffer.resize(written_size as usize, 0);
+    buffer.shrink_to_fit();
+    unsafe { save_buffer_pointer(buffer.as_ptr() as *const (), written_size as u32) };
+    buffer.leak(); // バッファをリークして、ホストに渡す
+}
+
+#[no_mangle]
+pub extern "C" fn on_response() {
+    let mut pointer: *const u8 = std::ptr::null();
+    let mut size: u32 = 0;
+    unsafe {
+        get_buffer_pointer(&mut pointer, &mut size)
+    };
+    if pointer.is_null() || size == 0 {
+        log::error!("[Wasm] No request info available.");
+        return; 
+    }
+    let buffer = unsafe { std::slice::from_raw_parts(pointer as *const u8, size as usize) };
+    match edge::RequestInfo::decode_exact(buffer) {
+        Ok(req_info) => {
+            log::info!("[Wasm] Successfully decoded RequestInfo for response");
+            log::info!("[Wasm] Protocol: {}", req_info.protocol.protocol);
+        },
+        Err(e) => {
+            log::error!("[Wasm] Failed to decode request info for response: {}", e);
         }
     }
 }

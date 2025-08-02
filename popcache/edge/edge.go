@@ -32,6 +32,10 @@ type HandleContext struct {
 	mod  api.Module
 	req  *RequestInfo
 	resp *ResponseInfo
+
+	// optimized for caching
+	bufferPointer uint32
+	bufferSize    uint32
 }
 
 type edgeComputing struct {
@@ -167,6 +171,8 @@ func (r *edgeComputing) initRequestHandler() error {
 	ncdn.NewFunctionBuilder().WithFunc(r.getRequestInfo).Export("get_request_info")
 	ncdn.NewFunctionBuilder().WithFunc(r.getResponseInfo).Export("get_response_info")
 	ncdn.NewFunctionBuilder().WithFunc(r.logOutput).Export("log_output")
+	ncdn.NewFunctionBuilder().WithFunc(r.saveBufferPointer).Export("save_buffer_pointer")
+	ncdn.NewFunctionBuilder().WithFunc(r.getBufferPointer).Export("get_buffer_pointer")
 	_, err = ncdn.Instantiate(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to instantiate ncdn module: %w", err)
@@ -221,6 +227,40 @@ func (r *edgeComputing) Unregister(method, path string) error {
 }
 
 type requestIDKey struct{}
+
+func (r *edgeComputing) saveBufferPointer(ctx context.Context, _ api.Module, pointer, size uint32) {
+	key, ok := ctx.Value(requestIDKey{}).(uint64)
+	if !ok {
+		log.Printf("No request ID found in context")
+		return
+	}
+	r.handlerRW.Lock()
+	defer r.handlerRW.Unlock()
+	handleCtx, exists := r.handleContext[key]
+	if !exists {
+		log.Printf("No handle context found for request ID %d", key)
+		return
+	}
+	handleCtx.bufferPointer = pointer
+	handleCtx.bufferSize = size
+}
+
+func (r *edgeComputing) getBufferPointer(ctx context.Context, mod api.Module, pointerToPointer uint32, pointerToSize uint32) {
+	key, ok := ctx.Value(requestIDKey{}).(uint64)
+	if !ok {
+		log.Printf("No request ID found in context")
+		return
+	}
+	r.handlerRW.RLock()
+	handleCtx, exists := r.handleContext[key]
+	r.handlerRW.RUnlock()
+	if !exists {
+		log.Printf("No handle context found for request ID %d", key)
+		return
+	}
+	mod.Memory().WriteUint32Le(pointerToPointer, handleCtx.bufferPointer)
+	mod.Memory().WriteUint32Le(pointerToSize, handleCtx.bufferSize)
+}
 
 func (r *edgeComputing) logOutput(c context.Context, mod api.Module, logLevel, pointer, size uint32) uint32 {
 	level := LogLevel(logLevel)
