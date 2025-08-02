@@ -258,7 +258,7 @@ SKIPPED:
 		}
 	}
 
-	if fetchInfoPath != "" && len(removeOldInfo) > 0 {
+	if fetchInfoPath != "" && (len(oldFetchInfo) == 0 || len(removeOldInfo) > 0) {
 		slog.Info("Saving fetch info to file", slog.String("path", fetchInfoPath))
 		fetchInfoRaw, err := json.MarshalIndent(useCandidates, "", "  ")
 		if err != nil {

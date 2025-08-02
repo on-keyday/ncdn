@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"log"
@@ -17,9 +19,11 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/tetratelabs/wazero"
 	"github.com/yzp0n/ncdn/httprps"
 	"github.com/yzp0n/ncdn/popcache/cache"
 	lbconnid "github.com/yzp0n/ncdn/popcache/connid"
+	"github.com/yzp0n/ncdn/popcache/edge"
 	"github.com/yzp0n/ncdn/tool/util"
 	"github.com/yzp0n/ncdn/types"
 	"golang.org/x/net/http2"
@@ -123,49 +127,76 @@ func main() {
 		// return 204
 		w.WriteHeader(http.StatusNoContent)
 	})
-
-	rev := &httputil.ReverseProxy{
-		// FIXME: actually cache stuff...
-		Rewrite: func(r *httputil.ProxyRequest) {
-			r.SetXForwarded()
-			r.Out.Header.Set("X-NCDN-PoPCache-NodeId", *nodeId)
-			r.SetURL(originURL)
-		},
-	}
+	ec := edge.NewEdgeComputing(wazero.NewRuntime(context.Background()))
 	c := cache.NewCache()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			rev.ServeHTTP(w, r)
-			return
-		}
-		key := r.URL.String()
-		if cached, found := c.Get(key); found {
-			log.Printf("Cache hit for %s", key)
-			for k, v := range cached.Header {
-				w.Header()[k] = v
+		reqID, err := ec.StartRequest(r.Context(), r)
+		var handleRequest func(*http.Request)
+		var handleResponse func(*http.Response)
+		if err != nil {
+			if !errors.Is(err, edge.NoEdgeFunctionError) {
+				log.Printf("Failed to start request: %v", err)
 			}
-			w.Header().Set("X-NCDN-PoPCache-Hit", "true")
-			w.WriteHeader(cached.StatusCode)
-			_, _ = w.Write(cached.Body)
-			return
+			handleRequest = func(req *http.Request) {}
+			handleResponse = func(resp *http.Response) {}
+		} else {
+			defer func() {
+				if err := ec.FinishRequest(r.Context(), reqID); err != nil {
+					log.Printf("Failed to finish request: %v", err)
+				}
+			}()
+			handleRequest = func(req *http.Request) {
+				err := ec.ProcessRequest(r.Context(), reqID, req)
+				if err != nil {
+					log.Printf("Failed to process request: %v", err)
+				}
+			}
+			handleResponse = func(resp *http.Response) {
+				err := ec.ProcessResponse(r.Context(), reqID, resp)
+				if err != nil {
+					log.Printf("Failed to process response: %v", err)
+				}
+			}
+		}
+		isCacheable := r.Method == http.MethodGet || r.Method == http.MethodHead
+		if isCacheable {
+			key := r.URL.String()
+			if cached, found := c.Get(key); found {
+				handleRequest(r)
+				log.Printf("Cache hit for %s", key)
+				for k, v := range cached.Header {
+					w.Header()[k] = v
+				}
+				resp := &http.Response{
+					StatusCode: cached.StatusCode,
+					Header:     w.Header(),
+					Body:       io.NopCloser(bytes.NewReader(cached.Body)),
+				}
+				handleResponse(resp)
+				w.Header().Set("X-NCDN-PoPCache-Hit", "true")
+				w.WriteHeader(resp.StatusCode)
+				_, _ = w.Write(cached.Body)
+				return
+			}
 		}
 		// Handle GET and HEAD requests
-		newRev := &httputil.ReverseProxy{
+		reverseProxy := &httputil.ReverseProxy{
 			Rewrite: func(r *httputil.ProxyRequest) {
+				handleRequest(r.Out)
 				r.SetXForwarded()
 				r.Out.Header.Set("X-NCDN-PoPCache-NodeId", *nodeId)
 				r.SetURL(originURL)
 			},
 			ModifyResponse: func(resp *http.Response) error {
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Printf("Failed to read response body: %v", err)
-					return err
-				}
-				resp.Body.Close()                               // Close the original body
-				resp.Body = io.NopCloser(bytes.NewReader(body)) // Create a new body reader
 				cacheControl := resp.Header.Get("Cache-Control")
-				if !strings.Contains(cacheControl, "no-store") {
+				if isCacheable && !strings.Contains(cacheControl, "no-store") {
+					body, err := io.ReadAll(resp.Body)
+					if err != nil {
+						log.Printf("Failed to read response body: %v", err)
+						return err
+					}
+					resp.Body.Close()                               // Close the original body
+					resp.Body = io.NopCloser(bytes.NewReader(body)) // Create a new body reader
 					// Cache the response
 					c.Set(r.URL.String(), &cache.CacheEntry{
 						StatusCode: resp.StatusCode,
@@ -174,11 +205,12 @@ func main() {
 						StoredAt:   time.Now(),
 					})
 				}
+				handleResponse(resp)
 				resp.Header.Set("X-NCDN-PoPCache-Hit", "false")
 				return nil
 			},
 		}
-		newRev.ServeHTTP(w, r)
+		reverseProxy.ServeHTTP(w, r)
 	})
 
 	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)

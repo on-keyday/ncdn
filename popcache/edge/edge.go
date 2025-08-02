@@ -2,10 +2,11 @@ package edge
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -15,11 +16,13 @@ import (
 )
 
 type EdgeComputer interface {
+	io.Closer
 	Register(ctx context.Context, method, path string, binary []byte) error
 	Unregister(method, path string) error
-	ProcessRequest(p *httputil.ProxyRequest) uint64
-	ProcessResponse(reqID uint64, p *http.Response)
-	FinishRequest(reqID uint64) error
+	StartRequest(ctx context.Context, p *http.Request) (uint64, error)
+	ProcessRequest(ctx context.Context, reqID uint64, p *http.Request) error
+	ProcessResponse(ctx context.Context, reqID uint64, p *http.Response) error
+	FinishRequest(ctx context.Context, reqID uint64) error
 }
 
 var _ EdgeComputer = (*edgeComputing)(nil)
@@ -42,7 +45,7 @@ type edgeComputing struct {
 	handleContext map[uint64]*HandleContext
 }
 
-func NewEdgeComputing(rt wazero.Runtime) *edgeComputing {
+func NewEdgeComputing(rt wazero.Runtime) EdgeComputer {
 	c := &edgeComputing{
 		rt:            rt,
 		compiled:      make(map[string]wazero.CompiledModule),
@@ -52,6 +55,10 @@ func NewEdgeComputing(rt wazero.Runtime) *edgeComputing {
 		log.Fatalf("Failed to initialize request handler: %v", err)
 	}
 	return c
+}
+
+func (r *edgeComputing) Close() error {
+	return r.rt.Close(context.Background())
 }
 
 type HandlerFunc func(c context.Context, mod api.Module, offset, size uint32) uint32
@@ -149,17 +156,38 @@ func (r *edgeComputing) initRequestHandler() error {
 	return nil
 }
 
+const hookOnRequest = "on_request"
+const hookOnResponse = "on_response"
+const hookOnFinish = "on_finish"
+
+var hooks = []string{hookOnRequest, hookOnResponse, hookOnFinish}
+
 func (r *edgeComputing) Register(ctx context.Context, method, path string, binary []byte) error {
-	instance, err := r.rt.CompileModule(ctx, binary)
+	mod, err := r.rt.CompileModule(ctx, binary)
 	if err != nil {
 		return err
+	}
+	exported := mod.ExportedFunctions()
+	hasLeastOne := false
+	for _, hook := range hooks {
+		if f, ok := exported[hook]; ok {
+			params := f.ParamTypes()
+			if len(params) != 0 {
+				return fmt.Errorf("function %s must not have parameters", hook)
+			}
+			// return values are ignored, so we don't check them.
+			hasLeastOne = true
+		}
+	}
+	if !hasLeastOne {
+		return fmt.Errorf("module must export at least one of the following functions: %v", hooks)
 	}
 	r.registerRW.Lock()
 	defer r.registerRW.Unlock()
 	if _, ok := r.compiled[method+" "+path]; ok {
 		return fmt.Errorf("instance already registered for %s %s", method, path)
 	}
-	r.compiled[method+" "+path] = instance
+	r.compiled[method+" "+path] = mod
 	return nil
 }
 
@@ -248,76 +276,106 @@ func (r *edgeComputing) getResponseInfo(c context.Context, mod api.Module, point
 	return uint32(length)
 }
 
-func (r *edgeComputing) ProcessRequest(p *httputil.ProxyRequest) uint64 {
-	key := p.In.Method + " " + p.In.URL.Path
+var NoEdgeFunctionError = errors.New("no edge function registered for this request")
+
+func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint64, error) {
+	key := p.Method + " " + p.URL.Path
 	r.registerRW.RLock()
 	compiled, ok := r.compiled[key]
 	r.registerRW.RUnlock()
 	if !ok {
-		log.Printf("No compiled instance found for %s %s", p.In.Method, p.In.URL.Path)
-		return 0
+		return 0, fmt.Errorf("%w: %s %s", NoEdgeFunctionError, p.Method, p.URL.Path)
 	}
 	conf := wazero.NewModuleConfig()
-
-	mod, err := r.rt.InstantiateModule(p.In.Context(), compiled, conf)
+	mod, err := r.rt.InstantiateModule(ctx, compiled, conf)
 	if err != nil {
-		log.Printf("Failed to instantiate module for %s: %v", key, err)
-		return 0
-	}
-	reqInfo, err := getRequestInfo(p.In)
-	if err != nil {
-		log.Printf("Failed to get request info: %v", err)
-		return 0
+		return 0, fmt.Errorf("failed to instantiate module for %s %s: %w", p.Method, p.URL.Path, err)
 	}
 	handleCtx := &HandleContext{
 		mod: mod,
-		req: reqInfo,
 	}
 	reqID := r.atomicCounter.Add(1)
 	r.handlerRW.Lock()
 	if _, exists := r.handleContext[reqID]; exists {
 		r.handlerRW.Unlock()
-		log.Printf("Request ID %d already exists, too busy?", reqID)
-		return 0
+		return 0, fmt.Errorf("request ID %d already exists", reqID)
 	}
 	r.handleContext[reqID] = handleCtx
 	r.handlerRW.Unlock()
-	ctx := context.WithValue(p.In.Context(), requestIDKey{}, reqID)
-	mod.ExportedFunction("on_request").Call(ctx)
-	return reqID
+
+	return reqID, nil
 }
 
-func (r *edgeComputing) ProcessResponse(reqID uint64, resp *http.Response) {
+func (r *edgeComputing) ProcessRequest(ctx context.Context, reqID uint64, p *http.Request) error {
 	r.handlerRW.RLock()
 	handleCtx, exists := r.handleContext[reqID]
 	r.handlerRW.RUnlock()
 	if !exists {
-		log.Printf("No handle context found for request ID %d", reqID)
-		return
+		return fmt.Errorf("no handle context found for request ID %d", reqID)
+	}
+	info, err := getRequestInfo(p)
+	if err != nil {
+		return fmt.Errorf("failed to get request info: %w", err)
+	}
+	handleCtx.req = info
+	mod := handleCtx.mod
+	if mod == nil {
+		return fmt.Errorf("no module found for request ID %d", reqID)
+	}
+	f := mod.ExportedFunction(hookOnRequest)
+	if f != nil {
+		ctx := context.WithValue(ctx, requestIDKey{}, reqID)
+		_, err := f.Call(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to call on_request function: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *edgeComputing) ProcessResponse(ctx context.Context, reqID uint64, resp *http.Response) error {
+	r.handlerRW.RLock()
+	handleCtx, exists := r.handleContext[reqID]
+	r.handlerRW.RUnlock()
+	if !exists {
+		return fmt.Errorf("no handle context found for request ID %d", reqID)
+	}
+	if handleCtx.resp != nil {
+		return fmt.Errorf("response already processed for request ID %d", reqID)
 	}
 	respInfo, err := getResponseInfo(resp)
 	if err != nil {
-		log.Printf("Failed to get response info: %v", err)
-		return
+		return fmt.Errorf("failed to get response info: %w", err)
 	}
 	handleCtx.resp = respInfo
 	mod := handleCtx.mod
-	ctx := context.WithValue(resp.Request.Context(), requestIDKey{}, reqID)
-	mod.ExportedFunction("on_response").Call(ctx)
+	f := mod.ExportedFunction(hookOnResponse)
+	if f != nil {
+		ctx := context.WithValue(ctx, requestIDKey{}, reqID)
+		_, err := f.Call(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to call on_response function: %w", err)
+		}
+	}
+	return nil
 }
 
-func (r *edgeComputing) FinishRequest(reqID uint64) error {
-	r.handlerRW.Lock()
+func (r *edgeComputing) FinishRequest(ctx context.Context, reqID uint64) error {
+	r.handlerRW.RLock()
 	handleCtx, exists := r.handleContext[reqID]
-	if exists {
-		delete(r.handleContext, reqID)
-	}
-	r.handlerRW.Unlock()
+	r.handlerRW.RUnlock()
 	if !exists {
 		return fmt.Errorf("no handle context found for request ID %d", reqID)
 	}
 	mod := handleCtx.mod
-	ctx := context.WithValue(context.Background(), requestIDKey{}, reqID)
-	mod.ExportedFunction("on_finish").Call(ctx)
-	return mod.Close(ctx)
+	ctx = context.WithValue(ctx, requestIDKey{}, reqID)
+	var err error
+	if f := mod.ExportedFunction(hookOnFinish); f != nil {
+		_, err = f.Call(ctx)
+	}
+	err2 := mod.Close(ctx)
+	r.handlerRW.Lock()
+	defer r.handlerRW.Unlock()
+	delete(r.handleContext, reqID)
+	return errors.Join(err, err2)
 }
