@@ -2,7 +2,6 @@ package cache
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,7 +45,7 @@ func (c *Cache) Delete(key string) {
 	delete(c.entries, key)
 }
 
-func parseDirective(directive string) (string, string) {
+func parseDirective(directive string) (string, string, string) {
 	token := ""
 	directive = strings.TrimSpace(directive)
 	for i, r := range directive {
@@ -61,39 +60,53 @@ func parseDirective(directive string) (string, string) {
 		directive = ""
 	}
 	if directive == "" {
-		return strings.TrimSpace(token), ""
+		return strings.TrimSpace(token), "", ""
 	}
 	if directive[0] != '=' {
-		return strings.TrimSpace(token), ""
+		return strings.TrimSpace(token), "", directive
 	}
 	directive = directive[1:] // Remove the '='
 	if directive == "" {
-		return strings.TrimSpace(token), ""
+		return strings.TrimSpace(token), "", ""
 	}
 	if directive[0] == '"' {
-	}
-	for i, r := range directive {
-		if r == ',' || r == ';' {
-			directive = directive[i:]
-			break
+		directive = directive[1:]
+		for i := 0; i < len(directive); i++ {
+			if directive[i] == '"' {
+				directive = directive[:i]
+				return strings.TrimSpace(token), strings.TrimSpace(directive), directive[i+1:]
+			}
 		}
-		if !httpguts.IsTokenRune(r) {
-			return strings.TrimSpace(token), ""
+	} else {
+		for i, r := range directive {
+			if r == ',' || r == ';' {
+				directive = directive[:i]
+				return strings.TrimSpace(token), strings.TrimSpace(directive), directive[i+1:]
+			}
+			if !httpguts.IsTokenRune(r) {
+				return strings.TrimSpace(token), "", ""
+			}
 		}
 	}
-	return strings.TrimSpace(token), strings.TrimSpace(directive)
+	return strings.TrimSpace(token), strings.TrimSpace(directive), ""
 }
 
 func parseDirectives(directives string) map[string]string {
-
 	result := make(map[string]string)
-	for _, directive := range strings.Split(directives, ",") {
-		key, value := parseDirective(directive)
+	data := directives
+	for len(data) > 0 {
+		key, value, rest := parseDirective(data)
 		if key != "" {
 			result[key] = value
 		}
+		data = rest
 	}
 	return result
+}
+
+type ParsedHeader struct {
+	Directives map[string]map[string]string
+	Values     map[string]string
 }
 
 type CacheControl struct {
@@ -105,25 +118,33 @@ type CacheControl struct {
 
 func ParseCacheControl(headers http.Header) *CacheControl {
 	result := &CacheControl{}
-	if age := headers.Get("Age"); age != "" {
-		if ageInt, err := strconv.Atoi(age); err == nil {
-			age := time.Duration(ageInt) * time.Second
-			result.Age = &age
-		}
-	}
-	if cacheControl := headers.Get("Cache-Control"); cacheControl != "" {
-		directives := parseDirectives(cacheControl)
-		if maxAge, ok := directives["max-age"]; ok {
-			if maxAgeInt, err := strconv.Atoi(maxAge); err == nil {
-				maxAge := time.Duration(maxAgeInt) * time.Second
-				result.MaxAge = &maxAge
+	for key, values := range headers {
+		if strings.EqualFold(key, "Cache-Control") {
+			for _, value := range values {
+				directives := parseDirectives(value)
+				if age, ok := directives["max-age"]; ok {
+					if d, err := time.ParseDuration(age); err == nil {
+						result.MaxAge = &d
+					}
+				}
+				if age, ok := directives["s-maxage"]; ok {
+					if d, err := time.ParseDuration(age); err == nil {
+						result.MaxAge = &d
+					}
+				}
+				if _, ok := directives["no-cache"]; ok {
+					result.NoCache = true
+				}
+				if _, ok := directives["no-store"]; ok {
+					result.NoStore = true
+				}
 			}
-		}
-		if _, ok := directives["no-cache"]; ok {
-			result.NoCache = true
-		}
-		if _, ok := directives["no-store"]; ok {
-			result.NoStore = true
+		} else if strings.EqualFold(key, "Age") {
+			for _, value := range values {
+				if age, err := time.ParseDuration(value); err == nil {
+					result.Age = &age
+				}
+			}
 		}
 	}
 	return result

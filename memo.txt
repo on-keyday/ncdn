@@ -603,3 +603,9 @@ format LBConnectionID:
 ip netns exec U ./secrets/qclient  -serverAddress 192.0.2.10:8889 -rootCA /mnt/ncdn/ca/certs/20250719194728/root_ca.crt -mode TCP -requestCount 2 -path / -showBody
 
 
+
+Cache-Control   = #cache-directive
+
+cache-directive = token [ "=" ( token / quoted-string ) ]
+
+delta-seconds  = 1*DIGIT

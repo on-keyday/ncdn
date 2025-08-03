@@ -14,3 +14,4 @@ metrics.tar
 metrics.json
 target/
 wasm/
+cache-tests/

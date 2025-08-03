@@ -21,7 +21,7 @@ type EdgeComputer interface {
 	Register(ctx context.Context, method, path string, binary []byte) error
 	Unregister(method, path string) error
 	StartRequest(ctx context.Context, p *http.Request) (uint64, error)
-	ProcessRequest(ctx context.Context, reqID uint64, p *http.Request) error
+	ProcessRequest(ctx context.Context, reqID uint64, popID uint32, p *http.Request) error
 	ProcessResponse(ctx context.Context, reqID uint64, p *http.Response) error
 	FinishRequest(ctx context.Context, reqID uint64) error
 }
@@ -76,8 +76,11 @@ func init() {
 	}
 }
 
-func getRequestInfo(r *http.Request) (*RequestInfo, error) {
-	info := &RequestInfo{}
+func getRequestInfo(popID uint32, reqID uint64, r *http.Request) (*RequestInfo, error) {
+	info := &RequestInfo{
+		PopId: popID,
+		ReqId: reqID,
+	}
 	remoteAddrParsed, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse remote address %s: %w", r.RemoteAddr, err)
@@ -401,14 +404,14 @@ func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint
 	return reqID, nil
 }
 
-func (r *edgeComputing) ProcessRequest(ctx context.Context, reqID uint64, p *http.Request) error {
+func (r *edgeComputing) ProcessRequest(ctx context.Context, reqID uint64, popID uint32, p *http.Request) error {
 	r.handlerRW.RLock()
 	handleCtx, exists := r.handleContext[reqID]
 	r.handlerRW.RUnlock()
 	if !exists {
 		return fmt.Errorf("no handle context found for request ID %d", reqID)
 	}
-	info, err := getRequestInfo(p)
+	info, err := getRequestInfo(popID, reqID, p)
 	if err != nil {
 		return fmt.Errorf("failed to get request info: %w", err)
 	}

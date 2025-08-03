@@ -158,7 +158,7 @@ func main() {
 				}
 			}()
 			handleRequest = func(req *http.Request) {
-				err := ec.ProcessRequest(r.Context(), reqID, req)
+				err := ec.ProcessRequest(r.Context(), reqID, uint32(*lbNodeId), req)
 				if err != nil {
 					log.Printf("Failed to process request: %v", err)
 				}
