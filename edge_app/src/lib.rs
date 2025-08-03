@@ -45,7 +45,7 @@ pub extern "C" fn on_response() {
     log::info!("[Wasm] Buffer size: {}", buffer.len());
     match api::decode_request(&buffer) {
         Ok(req_info) => {
-            log::info!("[Wasm] Protocol: {}",req_info.protocol());
+            log::info!("[Wasm] Protocol: {} {}",req_info.protocol(),if req_info.is_tls() { "(TLS)" } else { "(Plain)" });
             req_info
         }
         Err(err) => {

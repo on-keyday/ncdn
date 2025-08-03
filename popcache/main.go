@@ -33,7 +33,8 @@ import (
 )
 
 var originURLStr = flag.String("originURL", "http://localhost:8888", "Origin server URL")
-var listenAddr = flag.String("listenAddr", ":8889", "Address to listen on")
+var secureListenAddr = flag.String("listenAddr", ":8889", "Address to listen on")
+var httpListenAddr = flag.String("insecureListenAddr", ":8890", "HTTP server address to listen on")
 var nodeId = flag.String("nodeId", "unknown_node", "Name of the node")
 var lbNodeId = flag.Int("lbNodeId", 0, "Node ID for load balancer (0 for default)")
 var certFile = flag.String("certFile", "ca/cert.pem", "Path to the TLS certificate file")
@@ -230,14 +231,14 @@ func main() {
 	}
 
 	srv := &http3.Server{
-		Addr:    *listenAddr,
+		Addr:    *secureListenAddr,
 		Handler: mux,
 	}
 
-	pkt, err := net.ListenPacket("udp4", *listenAddr)
+	pkt, err := net.ListenPacket("udp4", *secureListenAddr)
 
 	if err != nil {
-		log.Fatalf("Failed to listen on %s: %v", *listenAddr, err)
+		log.Fatalf("Failed to listen on %s: %v", *secureListenAddr, err)
 	}
 
 	oobcap, ok := pkt.(quic.OOBCapablePacketConn)
@@ -282,7 +283,7 @@ func main() {
 	}()
 
 	tlsServ := &http.Server{
-		Addr:      *listenAddr,
+		Addr:      *secureListenAddr,
 		TLSConfig: tlsConf,
 		ConnState: func(conn net.Conn, state http.ConnState) {
 			switch state {
@@ -294,9 +295,9 @@ func main() {
 		},
 	}
 
-	lis, err := net.Listen("tcp", *listenAddr)
+	lis, err := net.Listen("tcp", *secureListenAddr)
 	if err != nil {
-		log.Fatalf("Failed to listen on %s: %v", *listenAddr, err)
+		log.Fatalf("Failed to listen on %s: %v", *secureListenAddr, err)
 	}
 
 	lis = tls.NewListener(lis, tlsConf)
@@ -306,8 +307,28 @@ func main() {
 		log.Fatalf("Failed to configure HTTP/2 server: %v", err)
 	}
 
-	log.Printf("Listening on %s...", *listenAddr)
-	if err := tlsServ.Serve(lis); err != nil {
-		log.Fatal(err)
+	log.Printf("Listening on %s...", *secureListenAddr)
+
+	go func() {
+		if err := tlsServ.Serve(lis); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	log.Printf("Listening on HTTP %s...", *httpListenAddr)
+	httpServ := &http.Server{
+		Addr:    *httpListenAddr,
+		Handler: mux,
+		ConnState: func(conn net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				log.Printf("New HTTP connection from %s", conn.RemoteAddr())
+			case http.StateClosed:
+				log.Printf("HTTP connection closed from %s", conn.RemoteAddr())
+			}
+		},
+	}
+	if err := httpServ.ListenAndServe(); err != nil {
+		log.Fatalf("Failed to start HTTP server: %v", err)
 	}
 }

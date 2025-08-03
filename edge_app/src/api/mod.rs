@@ -133,6 +133,12 @@ impl Request<'_> {
         self.request_size
     }
 
+    pub fn is_tls(&self) -> bool {
+        self.info.protocol.protocol == edge::Protocol::http1 ||
+        self.info.protocol.protocol == edge::Protocol::h2 || 
+        self.info.protocol.protocol == edge::Protocol::h3
+    }
+
 }
 
 pub struct Response<'a> {
