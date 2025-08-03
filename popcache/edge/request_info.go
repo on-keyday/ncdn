@@ -39,17 +39,15 @@ func (t LogLevel) String() string {
 type Protocol uint8
 
 const (
-	Protocol_Other      Protocol = 0
-	Protocol_Http1Plain Protocol = 1
-	Protocol_Http1      Protocol = 2
-	Protocol_H2         Protocol = 3
-	Protocol_H3         Protocol = 4
+	Protocol_Http1Plain Protocol = 0
+	Protocol_Http1      Protocol = 1
+	Protocol_H2         Protocol = 2
+	Protocol_H3         Protocol = 3
+	Protocol_Other      Protocol = 0xff
 )
 
 func (t Protocol) String() string {
 	switch t {
-	case Protocol_Other:
-		return "Other"
 	case Protocol_Http1Plain:
 		return "Http1Plain"
 	case Protocol_Http1:
@@ -58,6 +56,8 @@ func (t Protocol) String() string {
 		return "H2"
 	case Protocol_H3:
 		return "H3"
+	case Protocol_Other:
+		return "Other"
 	}
 	return fmt.Sprintf("Protocol(%d)", t)
 }
@@ -65,22 +65,43 @@ func (t Protocol) String() string {
 type Method uint8
 
 const (
-	Method_Other Method = 0
-	Method_Get   Method = 1
-	Method_Post  Method = 2
-	Method_Put   Method = 3
+	Method_Get     Method = 0
+	Method_Post    Method = 1
+	Method_Put     Method = 2
+	Method_Head    Method = 3
+	Method_Options Method = 4
+	Method_Patch   Method = 5
+	Method_Delete  Method = 6
+	Method_Connect Method = 7
+	Method_Pri     Method = 8
+	Method_Trace   Method = 9
+	Method_Other   Method = 0xff
 )
 
 func (t Method) String() string {
 	switch t {
-	case Method_Other:
-		return "Other"
 	case Method_Get:
 		return "GET"
 	case Method_Post:
 		return "POST"
 	case Method_Put:
 		return "PUT"
+	case Method_Head:
+		return "HEAD"
+	case Method_Options:
+		return "OPTIONS"
+	case Method_Patch:
+		return "PATCH"
+	case Method_Delete:
+		return "DELETE"
+	case Method_Connect:
+		return "CONNECT"
+	case Method_Pri:
+		return "PRI"
+	case Method_Trace:
+		return "TRACE"
+	case Method_Other:
+		return "Other"
 	}
 	return fmt.Sprintf("Method(%d)", t)
 }
@@ -164,6 +185,19 @@ type Body struct {
 	Len  uint32
 	Body []uint8
 }
+type union11_Address interface {
+	isunion10_()
+}
+type union_12_t struct {
+	AddrV6 [16]uint8
+}
+type union_13_t struct {
+	AddrV4 [4]uint8
+}
+type Address struct {
+	flags9   uint8
+	union10_ union11_Address
+}
 type Field struct {
 	Key   String
 	Value String
@@ -183,8 +217,9 @@ type PathInfo struct {
 }
 type RequestInfo struct {
 	PopId      uint32
+	ReqId      uint64
 	Protocol   ProtocolInfo
-	RemoteAddr [16]uint8
+	RemoteAddr Address
 	RemotePort uint16
 	Method     MethodInfo
 	Path       PathInfo
@@ -609,6 +644,194 @@ func (t *Body) DecodeExact(d []byte) error {
 	}
 	return nil
 }
+func (t *Address) IsV6() bool {
+	return ((t.flags9 & 0x80) >> 7) == 1
+}
+func (t *Address) SetIsV6(v bool) {
+	if v {
+		t.flags9 |= uint8(0x80)
+	} else {
+		t.flags9 &= ^uint8(0x80)
+	}
+}
+func (t *Address) Reserved() uint8 {
+	return ((t.flags9 & 0x7f) >> 0)
+}
+func (t *Address) SetReserved(v uint8) bool {
+	if v > 127 {
+		return false
+	}
+	t.flags9 = (t.flags9 & ^uint8(0x7f)) | ((v & 0x7f) << 0)
+	return true
+}
+func (t *union_12_t) isunion10_() {}
+func (t *union_13_t) isunion10_() {}
+func (t *Address) AddrV4() *[4]uint8 {
+	if true == ((func() uint8 {
+		if t.IsV6() {
+			return 1
+		} else {
+			return 0
+		}
+	}()) == 1) {
+		return nil
+	} else if true {
+		if _, ok := t.union10_.(*union_13_t); !ok {
+			return nil // not set
+		}
+		tmp := [4]uint8(t.union10_.(*union_13_t).AddrV4[:])
+		return &tmp
+	}
+	return nil
+}
+func (t *Address) SetAddrV4(v [4]uint8) bool {
+	if true == ((func() uint8 {
+		if t.IsV6() {
+			return 1
+		} else {
+			return 0
+		}
+	}()) == 1) {
+		return false
+	} else if true {
+		if _, ok := t.union10_.(*union_13_t); !ok {
+			t.union10_ = &union_13_t{}
+		}
+		t.union10_.(*union_13_t).AddrV4 = [4]uint8(v)
+		return true
+	}
+	return false
+}
+func (t *Address) AddrV6() *[16]uint8 {
+	if true == ((func() uint8 {
+		if t.IsV6() {
+			return 1
+		} else {
+			return 0
+		}
+	}()) == 1) {
+		if _, ok := t.union10_.(*union_12_t); !ok {
+			return nil // not set
+		}
+		tmp := [16]uint8(t.union10_.(*union_12_t).AddrV6[:])
+		return &tmp
+	}
+	return nil
+}
+func (t *Address) SetAddrV6(v [16]uint8) bool {
+	if true == ((func() uint8 {
+		if t.IsV6() {
+			return 1
+		} else {
+			return 0
+		}
+	}()) == 1) {
+		if _, ok := t.union10_.(*union_12_t); !ok {
+			t.union10_ = &union_12_t{}
+		}
+		t.union10_.(*union_12_t).AddrV6 = [16]uint8(v)
+		return true
+	}
+	return false
+}
+func (t *Address) Visit(v VisitorJDPCC) {
+	v.Visit(v, "IsV6", (func() uint8 {
+		if t.IsV6() {
+			return 1
+		} else {
+			return 0
+		}
+	}()))
+	v.Visit(v, "Reserved", t.Reserved())
+	v.Visit(v, "AddrV4", (t.AddrV4()))
+	v.Visit(v, "AddrV6", (t.AddrV6()))
+}
+func (t *Address) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJDPCCToMap(t))
+}
+func (t *Address) Write(w io.Writer) (err error) {
+	if n, err := w.Write([]byte{byte(t.flags9)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.flags9: %w", err)
+	}
+	if (func() uint8 {
+		if t.IsV6() {
+			return 1
+		} else {
+			return 0
+		}
+	}()) == 1 {
+		if _, ok := t.union10_.(*union_12_t); !ok {
+			return fmt.Errorf("encode t.union10_: union is not set to union_12_t")
+		}
+		if n, err := w.Write(t.union10_.(*union_12_t).AddrV6[:]); err != nil || n != len(t.union10_.(*union_12_t).AddrV6) {
+			return fmt.Errorf("encode AddrV6: %w", err)
+		}
+	} else {
+		if _, ok := t.union10_.(*union_13_t); !ok {
+			return fmt.Errorf("encode t.union10_: union is not set to union_13_t")
+		}
+		if n, err := w.Write(t.union10_.(*union_13_t).AddrV4[:]); err != nil || n != len(t.union10_.(*union_13_t).AddrV4) {
+			return fmt.Errorf("encode AddrV4: %w", err)
+		}
+	}
+	return nil
+}
+func (t *Address) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 1))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *Address) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *Address) Read(r io.Reader) (err error) {
+	tmpflags9 := [1]byte{}
+	n_flags9, err := io.ReadFull(r, tmpflags9[:])
+	if err != nil {
+		return fmt.Errorf("read flags9: expect 1 byte but read %d bytes: %w", n_flags9, err)
+	}
+	t.flags9 = uint8(tmpflags9[0])
+	if (func() uint8 {
+		if t.IsV6() {
+			return 1
+		} else {
+			return 0
+		}
+	}()) == 1 {
+		t.union10_ = &union_12_t{}
+		n_AddrV6, err := io.ReadFull(r, t.union10_.(*union_12_t).AddrV6[:])
+		if err != nil {
+			return fmt.Errorf("read AddrV6: expect %d bytes but read %d bytes: %w", 16, n_AddrV6, err)
+		}
+	} else {
+		t.union10_ = &union_13_t{}
+		n_AddrV4, err := io.ReadFull(r, t.union10_.(*union_13_t).AddrV4[:])
+		if err != nil {
+			return fmt.Errorf("read AddrV4: expect %d bytes but read %d bytes: %w", 4, n_AddrV4, err)
+		}
+	}
+	return nil
+}
+
+func (t *Address) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *Address) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode Address: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
 func (t *Field) Visit(v VisitorJDPCC) {
 	v.Visit(v, "Key", &t.Key)
 	v.Visit(v, "Value", &t.Value)
@@ -678,9 +901,9 @@ func (t *Header) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *Header) Write(w io.Writer) (err error) {
-	tmp9 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp9[:], uint16(t.Len))
-	if n, err := w.Write(tmp9[:]); err != nil || n != 2 {
+	tmp14 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp14[:], uint16(t.Len))
+	if n, err := w.Write(tmp14[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Fields := int(t.Len)
@@ -716,12 +939,12 @@ func (t *Header) Read(r io.Reader) (err error) {
 	}
 	t.Len = uint16(binary.LittleEndian.Uint16(tmpLen[:]))
 	len_Fields := int(t.Len)
-	for i_10 := 0; i_10 < len_Fields; i_10++ {
-		var tmp11_ Field
-		if err := tmp11_.Read(r); err != nil {
+	for i_15 := 0; i_15 < len_Fields; i_15++ {
+		var tmp16_ Field
+		if err := tmp16_.Read(r); err != nil {
 			return fmt.Errorf("read Fields: %w", err)
 		}
-		t.Fields = append(t.Fields, tmp11_)
+		t.Fields = append(t.Fields, tmp16_)
 	}
 	return nil
 }
@@ -747,9 +970,9 @@ func (t *ResponseInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *ResponseInfo) Write(w io.Writer) (err error) {
-	tmp12 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp12[:], uint16(t.Status))
-	if n, err := w.Write(tmp12[:]); err != nil || n != 2 {
+	tmp17 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp17[:], uint16(t.Status))
+	if n, err := w.Write(tmp17[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Status: %w", err)
 	}
 	if err := t.Header.Write(w); err != nil {
@@ -856,12 +1079,12 @@ func (t *PathInfo) Read(r io.Reader) (err error) {
 	}
 	t.QueryLen = uint8(tmpQueryLen[0])
 	len_Query := int(t.QueryLen)
-	for i_13 := 0; i_13 < len_Query; i_13++ {
-		var tmp14_ Field
-		if err := tmp14_.Read(r); err != nil {
+	for i_18 := 0; i_18 < len_Query; i_18++ {
+		var tmp19_ Field
+		if err := tmp19_.Read(r); err != nil {
 			return fmt.Errorf("read Query: %w", err)
 		}
-		t.Query = append(t.Query, tmp14_)
+		t.Query = append(t.Query, tmp19_)
 	}
 	return nil
 }
@@ -881,6 +1104,7 @@ func (t *PathInfo) DecodeExact(d []byte) error {
 }
 func (t *RequestInfo) Visit(v VisitorJDPCC) {
 	v.Visit(v, "PopId", &t.PopId)
+	v.Visit(v, "ReqId", &t.ReqId)
 	v.Visit(v, "Protocol", &t.Protocol)
 	v.Visit(v, "RemoteAddr", &t.RemoteAddr)
 	v.Visit(v, "RemotePort", &t.RemotePort)
@@ -892,20 +1116,25 @@ func (t *RequestInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *RequestInfo) Write(w io.Writer) (err error) {
-	tmp15 := [4]byte{}
-	binary.LittleEndian.PutUint32(tmp15[:], uint32(t.PopId))
-	if n, err := w.Write(tmp15[:]); err != nil || n != 4 {
+	tmp20 := [4]byte{}
+	binary.LittleEndian.PutUint32(tmp20[:], uint32(t.PopId))
+	if n, err := w.Write(tmp20[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.PopId: %w", err)
+	}
+	tmp21 := [8]byte{}
+	binary.LittleEndian.PutUint64(tmp21[:], uint64(t.ReqId))
+	if n, err := w.Write(tmp21[:]); err != nil || n != 8 {
+		return fmt.Errorf("encode t.ReqId: %w", err)
 	}
 	if err := t.Protocol.Write(w); err != nil {
 		return fmt.Errorf("encode Protocol: %w", err)
 	}
-	if n, err := w.Write(t.RemoteAddr[:]); err != nil || n != len(t.RemoteAddr) {
+	if err := t.RemoteAddr.Write(w); err != nil {
 		return fmt.Errorf("encode RemoteAddr: %w", err)
 	}
-	tmp16 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp16[:], uint16(t.RemotePort))
-	if n, err := w.Write(tmp16[:]); err != nil || n != 2 {
+	tmp22 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp22[:], uint16(t.RemotePort))
+	if n, err := w.Write(tmp22[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.RemotePort: %w", err)
 	}
 	if err := t.Method.Write(w); err != nil {
@@ -920,7 +1149,7 @@ func (t *RequestInfo) Write(w io.Writer) (err error) {
 	return nil
 }
 func (t *RequestInfo) Encode() ([]byte, error) {
-	w := bytes.NewBuffer(make([]byte, 0, 4))
+	w := bytes.NewBuffer(make([]byte, 0, 12))
 	if err := t.Write(w); err != nil {
 		return nil, err
 	}
@@ -940,12 +1169,17 @@ func (t *RequestInfo) Read(r io.Reader) (err error) {
 		return fmt.Errorf("read PopId: expect 4 bytes but read %d bytes: %w", n_PopId, err)
 	}
 	t.PopId = uint32(binary.LittleEndian.Uint32(tmpPopId[:]))
+	tmpReqId := [8]byte{}
+	n_ReqId, err := io.ReadFull(r, tmpReqId[:])
+	if err != nil {
+		return fmt.Errorf("read ReqId: expect 8 bytes but read %d bytes: %w", n_ReqId, err)
+	}
+	t.ReqId = uint64(binary.LittleEndian.Uint64(tmpReqId[:]))
 	if err := t.Protocol.Read(r); err != nil {
 		return fmt.Errorf("read Protocol: %w", err)
 	}
-	n_RemoteAddr, err := io.ReadFull(r, t.RemoteAddr[:])
-	if err != nil {
-		return fmt.Errorf("read RemoteAddr: expect %d bytes but read %d bytes: %w", 16, n_RemoteAddr, err)
+	if err := t.RemoteAddr.Read(r); err != nil {
+		return fmt.Errorf("read RemoteAddr: %w", err)
 	}
 	tmpRemotePort := [2]byte{}
 	n_RemotePort, err := io.ReadFull(r, tmpRemotePort[:])

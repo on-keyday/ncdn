@@ -11,11 +11,11 @@ enum LogLevel:
 
 enum Protocol:
     :u8
-    other 
     http1_plain
     http1
     h2
     h3
+    other = 0xff
 
 format ProtocolInfo:
     protocol :Protocol
@@ -25,10 +25,17 @@ format ProtocolInfo:
 
 enum Method:
     :u8
-    OTHER
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
+    HEAD = "HEAD"
+    OPTIONS = "OPTIONS"
+    PATCH = "PATCH"
+    DELETE = "DELETE"
+    CONNECT = "CONNECT"
+    PRI = "PRI"
+    TRACE = "TRACE"
+    OTHER = 0xff
 
 format MethodInfo:
     method :Method
@@ -57,10 +64,19 @@ format Body:
     len :u32
     body :[len]u8
 
+format Address:
+    is_v6 :u1
+    reserved :u7
+    if is_v6 == 1:
+        addr_v6 :[16]u8
+    else:
+        addr_v4 :[4]u8
+
 format RequestInfo:
     popID :u32
+    reqID :u64
     protocol :ProtocolInfo
-    remoteAddr :[16]u8
+    remoteAddr :Address
     remotePort :u16
     method :MethodInfo
     path :PathInfo

@@ -66,6 +66,16 @@ func (r *edgeComputing) Close() error {
 
 type HandlerFunc func(c context.Context, mod api.Module, offset, size uint32) uint32
 
+var wellKnownMethods map[string]Method
+
+func init() {
+	wellKnownMethods = make(map[string]Method, int(Method_Other))
+	for i := 0; i < int(Method_Other); i++ {
+		method := Method(i)
+		wellKnownMethods[method.String()] = method
+	}
+}
+
 func getRequestInfo(r *http.Request) (*RequestInfo, error) {
 	info := &RequestInfo{}
 	remoteAddrParsed, err := netip.ParseAddrPort(r.RemoteAddr)
@@ -74,7 +84,11 @@ func getRequestInfo(r *http.Request) (*RequestInfo, error) {
 	}
 	switch r.ProtoMajor {
 	case 1:
-		info.Protocol.Protocol = Protocol_Http1
+		if r.TLS == nil {
+			info.Protocol.Protocol = Protocol_Http1Plain
+		} else {
+			info.Protocol.Protocol = Protocol_Http1
+		}
 	case 2:
 		info.Protocol.Protocol = Protocol_H2
 	case 3:
@@ -85,16 +99,23 @@ func getRequestInfo(r *http.Request) (*RequestInfo, error) {
 			return nil, fmt.Errorf("failed to set protocol name for %s", r.Proto)
 		}
 	}
-	info.RemoteAddr = remoteAddrParsed.Addr().As16()
+	if remoteAddrParsed.Addr().Is4() {
+		info.RemoteAddr.SetIsV6(false)
+		if !info.RemoteAddr.SetAddrV4(remoteAddrParsed.Addr().As4()) {
+			return nil, fmt.Errorf("failed to set IPv4 address %s", remoteAddrParsed.Addr().String())
+		}
+	} else if remoteAddrParsed.Addr().Is6() {
+		info.RemoteAddr.SetIsV6(true)
+		if !info.RemoteAddr.SetAddrV6(remoteAddrParsed.Addr().As16()) {
+			return nil, fmt.Errorf("failed to set IPv6 address %s", remoteAddrParsed.Addr().String())
+		}
+	} else {
+		return nil, fmt.Errorf("unsupported address type: %s", remoteAddrParsed.Addr().String())
+	}
 	info.RemotePort = remoteAddrParsed.Port()
-	switch r.Method {
-	case http.MethodGet:
-		info.Method.Method = Method_Get
-	case http.MethodPost:
-		info.Method.Method = Method_Post
-	case http.MethodPut:
-		info.Method.Method = Method_Put
-	default:
+	if m, ok := wellKnownMethods[r.Method]; ok {
+		info.Method.Method = m
+	} else {
 		info.Method.Method = Method_Other
 		if !info.Method.SetMethodName([]byte(r.Method)) {
 			return nil, fmt.Errorf("failed to set method name for %s", r.Method)
@@ -122,15 +143,17 @@ func getRequestInfo(r *http.Request) (*RequestInfo, error) {
 	q := r.URL.Query()
 	if len(q) > 0 {
 		query := make([]Field, 0, len(q))
-		for k, v := range q {
-			var f Field
-			if !f.Key.SetData([]byte(k)) {
-				return nil, fmt.Errorf("failed to set query key %s", k)
+		for key, v := range q {
+			for _, value := range v {
+				var f Field
+				if !f.Key.SetData([]byte(key)) {
+					return nil, fmt.Errorf("failed to set query key %s", key)
+				}
+				if !f.Value.SetData([]byte(value)) {
+					return nil, fmt.Errorf("failed to set query value for %s", key)
+				}
+				query = append(query, f)
 			}
-			if !f.Value.SetData([]byte(v[0])) {
-				return nil, fmt.Errorf("failed to set query value for %s", k)
-			}
-			query = append(query, f)
 		}
 		if !info.Path.SetQuery(query) {
 			return nil, fmt.Errorf("failed to set query fields for %s", r.URL.Path)
@@ -439,6 +462,11 @@ func (r *edgeComputing) FinishRequest(ctx context.Context, reqID uint64) error {
 	if !exists {
 		return fmt.Errorf("no handle context found for request ID %d", reqID)
 	}
+	defer func() {
+		r.handlerRW.Lock()
+		defer r.handlerRW.Unlock()
+		delete(r.handleContext, reqID)
+	}()
 	mod := handleCtx.mod
 	ctx = context.WithValue(ctx, requestIDKey{}, reqID)
 	var err error
@@ -446,8 +474,5 @@ func (r *edgeComputing) FinishRequest(ctx context.Context, reqID uint64) error {
 		_, err = f.Call(ctx)
 	}
 	err2 := mod.Close(ctx)
-	r.handlerRW.Lock()
-	defer r.handlerRW.Unlock()
-	delete(r.handleContext, reqID)
 	return errors.Join(err, err2)
 }
