@@ -133,7 +133,9 @@ func main() {
 		// return 204
 		w.WriteHeader(http.StatusNoContent)
 	})
-	ec := edge.NewEdgeComputing(wazero.NewRuntime(context.Background()))
+	conf := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
+	rt := wazero.NewRuntimeWithConfig(context.Background(), conf)
+	ec := edge.NewEdgeComputing(rt, 100*time.Millisecond)
 	err = ec.Register(context.Background(), "GET", "/index.html", edgeApp)
 	if err != nil {
 		log.Fatalf("Failed to register edge function: %v", err)

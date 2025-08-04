@@ -61,6 +61,7 @@ format Header:
     fields :[len]Field
 
 format Body:
+    offset :u32
     len :u32
     body :[len]u8
 
@@ -85,3 +86,41 @@ format RequestInfo:
 format ResponseInfo:
     status :u16
     header :Header
+
+enum DiffDataType:
+    :u8
+    header # for multiple fields
+    field # for single field
+    method 
+    path
+    status
+    body
+    routing
+
+enum DiffKind:
+    :u8
+    replace
+    insert
+    delete
+
+enum Routing:
+    :u8
+    deny # do not allowed to access origin, wasm function also can do redirect using this
+    abort # disconnect connection, for DoS prevension
+
+format DiffData:
+    diff_type :DiffDataType
+    kind :DiffKind 
+    match diff_type:
+        DiffDataType.header => header :Header
+        DiffDataType.field => field :Field
+        DiffDataType.method => method :MethodInfo
+        DiffDataType.path => path :PathInfo
+        DiffDataType.status => status :u16
+        DiffDataType.body => body :Body
+        DiffDataType.routing => routing :Routing
+
+format ChangeSet:
+    len :u8
+    diff :[len]DiffData
+

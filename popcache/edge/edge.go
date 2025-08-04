@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"log"
 	"net/http"
 	"net/netip"
+	pathlib "path"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
@@ -24,14 +27,268 @@ type EdgeComputer interface {
 	ProcessRequest(ctx context.Context, reqID uint64, popID uint32, p *http.Request) error
 	ProcessResponse(ctx context.Context, reqID uint64, p *http.Response) error
 	FinishRequest(ctx context.Context, reqID uint64) error
+
+	ModifyRequest(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error
+	ModifyResponse(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error
+}
+
+func (r *edgeComputing) ModifyRequest(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error {
+	if modify == nil {
+		return errors.New("modify function is nil")
+	}
+	r.handlerRW.RLock()
+	handleCtx, exists := r.handleContext[reqID]
+	r.handlerRW.RUnlock()
+	if !exists {
+		return fmt.Errorf("no handle context found for request ID %d", reqID)
+	}
+	if handleCtx.req == nil {
+		return fmt.Errorf("no request info found for request ID %d", reqID)
+	}
+	for _, d := range handleCtx.requestChangeSet {
+		if err := modify(&d); err != nil {
+			return fmt.Errorf("failed to modify request: %w", err)
+		}
+	}
+	if shouldClear {
+		handleCtx.requestChangeSet = nil
+	}
+	return nil
+}
+
+func (r *edgeComputing) ModifyResponse(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error {
+	if modify == nil {
+		return errors.New("modify function is nil")
+	}
+	r.handlerRW.RLock()
+	handleCtx, exists := r.handleContext[reqID]
+	r.handlerRW.RUnlock()
+	if !exists {
+		return fmt.Errorf("no handle context found for request ID %d", reqID)
+	}
+	if handleCtx.resp == nil {
+		return fmt.Errorf("no response info found for request ID %d", reqID)
+	}
+	for _, d := range handleCtx.responseChangeSet {
+		if err := modify(&d); err != nil {
+			return fmt.Errorf("failed to modify response: %w", err)
+		}
+	}
+	if shouldClear {
+		handleCtx.responseChangeSet = nil
+	}
+	return nil
+}
+
+func DefaultModifyRequest(d *DiffData, r *http.Request) error {
+	if d == nil {
+		return errors.New("diff data is nil")
+	}
+	if r == nil {
+		return errors.New("request is nil")
+	}
+	switch d.DiffType {
+	case DiffDataType_Header:
+		hdr := d.Header()
+		if hdr == nil {
+			return errors.New("header is nil")
+		}
+		switch d.Kind {
+		case DiffKind_Replace:
+			var newHeader http.Header = make(http.Header)
+			for _, field := range hdr.Fields {
+				newHeader.Add(string(field.Key.Data), string(field.Value.Data))
+			}
+			r.Header = newHeader
+		case DiffKind_Insert:
+			for _, field := range hdr.Fields {
+				r.Header.Add(string(field.Key.Data), string(field.Value.Data))
+			}
+		case DiffKind_Delete:
+			for _, field := range hdr.Fields {
+				r.Header.Del(string(field.Key.Data))
+			}
+		}
+	case DiffDataType_Field:
+		field := d.Field()
+		if field == nil {
+			return errors.New("field is nil")
+		}
+		switch d.Kind {
+		case DiffKind_Replace:
+			r.Header.Set(string(field.Key.Data), string(field.Value.Data))
+		case DiffKind_Insert:
+			r.Header.Add(string(field.Key.Data), string(field.Value.Data))
+		case DiffKind_Delete:
+			r.Header.Del(string(field.Key.Data))
+		}
+	case DiffDataType_Path:
+		path := d.Path()
+		if path == nil {
+			return errors.New("path is nil")
+		}
+		switch d.Kind {
+		case DiffKind_Replace:
+			r.URL.Path = string(path.Path.Data)
+		case DiffKind_Insert:
+			r.URL.Path = pathlib.Join(r.URL.Path, string(path.Path.Data))
+		case DiffKind_Delete:
+			r.URL.Path = ""
+		}
+		if len(path.Query) > 0 {
+			query := r.URL.Query()
+			for _, field := range path.Query {
+				switch d.Kind {
+				case DiffKind_Replace:
+					query.Set(string(field.Key.Data), string(field.Value.Data))
+				case DiffKind_Insert:
+					query.Add(string(field.Key.Data), string(field.Value.Data))
+				case DiffKind_Delete:
+					query.Del(string(field.Key.Data))
+				}
+			}
+			r.URL.RawQuery = query.Encode()
+		}
+	case DiffDataType_Method:
+		method := d.Method()
+		if method == nil {
+			return errors.New("method is nil")
+		}
+		methodName := method.Method.String()
+		if method.Method == Method_Other {
+			methodNameP := method.MethodName()
+			if methodNameP == nil {
+				return errors.New("method name is nil")
+			}
+			methodName = string(*methodNameP)
+		}
+		r.Method = string(methodName)
+	case DiffDataType_Body:
+		body := d.Body()
+		if body == nil {
+			return errors.New("body is nil")
+		}
+		if body.Offset != 0 {
+			return fmt.Errorf("currently body offset is not supported: %d", body.Offset)
+		}
+		switch d.Kind {
+		case DiffKind_Replace:
+			if body.Body == nil {
+				r.Body = nil
+			} else {
+				r.Body = io.NopCloser(bytes.NewReader(body.Body))
+			}
+		case DiffKind_Insert:
+			if r.Body == nil {
+				r.Body = io.NopCloser(bytes.NewReader(body.Body))
+			} else {
+				existingBody, err := io.ReadAll(r.Body)
+				if err != nil {
+					return fmt.Errorf("failed to read existing body: %w", err)
+				}
+				newBody := append(existingBody, body.Body...)
+				r.Body = io.NopCloser(bytes.NewReader(newBody))
+			}
+		}
+	case DiffDataType_Routing:
+		// routing is not invalid but no need to handle in this function
+	default:
+		return fmt.Errorf("unsupported diff data type: %v", d.DiffType)
+	}
+	return nil
+}
+
+func DefaultModifyResponse(d *DiffData, resp *http.Response) error {
+	if d == nil {
+		return errors.New("diff data is nil")
+	}
+	if resp == nil {
+		return errors.New("response is nil")
+	}
+	switch d.DiffType {
+	case DiffDataType_Header:
+		hdr := d.Header()
+		if hdr == nil {
+			return errors.New("header is nil")
+		}
+		switch d.Kind {
+		case DiffKind_Replace:
+			var newHeader http.Header = make(http.Header)
+			for _, field := range hdr.Fields {
+				newHeader.Add(string(field.Key.Data), string(field.Value.Data))
+			}
+			resp.Header = newHeader
+		case DiffKind_Insert:
+			for _, field := range hdr.Fields {
+				resp.Header.Add(string(field.Key.Data), string(field.Value.Data))
+			}
+		case DiffKind_Delete:
+			for _, field := range hdr.Fields {
+				resp.Header.Del(string(field.Key.Data))
+			}
+		}
+	case DiffDataType_Field:
+		field := d.Field()
+		if field == nil {
+			return errors.New("field is nil")
+		}
+		switch d.Kind {
+		case DiffKind_Replace:
+			resp.Header.Set(string(field.Key.Data), string(field.Value.Data))
+		case DiffKind_Insert:
+			resp.Header.Add(string(field.Key.Data), string(field.Value.Data))
+		case DiffKind_Delete:
+			resp.Header.Del(string(field.Key.Data))
+		}
+	case DiffDataType_Status:
+		status := d.Status()
+		if status == nil {
+			return errors.New("status is nil")
+		}
+		resp.StatusCode = int(*status)
+	case DiffDataType_Body:
+		body := d.Body()
+		if body == nil {
+			return errors.New("body is nil")
+		}
+		if body.Offset != 0 {
+			return fmt.Errorf("currently body offset is not supported: %d", body.Offset)
+		}
+		switch d.Kind {
+		case DiffKind_Replace:
+			if body.Body == nil {
+				resp.Body = nil
+			} else {
+				resp.Body = io.NopCloser(bytes.NewReader(body.Body))
+			}
+		case DiffKind_Insert:
+			if resp.Body == nil {
+				resp.Body = io.NopCloser(bytes.NewReader(body.Body))
+			} else {
+				existingBody, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return fmt.Errorf("failed to read existing body: %w", err)
+				}
+				newBody := append(existingBody, body.Body...)
+				resp.Body = io.NopCloser(bytes.NewReader(newBody))
+			}
+		}
+	case DiffDataType_Routing:
+		// routing is not invalid but no need to handle in this function
+	default:
+		return fmt.Errorf("unsupported diff data type: %v", d.DiffType)
+	}
+	return nil
 }
 
 var _ EdgeComputer = (*edgeComputing)(nil)
 
 type HandleContext struct {
-	mod  api.Module
-	req  *RequestInfo
-	resp *ResponseInfo
+	mod               api.Module
+	req               *RequestInfo
+	requestChangeSet  []DiffData
+	resp              *ResponseInfo
+	responseChangeSet []DiffData
 
 	// optimized for caching
 	bufferPointer uint32
@@ -46,13 +303,16 @@ type edgeComputing struct {
 	handlerRW     sync.RWMutex
 	atomicCounter atomic.Uint64
 	handleContext map[uint64]*HandleContext
+
+	computingTimeout time.Duration
 }
 
-func NewEdgeComputing(rt wazero.Runtime) EdgeComputer {
+func NewEdgeComputing(rt wazero.Runtime, timeout time.Duration) EdgeComputer {
 	c := &edgeComputing{
-		rt:            rt,
-		compiled:      make(map[string]wazero.CompiledModule),
-		handleContext: make(map[uint64]*HandleContext),
+		rt:               rt,
+		compiled:         make(map[string]wazero.CompiledModule),
+		handleContext:    make(map[uint64]*HandleContext),
+		computingTimeout: timeout,
 	}
 	if err := c.initRequestHandler(); err != nil {
 		log.Fatalf("Failed to initialize request handler: %v", err)
@@ -199,6 +459,8 @@ func (r *edgeComputing) initRequestHandler() error {
 	ncdn.NewFunctionBuilder().WithFunc(r.logOutput).Export("log_output")
 	ncdn.NewFunctionBuilder().WithFunc(r.saveBufferPointer).Export("save_buffer_pointer")
 	ncdn.NewFunctionBuilder().WithFunc(r.getBufferPointer).Export("get_buffer_pointer")
+	ncdn.NewFunctionBuilder().WithFunc(r.changeRequest).Export("change_request_info")
+	ncdn.NewFunctionBuilder().WithFunc(r.changeResponse).Export("change_response_info")
 	_, err = ncdn.Instantiate(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to instantiate ncdn module: %w", err)
@@ -374,6 +636,70 @@ func (r *edgeComputing) getResponseInfo(c context.Context, mod api.Module, point
 	return uint32(limited.offset)
 }
 
+func (r *edgeComputing) changeRequest(ctx context.Context, mod api.Module, pointer, size uint32) uint32 {
+	reqID, ok := ctx.Value(requestIDKey{}).(uint64)
+	if !ok {
+		log.Printf("No request ID found in context")
+		return 0
+	}
+	r.handlerRW.RLock()
+	handleCtx, exists := r.handleContext[reqID]
+	r.handlerRW.RUnlock()
+	if !exists {
+		log.Printf("No handle context found for request ID %d", reqID)
+		return 0
+	}
+	if handleCtx.req == nil {
+		log.Printf("No request info found for request ID %d", reqID)
+		return 0
+	}
+	buf, ok := mod.Memory().Read(pointer, size)
+	if !ok {
+		log.Printf("Failed to read request info from memory at pointer %d with size %d", pointer, size)
+		return 0
+	}
+	cc := &ChangeSet{}
+	err := cc.DecodeExact(buf)
+	if err != nil {
+		log.Printf("Failed to decode change set for request ID %d: %v", reqID, err)
+		return 0
+	}
+	handleCtx.requestChangeSet = append(handleCtx.requestChangeSet, cc.Diff...)
+	return 1
+}
+
+func (r *edgeComputing) changeResponse(ctx context.Context, mod api.Module, pointer, size uint32) uint32 {
+	reqID, ok := ctx.Value(requestIDKey{}).(uint64)
+	if !ok {
+		log.Printf("No request ID found in context")
+		return 0
+	}
+	r.handlerRW.RLock()
+	handleCtx, exists := r.handleContext[reqID]
+	r.handlerRW.RUnlock()
+	if !exists {
+		log.Printf("No handle context found for request ID %d", reqID)
+		return 0
+	}
+	if handleCtx.resp == nil {
+		log.Printf("No response info found for request ID %d", reqID)
+		return 0
+	}
+	buf, ok := mod.Memory().Read(pointer, size)
+	if !ok {
+		log.Printf("Failed to read response info from memory at pointer %d with size %d", pointer, size)
+		return 0
+	}
+	cc := &ChangeSet{}
+	err := cc.DecodeExact(buf)
+	if err != nil {
+		log.Printf("Failed to decode change set for request ID %d: %v", reqID, err)
+		return 0
+	}
+	handleCtx.responseChangeSet = append(handleCtx.responseChangeSet, cc.Diff...)
+	return 1
+}
+
 var ErrNoEdgeFunction = errors.New("no edge function registered for this request")
 
 func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint64, error) {
@@ -384,7 +710,8 @@ func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint
 	if !ok {
 		return 0, fmt.Errorf("%w: %s %s", ErrNoEdgeFunction, p.Method, p.URL.Path)
 	}
-	conf := wazero.NewModuleConfig()
+	reqID := r.atomicCounter.Add(1)
+	conf := wazero.NewModuleConfig().WithName("")
 	mod, err := r.rt.InstantiateModule(ctx, compiled, conf)
 	if err != nil {
 		return 0, fmt.Errorf("failed to instantiate module for %s %s: %w", p.Method, p.URL.Path, err)
@@ -392,7 +719,6 @@ func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint
 	handleCtx := &HandleContext{
 		mod: mod,
 	}
-	reqID := r.atomicCounter.Add(1)
 	r.handlerRW.Lock()
 	if _, exists := r.handleContext[reqID]; exists {
 		r.handlerRW.Unlock()
@@ -423,6 +749,8 @@ func (r *edgeComputing) ProcessRequest(ctx context.Context, reqID uint64, popID 
 	f := mod.ExportedFunction(hookOnRequest)
 	if f != nil {
 		ctx := context.WithValue(ctx, requestIDKey{}, reqID)
+		ctx, cancel := context.WithTimeout(ctx, r.computingTimeout)
+		defer cancel()
 		_, err := f.Call(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to call on_request function: %w", err)
@@ -450,6 +778,8 @@ func (r *edgeComputing) ProcessResponse(ctx context.Context, reqID uint64, resp 
 	f := mod.ExportedFunction(hookOnResponse)
 	if f != nil {
 		ctx := context.WithValue(ctx, requestIDKey{}, reqID)
+		ctx, cancel := context.WithTimeout(ctx, r.computingTimeout)
+		defer cancel()
 		_, err := f.Call(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to call on_response function: %w", err)
@@ -474,6 +804,8 @@ func (r *edgeComputing) FinishRequest(ctx context.Context, reqID uint64) error {
 	ctx = context.WithValue(ctx, requestIDKey{}, reqID)
 	var err error
 	if f := mod.ExportedFunction(hookOnFinish); f != nil {
+		ctx, cancel := context.WithTimeout(ctx, r.computingTimeout)
+		defer cancel()
 		_, err = f.Call(ctx)
 	}
 	err2 := mod.Close(ctx)

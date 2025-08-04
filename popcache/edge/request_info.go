@@ -106,6 +106,75 @@ func (t Method) String() string {
 	return fmt.Sprintf("Method(%d)", t)
 }
 
+type DiffDataType uint8
+
+const (
+	DiffDataType_Header  DiffDataType = 0
+	DiffDataType_Field   DiffDataType = 1
+	DiffDataType_Method  DiffDataType = 2
+	DiffDataType_Path    DiffDataType = 3
+	DiffDataType_Status  DiffDataType = 4
+	DiffDataType_Body    DiffDataType = 5
+	DiffDataType_Routing DiffDataType = 6
+)
+
+func (t DiffDataType) String() string {
+	switch t {
+	case DiffDataType_Header:
+		return "Header"
+	case DiffDataType_Field:
+		return "Field"
+	case DiffDataType_Method:
+		return "Method"
+	case DiffDataType_Path:
+		return "Path"
+	case DiffDataType_Status:
+		return "Status"
+	case DiffDataType_Body:
+		return "Body"
+	case DiffDataType_Routing:
+		return "Routing"
+	}
+	return fmt.Sprintf("DiffDataType(%d)", t)
+}
+
+type DiffKind uint8
+
+const (
+	DiffKind_Replace DiffKind = 0
+	DiffKind_Insert  DiffKind = 1
+	DiffKind_Delete  DiffKind = 2
+)
+
+func (t DiffKind) String() string {
+	switch t {
+	case DiffKind_Replace:
+		return "Replace"
+	case DiffKind_Insert:
+		return "Insert"
+	case DiffKind_Delete:
+		return "Delete"
+	}
+	return fmt.Sprintf("DiffKind(%d)", t)
+}
+
+type Routing uint8
+
+const (
+	Routing_Deny  Routing = 0
+	Routing_Abort Routing = 1
+)
+
+func (t Routing) String() string {
+	switch t {
+	case Routing_Deny:
+		return "Deny"
+	case Routing_Abort:
+		return "Abort"
+	}
+	return fmt.Sprintf("Routing(%d)", t)
+}
+
 type union2_ProtocolInfo interface {
 	isunion1_()
 }
@@ -182,21 +251,22 @@ type String struct {
 	Data []uint8
 }
 type Body struct {
-	Len  uint32
-	Body []uint8
+	Offset uint32
+	Len    uint32
+	Body   []uint8
 }
-type union11_Address interface {
-	isunion10_()
-}
-type union_12_t struct {
-	AddrV6 [16]uint8
+type union12_Address interface {
+	isunion11_()
 }
 type union_13_t struct {
+	AddrV6 [16]uint8
+}
+type union_14_t struct {
 	AddrV4 [4]uint8
 }
 type Address struct {
-	flags9   uint8
-	union10_ union11_Address
+	flags10  uint8
+	union11_ union12_Address
 }
 type Field struct {
 	Key   String
@@ -214,6 +284,39 @@ type PathInfo struct {
 	Path     String
 	QueryLen uint8
 	Query    []Field
+}
+type union22_DiffData interface {
+	isunion21_()
+}
+type union_23_t struct {
+	Header Header
+}
+type union_24_t struct {
+	Field Field
+}
+type union_25_t struct {
+	Method MethodInfo
+}
+type union_26_t struct {
+	Path PathInfo
+}
+type union_27_t struct {
+	Status uint16
+}
+type union_28_t struct {
+	Body Body
+}
+type union_29_t struct {
+	Routing Routing
+}
+type DiffData struct {
+	DiffType DiffDataType
+	Kind     DiffKind
+	union21_ union22_DiffData
+}
+type ChangeSet struct {
+	Len  uint8
+	Diff []DiffData
 }
 type RequestInfo struct {
 	PopId      uint32
@@ -575,6 +678,7 @@ func (t *Body) SetBody(v []uint8) bool {
 	return true
 }
 func (t *Body) Visit(v VisitorJDPCC) {
+	v.Visit(v, "Offset", &t.Offset)
 	v.Visit(v, "Len", &t.Len)
 	v.Visit(v, "Body", &t.Body)
 }
@@ -583,8 +687,13 @@ func (t *Body) MarshalJSON() ([]byte, error) {
 }
 func (t *Body) Write(w io.Writer) (err error) {
 	tmp8 := [4]byte{}
-	binary.LittleEndian.PutUint32(tmp8[:], uint32(t.Len))
+	binary.LittleEndian.PutUint32(tmp8[:], uint32(t.Offset))
 	if n, err := w.Write(tmp8[:]); err != nil || n != 4 {
+		return fmt.Errorf("encode t.Offset: %w", err)
+	}
+	tmp9 := [4]byte{}
+	binary.LittleEndian.PutUint32(tmp9[:], uint32(t.Len))
+	if n, err := w.Write(tmp9[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Body := int(t.Len)
@@ -597,7 +706,7 @@ func (t *Body) Write(w io.Writer) (err error) {
 	return nil
 }
 func (t *Body) Encode() ([]byte, error) {
-	w := bytes.NewBuffer(make([]byte, 0, 4))
+	w := bytes.NewBuffer(make([]byte, 0, 8))
 	if err := t.Write(w); err != nil {
 		return nil, err
 	}
@@ -611,6 +720,12 @@ func (t *Body) MustEncode() []byte {
 	return buf
 }
 func (t *Body) Read(r io.Reader) (err error) {
+	tmpOffset := [4]byte{}
+	n_Offset, err := io.ReadFull(r, tmpOffset[:])
+	if err != nil {
+		return fmt.Errorf("read Offset: expect 4 bytes but read %d bytes: %w", n_Offset, err)
+	}
+	t.Offset = uint32(binary.LittleEndian.Uint32(tmpOffset[:]))
 	tmpLen := [4]byte{}
 	n_Len, err := io.ReadFull(r, tmpLen[:])
 	if err != nil {
@@ -645,27 +760,27 @@ func (t *Body) DecodeExact(d []byte) error {
 	return nil
 }
 func (t *Address) IsV6() bool {
-	return ((t.flags9 & 0x80) >> 7) == 1
+	return ((t.flags10 & 0x80) >> 7) == 1
 }
 func (t *Address) SetIsV6(v bool) {
 	if v {
-		t.flags9 |= uint8(0x80)
+		t.flags10 |= uint8(0x80)
 	} else {
-		t.flags9 &= ^uint8(0x80)
+		t.flags10 &= ^uint8(0x80)
 	}
 }
 func (t *Address) Reserved() uint8 {
-	return ((t.flags9 & 0x7f) >> 0)
+	return ((t.flags10 & 0x7f) >> 0)
 }
 func (t *Address) SetReserved(v uint8) bool {
 	if v > 127 {
 		return false
 	}
-	t.flags9 = (t.flags9 & ^uint8(0x7f)) | ((v & 0x7f) << 0)
+	t.flags10 = (t.flags10 & ^uint8(0x7f)) | ((v & 0x7f) << 0)
 	return true
 }
-func (t *union_12_t) isunion10_() {}
-func (t *union_13_t) isunion10_() {}
+func (t *union_13_t) isunion11_() {}
+func (t *union_14_t) isunion11_() {}
 func (t *Address) AddrV4() *[4]uint8 {
 	if true == ((func() uint8 {
 		if t.IsV6() {
@@ -676,10 +791,10 @@ func (t *Address) AddrV4() *[4]uint8 {
 	}()) == 1) {
 		return nil
 	} else if true {
-		if _, ok := t.union10_.(*union_13_t); !ok {
+		if _, ok := t.union11_.(*union_14_t); !ok {
 			return nil // not set
 		}
-		tmp := [4]uint8(t.union10_.(*union_13_t).AddrV4[:])
+		tmp := [4]uint8(t.union11_.(*union_14_t).AddrV4[:])
 		return &tmp
 	}
 	return nil
@@ -694,10 +809,10 @@ func (t *Address) SetAddrV4(v [4]uint8) bool {
 	}()) == 1) {
 		return false
 	} else if true {
-		if _, ok := t.union10_.(*union_13_t); !ok {
-			t.union10_ = &union_13_t{}
+		if _, ok := t.union11_.(*union_14_t); !ok {
+			t.union11_ = &union_14_t{}
 		}
-		t.union10_.(*union_13_t).AddrV4 = [4]uint8(v)
+		t.union11_.(*union_14_t).AddrV4 = [4]uint8(v)
 		return true
 	}
 	return false
@@ -710,10 +825,10 @@ func (t *Address) AddrV6() *[16]uint8 {
 			return 0
 		}
 	}()) == 1) {
-		if _, ok := t.union10_.(*union_12_t); !ok {
+		if _, ok := t.union11_.(*union_13_t); !ok {
 			return nil // not set
 		}
-		tmp := [16]uint8(t.union10_.(*union_12_t).AddrV6[:])
+		tmp := [16]uint8(t.union11_.(*union_13_t).AddrV6[:])
 		return &tmp
 	}
 	return nil
@@ -726,10 +841,10 @@ func (t *Address) SetAddrV6(v [16]uint8) bool {
 			return 0
 		}
 	}()) == 1) {
-		if _, ok := t.union10_.(*union_12_t); !ok {
-			t.union10_ = &union_12_t{}
+		if _, ok := t.union11_.(*union_13_t); !ok {
+			t.union11_ = &union_13_t{}
 		}
-		t.union10_.(*union_12_t).AddrV6 = [16]uint8(v)
+		t.union11_.(*union_13_t).AddrV6 = [16]uint8(v)
 		return true
 	}
 	return false
@@ -750,8 +865,8 @@ func (t *Address) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *Address) Write(w io.Writer) (err error) {
-	if n, err := w.Write([]byte{byte(t.flags9)}); err != nil || n != 1 {
-		return fmt.Errorf("encode t.flags9: %w", err)
+	if n, err := w.Write([]byte{byte(t.flags10)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.flags10: %w", err)
 	}
 	if (func() uint8 {
 		if t.IsV6() {
@@ -760,17 +875,17 @@ func (t *Address) Write(w io.Writer) (err error) {
 			return 0
 		}
 	}()) == 1 {
-		if _, ok := t.union10_.(*union_12_t); !ok {
-			return fmt.Errorf("encode t.union10_: union is not set to union_12_t")
+		if _, ok := t.union11_.(*union_13_t); !ok {
+			return fmt.Errorf("encode t.union11_: union is not set to union_13_t")
 		}
-		if n, err := w.Write(t.union10_.(*union_12_t).AddrV6[:]); err != nil || n != len(t.union10_.(*union_12_t).AddrV6) {
+		if n, err := w.Write(t.union11_.(*union_13_t).AddrV6[:]); err != nil || n != len(t.union11_.(*union_13_t).AddrV6) {
 			return fmt.Errorf("encode AddrV6: %w", err)
 		}
 	} else {
-		if _, ok := t.union10_.(*union_13_t); !ok {
-			return fmt.Errorf("encode t.union10_: union is not set to union_13_t")
+		if _, ok := t.union11_.(*union_14_t); !ok {
+			return fmt.Errorf("encode t.union11_: union is not set to union_14_t")
 		}
-		if n, err := w.Write(t.union10_.(*union_13_t).AddrV4[:]); err != nil || n != len(t.union10_.(*union_13_t).AddrV4) {
+		if n, err := w.Write(t.union11_.(*union_14_t).AddrV4[:]); err != nil || n != len(t.union11_.(*union_14_t).AddrV4) {
 			return fmt.Errorf("encode AddrV4: %w", err)
 		}
 	}
@@ -791,12 +906,12 @@ func (t *Address) MustEncode() []byte {
 	return buf
 }
 func (t *Address) Read(r io.Reader) (err error) {
-	tmpflags9 := [1]byte{}
-	n_flags9, err := io.ReadFull(r, tmpflags9[:])
+	tmpflags10 := [1]byte{}
+	n_flags10, err := io.ReadFull(r, tmpflags10[:])
 	if err != nil {
-		return fmt.Errorf("read flags9: expect 1 byte but read %d bytes: %w", n_flags9, err)
+		return fmt.Errorf("read flags10: expect 1 byte but read %d bytes: %w", n_flags10, err)
 	}
-	t.flags9 = uint8(tmpflags9[0])
+	t.flags10 = uint8(tmpflags10[0])
 	if (func() uint8 {
 		if t.IsV6() {
 			return 1
@@ -804,14 +919,14 @@ func (t *Address) Read(r io.Reader) (err error) {
 			return 0
 		}
 	}()) == 1 {
-		t.union10_ = &union_12_t{}
-		n_AddrV6, err := io.ReadFull(r, t.union10_.(*union_12_t).AddrV6[:])
+		t.union11_ = &union_13_t{}
+		n_AddrV6, err := io.ReadFull(r, t.union11_.(*union_13_t).AddrV6[:])
 		if err != nil {
 			return fmt.Errorf("read AddrV6: expect %d bytes but read %d bytes: %w", 16, n_AddrV6, err)
 		}
 	} else {
-		t.union10_ = &union_13_t{}
-		n_AddrV4, err := io.ReadFull(r, t.union10_.(*union_13_t).AddrV4[:])
+		t.union11_ = &union_14_t{}
+		n_AddrV4, err := io.ReadFull(r, t.union11_.(*union_14_t).AddrV4[:])
 		if err != nil {
 			return fmt.Errorf("read AddrV4: expect %d bytes but read %d bytes: %w", 4, n_AddrV4, err)
 		}
@@ -901,9 +1016,9 @@ func (t *Header) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *Header) Write(w io.Writer) (err error) {
-	tmp14 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp14[:], uint16(t.Len))
-	if n, err := w.Write(tmp14[:]); err != nil || n != 2 {
+	tmp15 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp15[:], uint16(t.Len))
+	if n, err := w.Write(tmp15[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Fields := int(t.Len)
@@ -939,12 +1054,12 @@ func (t *Header) Read(r io.Reader) (err error) {
 	}
 	t.Len = uint16(binary.LittleEndian.Uint16(tmpLen[:]))
 	len_Fields := int(t.Len)
-	for i_15 := 0; i_15 < len_Fields; i_15++ {
-		var tmp16_ Field
-		if err := tmp16_.Read(r); err != nil {
+	for i_16 := 0; i_16 < len_Fields; i_16++ {
+		var tmp17_ Field
+		if err := tmp17_.Read(r); err != nil {
 			return fmt.Errorf("read Fields: %w", err)
 		}
-		t.Fields = append(t.Fields, tmp16_)
+		t.Fields = append(t.Fields, tmp17_)
 	}
 	return nil
 }
@@ -970,9 +1085,9 @@ func (t *ResponseInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *ResponseInfo) Write(w io.Writer) (err error) {
-	tmp17 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp17[:], uint16(t.Status))
-	if n, err := w.Write(tmp17[:]); err != nil || n != 2 {
+	tmp18 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp18[:], uint16(t.Status))
+	if n, err := w.Write(tmp18[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Status: %w", err)
 	}
 	if err := t.Header.Write(w); err != nil {
@@ -1079,12 +1194,12 @@ func (t *PathInfo) Read(r io.Reader) (err error) {
 	}
 	t.QueryLen = uint8(tmpQueryLen[0])
 	len_Query := int(t.QueryLen)
-	for i_18 := 0; i_18 < len_Query; i_18++ {
-		var tmp19_ Field
-		if err := tmp19_.Read(r); err != nil {
+	for i_19 := 0; i_19 < len_Query; i_19++ {
+		var tmp20_ Field
+		if err := tmp20_.Read(r); err != nil {
 			return fmt.Errorf("read Query: %w", err)
 		}
-		t.Query = append(t.Query, tmp19_)
+		t.Query = append(t.Query, tmp20_)
 	}
 	return nil
 }
@@ -1102,6 +1217,474 @@ func (t *PathInfo) DecodeExact(d []byte) error {
 	}
 	return nil
 }
+func (t *union_23_t) isunion21_() {}
+func (t *union_24_t) isunion21_() {}
+func (t *union_25_t) isunion21_() {}
+func (t *union_26_t) isunion21_() {}
+func (t *union_27_t) isunion21_() {}
+func (t *union_28_t) isunion21_() {}
+func (t *union_29_t) isunion21_() {}
+func (t *DiffData) Body() *Body {
+	if t.DiffType == DiffDataType_Header {
+		return nil
+	} else if t.DiffType == DiffDataType_Field {
+		return nil
+	} else if t.DiffType == DiffDataType_Method {
+		return nil
+	} else if t.DiffType == DiffDataType_Path {
+		return nil
+	} else if t.DiffType == DiffDataType_Status {
+		return nil
+	} else if t.DiffType == DiffDataType_Body {
+		if _, ok := t.union21_.(*union_28_t); !ok {
+			return nil // not set
+		}
+		tmp := Body(t.union21_.(*union_28_t).Body)
+		return &tmp
+	}
+	return nil
+}
+func (t *DiffData) SetBody(v Body) bool {
+	if t.DiffType == DiffDataType_Header {
+		return false
+	} else if t.DiffType == DiffDataType_Field {
+		return false
+	} else if t.DiffType == DiffDataType_Method {
+		return false
+	} else if t.DiffType == DiffDataType_Path {
+		return false
+	} else if t.DiffType == DiffDataType_Status {
+		return false
+	} else if t.DiffType == DiffDataType_Body {
+		if _, ok := t.union21_.(*union_28_t); !ok {
+			t.union21_ = &union_28_t{}
+		}
+		t.union21_.(*union_28_t).Body = Body(v)
+		return true
+	}
+	return false
+}
+func (t *DiffData) Field() *Field {
+	if t.DiffType == DiffDataType_Header {
+		return nil
+	} else if t.DiffType == DiffDataType_Field {
+		if _, ok := t.union21_.(*union_24_t); !ok {
+			return nil // not set
+		}
+		tmp := Field(t.union21_.(*union_24_t).Field)
+		return &tmp
+	}
+	return nil
+}
+func (t *DiffData) SetField(v Field) bool {
+	if t.DiffType == DiffDataType_Header {
+		return false
+	} else if t.DiffType == DiffDataType_Field {
+		if _, ok := t.union21_.(*union_24_t); !ok {
+			t.union21_ = &union_24_t{}
+		}
+		t.union21_.(*union_24_t).Field = Field(v)
+		return true
+	}
+	return false
+}
+func (t *DiffData) Header() *Header {
+	if t.DiffType == DiffDataType_Header {
+		if _, ok := t.union21_.(*union_23_t); !ok {
+			return nil // not set
+		}
+		tmp := Header(t.union21_.(*union_23_t).Header)
+		return &tmp
+	}
+	return nil
+}
+func (t *DiffData) SetHeader(v Header) bool {
+	if t.DiffType == DiffDataType_Header {
+		if _, ok := t.union21_.(*union_23_t); !ok {
+			t.union21_ = &union_23_t{}
+		}
+		t.union21_.(*union_23_t).Header = Header(v)
+		return true
+	}
+	return false
+}
+func (t *DiffData) Method() *MethodInfo {
+	if t.DiffType == DiffDataType_Header {
+		return nil
+	} else if t.DiffType == DiffDataType_Field {
+		return nil
+	} else if t.DiffType == DiffDataType_Method {
+		if _, ok := t.union21_.(*union_25_t); !ok {
+			return nil // not set
+		}
+		tmp := MethodInfo(t.union21_.(*union_25_t).Method)
+		return &tmp
+	}
+	return nil
+}
+func (t *DiffData) SetMethod(v MethodInfo) bool {
+	if t.DiffType == DiffDataType_Header {
+		return false
+	} else if t.DiffType == DiffDataType_Field {
+		return false
+	} else if t.DiffType == DiffDataType_Method {
+		if _, ok := t.union21_.(*union_25_t); !ok {
+			t.union21_ = &union_25_t{}
+		}
+		t.union21_.(*union_25_t).Method = MethodInfo(v)
+		return true
+	}
+	return false
+}
+func (t *DiffData) Path() *PathInfo {
+	if t.DiffType == DiffDataType_Header {
+		return nil
+	} else if t.DiffType == DiffDataType_Field {
+		return nil
+	} else if t.DiffType == DiffDataType_Method {
+		return nil
+	} else if t.DiffType == DiffDataType_Path {
+		if _, ok := t.union21_.(*union_26_t); !ok {
+			return nil // not set
+		}
+		tmp := PathInfo(t.union21_.(*union_26_t).Path)
+		return &tmp
+	}
+	return nil
+}
+func (t *DiffData) SetPath(v PathInfo) bool {
+	if t.DiffType == DiffDataType_Header {
+		return false
+	} else if t.DiffType == DiffDataType_Field {
+		return false
+	} else if t.DiffType == DiffDataType_Method {
+		return false
+	} else if t.DiffType == DiffDataType_Path {
+		if _, ok := t.union21_.(*union_26_t); !ok {
+			t.union21_ = &union_26_t{}
+		}
+		t.union21_.(*union_26_t).Path = PathInfo(v)
+		return true
+	}
+	return false
+}
+func (t *DiffData) Routing() *Routing {
+	if t.DiffType == DiffDataType_Header {
+		return nil
+	} else if t.DiffType == DiffDataType_Field {
+		return nil
+	} else if t.DiffType == DiffDataType_Method {
+		return nil
+	} else if t.DiffType == DiffDataType_Path {
+		return nil
+	} else if t.DiffType == DiffDataType_Status {
+		return nil
+	} else if t.DiffType == DiffDataType_Body {
+		return nil
+	} else if t.DiffType == DiffDataType_Routing {
+		if _, ok := t.union21_.(*union_29_t); !ok {
+			return nil // not set
+		}
+		tmp := Routing(t.union21_.(*union_29_t).Routing)
+		return &tmp
+	}
+	return nil
+}
+func (t *DiffData) SetRouting(v Routing) bool {
+	if t.DiffType == DiffDataType_Header {
+		return false
+	} else if t.DiffType == DiffDataType_Field {
+		return false
+	} else if t.DiffType == DiffDataType_Method {
+		return false
+	} else if t.DiffType == DiffDataType_Path {
+		return false
+	} else if t.DiffType == DiffDataType_Status {
+		return false
+	} else if t.DiffType == DiffDataType_Body {
+		return false
+	} else if t.DiffType == DiffDataType_Routing {
+		if _, ok := t.union21_.(*union_29_t); !ok {
+			t.union21_ = &union_29_t{}
+		}
+		t.union21_.(*union_29_t).Routing = Routing(v)
+		return true
+	}
+	return false
+}
+func (t *DiffData) Status() *uint16 {
+	if t.DiffType == DiffDataType_Header {
+		return nil
+	} else if t.DiffType == DiffDataType_Field {
+		return nil
+	} else if t.DiffType == DiffDataType_Method {
+		return nil
+	} else if t.DiffType == DiffDataType_Path {
+		return nil
+	} else if t.DiffType == DiffDataType_Status {
+		if _, ok := t.union21_.(*union_27_t); !ok {
+			return nil // not set
+		}
+		tmp := uint16(t.union21_.(*union_27_t).Status)
+		return &tmp
+	}
+	return nil
+}
+func (t *DiffData) SetStatus(v uint16) bool {
+	if t.DiffType == DiffDataType_Header {
+		return false
+	} else if t.DiffType == DiffDataType_Field {
+		return false
+	} else if t.DiffType == DiffDataType_Method {
+		return false
+	} else if t.DiffType == DiffDataType_Path {
+		return false
+	} else if t.DiffType == DiffDataType_Status {
+		if _, ok := t.union21_.(*union_27_t); !ok {
+			t.union21_ = &union_27_t{}
+		}
+		t.union21_.(*union_27_t).Status = uint16(v)
+		return true
+	}
+	return false
+}
+func (t *DiffData) Visit(v VisitorJDPCC) {
+	v.Visit(v, "DiffType", &t.DiffType)
+	v.Visit(v, "Kind", &t.Kind)
+	v.Visit(v, "Body", (t.Body()))
+	v.Visit(v, "Field", (t.Field()))
+	v.Visit(v, "Header", (t.Header()))
+	v.Visit(v, "Method", (t.Method()))
+	v.Visit(v, "Path", (t.Path()))
+	v.Visit(v, "Routing", (t.Routing()))
+	v.Visit(v, "Status", (t.Status()))
+}
+func (t *DiffData) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJDPCCToMap(t))
+}
+func (t *DiffData) Write(w io.Writer) (err error) {
+	if n, err := w.Write([]byte{byte(t.DiffType)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.DiffType: %w", err)
+	}
+	if n, err := w.Write([]byte{byte(t.Kind)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.Kind: %w", err)
+	}
+	switch {
+	case (t.DiffType == DiffDataType_Header):
+		if _, ok := t.union21_.(*union_23_t); !ok {
+			return fmt.Errorf("encode t.union21_: union is not set to union_23_t")
+		}
+		if err := t.union21_.(*union_23_t).Header.Write(w); err != nil {
+			return fmt.Errorf("encode Header: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Field):
+		if _, ok := t.union21_.(*union_24_t); !ok {
+			return fmt.Errorf("encode t.union21_: union is not set to union_24_t")
+		}
+		if err := t.union21_.(*union_24_t).Field.Write(w); err != nil {
+			return fmt.Errorf("encode Field: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Method):
+		if _, ok := t.union21_.(*union_25_t); !ok {
+			return fmt.Errorf("encode t.union21_: union is not set to union_25_t")
+		}
+		if err := t.union21_.(*union_25_t).Method.Write(w); err != nil {
+			return fmt.Errorf("encode Method: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Path):
+		if _, ok := t.union21_.(*union_26_t); !ok {
+			return fmt.Errorf("encode t.union21_: union is not set to union_26_t")
+		}
+		if err := t.union21_.(*union_26_t).Path.Write(w); err != nil {
+			return fmt.Errorf("encode Path: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Status):
+		if _, ok := t.union21_.(*union_27_t); !ok {
+			return fmt.Errorf("encode t.union21_: union is not set to union_27_t")
+		}
+		tmp30 := [2]byte{}
+		binary.LittleEndian.PutUint16(tmp30[:], uint16(t.union21_.(*union_27_t).Status))
+		if n, err := w.Write(tmp30[:]); err != nil || n != 2 {
+			return fmt.Errorf("encode t.union21_.(*union_27_t).Status: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Body):
+		if _, ok := t.union21_.(*union_28_t); !ok {
+			return fmt.Errorf("encode t.union21_: union is not set to union_28_t")
+		}
+		if err := t.union21_.(*union_28_t).Body.Write(w); err != nil {
+			return fmt.Errorf("encode Body: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Routing):
+		if _, ok := t.union21_.(*union_29_t); !ok {
+			return fmt.Errorf("encode t.union21_: union is not set to union_29_t")
+		}
+		if n, err := w.Write([]byte{byte(t.union21_.(*union_29_t).Routing)}); err != nil || n != 1 {
+			return fmt.Errorf("encode t.union21_.(*union_29_t).Routing: %w", err)
+		}
+	}
+	return nil
+}
+func (t *DiffData) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 2))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *DiffData) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *DiffData) Read(r io.Reader) (err error) {
+	tmpDiffType := [1]byte{}
+	n_DiffType, err := io.ReadFull(r, tmpDiffType[:])
+	if err != nil {
+		return fmt.Errorf("read DiffType: expect 1 byte but read %d bytes: %w", n_DiffType, err)
+	}
+	t.DiffType = DiffDataType(tmpDiffType[0])
+	tmpKind := [1]byte{}
+	n_Kind, err := io.ReadFull(r, tmpKind[:])
+	if err != nil {
+		return fmt.Errorf("read Kind: expect 1 byte but read %d bytes: %w", n_Kind, err)
+	}
+	t.Kind = DiffKind(tmpKind[0])
+	switch {
+	case (t.DiffType == DiffDataType_Header):
+		t.union21_ = &union_23_t{}
+		if err := t.union21_.(*union_23_t).Header.Read(r); err != nil {
+			return fmt.Errorf("read Header: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Field):
+		t.union21_ = &union_24_t{}
+		if err := t.union21_.(*union_24_t).Field.Read(r); err != nil {
+			return fmt.Errorf("read Field: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Method):
+		t.union21_ = &union_25_t{}
+		if err := t.union21_.(*union_25_t).Method.Read(r); err != nil {
+			return fmt.Errorf("read Method: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Path):
+		t.union21_ = &union_26_t{}
+		if err := t.union21_.(*union_26_t).Path.Read(r); err != nil {
+			return fmt.Errorf("read Path: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Status):
+		t.union21_ = &union_27_t{}
+		tmpStatus := [2]byte{}
+		n_Status, err := io.ReadFull(r, tmpStatus[:])
+		if err != nil {
+			return fmt.Errorf("read Status: expect 2 bytes but read %d bytes: %w", n_Status, err)
+		}
+		t.union21_.(*union_27_t).Status = uint16(binary.LittleEndian.Uint16(tmpStatus[:]))
+	case (t.DiffType == DiffDataType_Body):
+		t.union21_ = &union_28_t{}
+		if err := t.union21_.(*union_28_t).Body.Read(r); err != nil {
+			return fmt.Errorf("read Body: %w", err)
+		}
+	case (t.DiffType == DiffDataType_Routing):
+		t.union21_ = &union_29_t{}
+		tmpRouting := [1]byte{}
+		n_Routing, err := io.ReadFull(r, tmpRouting[:])
+		if err != nil {
+			return fmt.Errorf("read Routing: expect 1 byte but read %d bytes: %w", n_Routing, err)
+		}
+		t.union21_.(*union_29_t).Routing = Routing(tmpRouting[0])
+	}
+	return nil
+}
+
+func (t *DiffData) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *DiffData) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode DiffData: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
+func (t *ChangeSet) SetDiff(v []DiffData) bool {
+	if len(v) > int(^uint8(0)) {
+		return false
+	}
+	t.Len = uint8(len(v))
+	t.Diff = v
+	return true
+}
+func (t *ChangeSet) Visit(v VisitorJDPCC) {
+	v.Visit(v, "Len", &t.Len)
+	v.Visit(v, "Diff", &t.Diff)
+}
+func (t *ChangeSet) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJDPCCToMap(t))
+}
+func (t *ChangeSet) Write(w io.Writer) (err error) {
+	if n, err := w.Write([]byte{byte(t.Len)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.Len: %w", err)
+	}
+	len_Diff := int(t.Len)
+	if len(t.Diff) != len_Diff {
+		return fmt.Errorf("encode Diff: expect %d but got %d for length", len_Diff, len(t.Diff))
+	}
+	for _, v := range t.Diff {
+		if err := v.Write(w); err != nil {
+			return fmt.Errorf("encode Diff: %w", err)
+		}
+	}
+	return nil
+}
+func (t *ChangeSet) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 1))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *ChangeSet) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *ChangeSet) Read(r io.Reader) (err error) {
+	tmpLen := [1]byte{}
+	n_Len, err := io.ReadFull(r, tmpLen[:])
+	if err != nil {
+		return fmt.Errorf("read Len: expect 1 byte but read %d bytes: %w", n_Len, err)
+	}
+	t.Len = uint8(tmpLen[0])
+	len_Diff := int(t.Len)
+	for i_31 := 0; i_31 < len_Diff; i_31++ {
+		var tmp32_ DiffData
+		if err := tmp32_.Read(r); err != nil {
+			return fmt.Errorf("read Diff: %w", err)
+		}
+		t.Diff = append(t.Diff, tmp32_)
+	}
+	return nil
+}
+
+func (t *ChangeSet) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *ChangeSet) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode ChangeSet: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
 func (t *RequestInfo) Visit(v VisitorJDPCC) {
 	v.Visit(v, "PopId", &t.PopId)
 	v.Visit(v, "ReqId", &t.ReqId)
@@ -1116,14 +1699,14 @@ func (t *RequestInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJDPCCToMap(t))
 }
 func (t *RequestInfo) Write(w io.Writer) (err error) {
-	tmp20 := [4]byte{}
-	binary.LittleEndian.PutUint32(tmp20[:], uint32(t.PopId))
-	if n, err := w.Write(tmp20[:]); err != nil || n != 4 {
+	tmp33 := [4]byte{}
+	binary.LittleEndian.PutUint32(tmp33[:], uint32(t.PopId))
+	if n, err := w.Write(tmp33[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.PopId: %w", err)
 	}
-	tmp21 := [8]byte{}
-	binary.LittleEndian.PutUint64(tmp21[:], uint64(t.ReqId))
-	if n, err := w.Write(tmp21[:]); err != nil || n != 8 {
+	tmp34 := [8]byte{}
+	binary.LittleEndian.PutUint64(tmp34[:], uint64(t.ReqId))
+	if n, err := w.Write(tmp34[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.ReqId: %w", err)
 	}
 	if err := t.Protocol.Write(w); err != nil {
@@ -1132,9 +1715,9 @@ func (t *RequestInfo) Write(w io.Writer) (err error) {
 	if err := t.RemoteAddr.Write(w); err != nil {
 		return fmt.Errorf("encode RemoteAddr: %w", err)
 	}
-	tmp22 := [2]byte{}
-	binary.LittleEndian.PutUint16(tmp22[:], uint16(t.RemotePort))
-	if n, err := w.Write(tmp22[:]); err != nil || n != 2 {
+	tmp35 := [2]byte{}
+	binary.LittleEndian.PutUint16(tmp35[:], uint16(t.RemotePort))
+	if n, err := w.Write(tmp35[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.RemotePort: %w", err)
 	}
 	if err := t.Method.Write(w); err != nil {
