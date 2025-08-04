@@ -22,10 +22,11 @@ type Config struct {
 	CryptoBin      string
 	EBPFPinDir     string // Path to pinning directory for crypto context map
 
-	VIP       netip.Addr
-	Dests     DestinationEntries
-	SharedKey []byte // Shared key for QUIC connection ID generation
-	MTU       uint16 // Maximum Transmission Unit
+	VIP           netip.Addr
+	Dests         DestinationEntries
+	SharedKey     []byte  // Shared key for QUIC connection ID generation
+	MTU           uint16  // Maximum Transmission Unit
+	RoutingRandom [4]byte // Random bytes for load balancing
 }
 
 type L4LB struct {
@@ -121,9 +122,10 @@ func (lb *L4LB) Sync() error {
 	}
 
 	err = lb.bindings.ConfigMap.Update(uint32(0), &LbConfig{
-		VipAddress: vip4,
-		NumDests:   uint32(len(lb.cfg.Dests) - 1),
-		Mtu:        lb.cfg.MTU,
+		VipAddress:      vip4,
+		NumDests:        uint32(len(lb.cfg.Dests) - 1),
+		Mtu:             lb.cfg.MTU,
+		ServerIdHashKey: hostOrder.Uint32(lb.cfg.RoutingRandom[:]),
 	}, 0)
 	if err != nil {
 		return fmt.Errorf("Failed to update ConfigMap: %w", err)

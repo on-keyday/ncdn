@@ -1,0 +1,60 @@
+
+config.go.package = "protocol"
+
+enum ControlMessageType:
+    :u8
+    keepalive # controller <- l4lb,l7lb
+    l7lb_hello # l7lb -> controller
+    l7lb_update # controller -> l4lb
+    l4lb_hello # l4lb -> controller
+    l4lb_update # controller -> l4lb
+    key_share # controller -> l4lb,l7lb
+
+
+format ControlMessageHeader:
+    version :u8
+    version == 0
+    len :u16
+    message_type :ControlMessageType
+
+
+format ControlMessage:
+    header :ControlMessageHeader
+    match header.message_type:
+        ControlMessageType.keepalive => keep_alive :KeepAliveInfo(input =  input.subrange(header.len))
+        ControlMessageType.l7lb_hello => l7lb_hello :L7LBInfo(input = input.subrange(header.len))
+        ControlMessageType.l4lb_hello => l4lb_hello :L4LBInfo(input = input.subrange(header.len))
+        ControlMessageType.l7lb_update => l7lb_update :L7LBUpdate(input = input.subrange(header.len))
+        ControlMessageType.l4lb_update => l4lb_update :L4LBUpdate(input = input.subrange(header.len))
+        ControlMessageType.key_share => key_share :KeyShareInfo(input = input.subrange(header.len))
+        .. => data :[header.len]u8
+
+
+format L7LBInfo: # currently l4lb can interpret ipv4 only
+    server_id :u32 # hashed value, for consistensy hash
+    address :[4]u8
+    mac_address :[6]u8
+    port_len :u8
+    port :[port_len]u16
+   
+
+format L7LBUpdate:
+    len :u8
+    info :[len]L7LBInfo
+
+format KeepAliveInfo:
+    next_period :u64
+
+format L4LBInfo:
+    server_id :u32
+    virtual_address :[4]u8
+    address :[4]u8
+    mac_address :[6]u8
+
+format L4LBUpdate:
+    virtual_address :[4]u8
+
+format KeyShareInfo:
+    len :u16
+    key :[len]u8
+

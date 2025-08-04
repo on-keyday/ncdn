@@ -12,7 +12,7 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:95
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:94
 )
 
 type StatCounters struct { // ../c/lb.c:32
@@ -270,13 +270,12 @@ func (c *StatCounters) String() string {
 }
 
 type LbConfig struct { // ../c/lb.c:69
-	VipAddress      uint32   // ../c/lb.c:70
-	NumDests        uint32   // ../c/lb.c:71
-	Mtu             uint16   // ../c/lb.c:72
-	QuicDestPort    uint16   // ../c/lb.c:73
-	Flags           uint8    // ../c/lb.c:74
-	ServerIdHashKey uint8    // ../c/lb.c:75
-	Padding         [2]uint8 // ../c/lb.c:76
+	VipAddress      uint32 // ../c/lb.c:70
+	NumDests        uint32 // ../c/lb.c:71
+	Mtu             uint16 // ../c/lb.c:72
+	QuicDestPort    uint16 // ../c/lb.c:73
+	Flags           uint32 // ../c/lb.c:74
+	ServerIdHashKey uint32 // ../c/lb.c:75
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -323,19 +322,14 @@ func LbConfigAssertLayout(s *DWARFStruct) error {
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go ServerIdHashKey: %d, dwarf server_id_hash_key: %d", goff, doff)
 	}
-	goff = unsafe.Offsetof(LbConfig{}.Padding)
-	doff = fs["padding"].Offset
-	if goff != uintptr(doff) {
-		return fmt.Errorf("offset mismatch: go Padding: %d, dwarf padding: %d", goff, doff)
-	}
 
 	return nil
 }
 
-type TestDecrypt struct { // ../c/lb.c:478
-	ConnectionId    [20]uint8 // ../c/lb.c:479
-	Len             uint8     // ../c/lb.c:480
-	IsShortServerId uint8     // ../c/lb.c:481
+type TestDecrypt struct { // ../c/lb.c:506
+	ConnectionId    [20]uint8 // ../c/lb.c:507
+	Len             uint8     // ../c/lb.c:508
+	IsShortServerId uint8     // ../c/lb.c:509
 }
 
 func TestDecryptAssertLayout(s *DWARFStruct) error {

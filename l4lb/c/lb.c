@@ -71,9 +71,8 @@ struct lb_config { /* go: */
   uint32_t num_dests;
   uint16_t mtu;
   uint16_t quic_dest_port;
-  uint8_t flags;
-  uint8_t server_id_hash_key; 
-  uint8_t padding[2]; // padding to align to 8 bytes
+  uint32_t flags;
+  uint32_t server_id_hash_key; 
 } PACKED;
 
 #define LB_CONFIG_FLAG_CONNID_CACHE_ENABLED (1 << 0)
@@ -90,6 +89,7 @@ struct {
 struct destination_entry {
   uint32_t ip_address;
   uint8_t mac_address[ETH_ALEN];
+  uint32_t hash_key; // hash key for consistent hashing
 } PACKED;
 
 #define DESTINATIONS_SIZE 255 /* go: */
@@ -388,10 +388,39 @@ __always_inline int connection_id_decrypt(uint8_t* output, const uint8_t* connec
     return 0;
 }
 
+#define FNV_PRIME_32 16777619
+#define FNV_OFFSET_32 2166136261
+
+
+// とりあえず使える
+__always_inline uint32_t fnv1a_hash(const void* data, size_t size) {
+    const uint8_t* p = (const uint8_t*)data;
+    uint32_t hash = FNV_OFFSET_32;
+
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= p[i];
+        hash *= FNV_PRIME_32;
+    }
+
+    return hash;
+}
+
 
 __always_inline uint32_t hash_server_id(struct lb_config* config,uint32_t src_ip,uint16_t src_port, uint8_t connid_first) {
+    uint8_t buffer[7 + 4];
+    buffer[0] = (src_ip >> 24) & 0xFF; // first byte of src_ip
+    buffer[1] = (src_ip >> 16) & 0xFF; // second byte of src_ip
+    buffer[2] = (src_ip >> 8) & 0xFF;  // third byte of src_ip
+    buffer[3] = src_ip & 0xFF;         // fourth byte of src_ip
+    buffer[4] = (src_port >> 8) & 0xFF; // first byte of src_port
+    buffer[5] = src_port & 0xFF;        // second byte of src_port
+    buffer[6] = connid_first;           // first byte of connection id
+    buffer[7] = (config->server_id_hash_key >> 24) & 0xFF; // first byte of server_id_hash_key
+    buffer[8] = (config->server_id_hash_key >> 16) & 0xFF; // second byte of server_id_hash_key
+    buffer[9] = (config->server_id_hash_key >> 8) & 0xFF;  // third byte of server_id_hash_key
+    buffer[10] = config->server_id_hash_key & 0xFF;         // fourth byte of server_id_hash_key
     // hash the server id based on src_ip, src_port and first byte of connection id
-    uint32_t hash = (src_ip + src_port + connid_first + config->server_id_hash_key) % config->num_dests;
+    uint32_t hash = fnv1a_hash(buffer, sizeof(buffer));
     debugk("DEBUG: hash_server_id: src_ip=%u, src_port=%u, connid_first=%u, hash=%u", src_ip, src_port, connid_first, hash);
     return hash;
 }
@@ -669,7 +698,7 @@ int lb_main(struct xdp_md* ctx) {
 
       debugk("incoming packet: ip=%pI4 port=%u", &ip->saddr, ntohs(tcp->source));
 
-      uint32_t dest_idx = hash_server_id(config, ip->saddr, ntohs(tcp->source), 0) + 1;
+      uint32_t dest_idx = hash_server_id(config, ip->saddr, ntohs(tcp->source), 0x55) % config->num_dests + 1;
       debugk("dest_idx=%d", dest_idx);
       dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
       if (!dest) {

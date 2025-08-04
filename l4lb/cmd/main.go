@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"log"
@@ -130,6 +131,11 @@ func main() {
 		log.Panicf("Failed to derive key: %v", err)
 	}
 
+	var random [4]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		log.Panicf("Failed to generate random bytes: %v", err)
+	}
+
 	cfg := &l4lbdrv.Config{
 		BinPath:        *lbBin,
 		CryptoBin:      *cryptoBin,
@@ -140,6 +146,7 @@ func main() {
 		Dests:          dests,
 		SharedKey:      derivedKey,
 		MTU:            uint16(*mtu),
+		RoutingRandom:  random,
 	}
 	lb, err := l4lbdrv.New(cfg)
 	if err != nil {

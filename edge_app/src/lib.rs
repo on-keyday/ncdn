@@ -48,7 +48,6 @@ pub extern "C" fn on_request() {
     buffer.resize(req_size, 0);
     api::save_buffer(buffer);
 
-    // loop {} // 無限ループでバグるか検証
 }
 
 #[no_mangle]
