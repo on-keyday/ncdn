@@ -45,7 +45,21 @@ func L7LBHello(lb *L7LBData) *ControlMessage {
 	return msg
 }
 
-func L7LBUpdate(info []*L7LBData) *ControlMessage {
+func L7LBUpdate(server_id uint32) *ControlMessage {
+	msg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         uint16(4),
+			MessageType: ControlMessageType_L7LbUpdate,
+		},
+	}
+	msg.SetL7LbUpdate(L7Lbupdate{
+		ServerId: server_id,
+	})
+	return msg
+}
+
+func L4L7LBUpdate(info []*L7LBData) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
@@ -64,7 +78,7 @@ func L7LBUpdate(info []*L7LBData) *ControlMessage {
 		})
 		msg.Header.Len += uint16(4 + 4 + 6 + 1 + len(v.Ports)*2)
 	}
-	msg.SetL7LbUpdate(L7Lbupdate{
+	msg.SetL4LbL7LbUpdate(L4Lbl7Lbupdate{
 		Len:  uint8(len(info)),
 		Info: l7lbInfo,
 	})
