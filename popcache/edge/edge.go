@@ -28,56 +28,54 @@ type EdgeComputer interface {
 	ProcessResponse(ctx context.Context, reqID uint64, p *http.Response) error
 	FinishRequest(ctx context.Context, reqID uint64) error
 
-	ModifyRequest(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error
-	ModifyResponse(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error
+	ModifyRequest(ctx context.Context, reqID uint64, modify func(d []DiffData) error, shouldClear bool) error
+	ModifyResponse(ctx context.Context, reqID uint64, modify func(d []DiffData) error, shouldClear bool) error
 }
 
-func (r *edgeComputing) ModifyRequest(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error {
+func (r *edgeComputing) ModifyRequest(ctx context.Context, reqID uint64, modify func(d []DiffData) error, shouldClear bool) error {
 	if modify == nil {
 		return errors.New("modify function is nil")
 	}
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[reqID]
-	r.handlerRW.RUnlock()
-	if !exists {
-		return fmt.Errorf("no handle context found for request ID %d", reqID)
+	handleCtx, err := r.getHandleContext(reqID)
+	if err != nil {
+		return fmt.Errorf("failed to get handle context for request ID %d: %w", reqID, err)
 	}
-	if handleCtx.req == nil {
-		return fmt.Errorf("no request info found for request ID %d", reqID)
-	}
-	for _, d := range handleCtx.requestChangeSet {
-		if err := modify(&d); err != nil {
+	return handleCtx.withLock(func(h *HandleContext) error {
+		if handleCtx.req == nil {
+			return fmt.Errorf("no request info found for request ID %d", reqID)
+		}
+		err := modify(handleCtx.requestChangeSet)
+		if err != nil {
 			return fmt.Errorf("failed to modify request: %w", err)
 		}
-	}
-	if shouldClear {
-		handleCtx.requestChangeSet = nil
-	}
-	return nil
+		if shouldClear {
+			handleCtx.requestChangeSet = nil
+		}
+		return nil
+	})
 }
 
-func (r *edgeComputing) ModifyResponse(ctx context.Context, reqID uint64, modify func(d *DiffData) error, shouldClear bool) error {
+func (r *edgeComputing) ModifyResponse(ctx context.Context, reqID uint64, modify func(d []DiffData) error, shouldClear bool) error {
 	if modify == nil {
 		return errors.New("modify function is nil")
 	}
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[reqID]
-	r.handlerRW.RUnlock()
-	if !exists {
-		return fmt.Errorf("no handle context found for request ID %d", reqID)
+	handleCtx, err := r.getHandleContext(reqID)
+	if err != nil {
+		return fmt.Errorf("failed to get handle context for request ID %d: %w", reqID, err)
 	}
-	if handleCtx.resp == nil {
-		return fmt.Errorf("no response info found for request ID %d", reqID)
-	}
-	for _, d := range handleCtx.responseChangeSet {
-		if err := modify(&d); err != nil {
+	return handleCtx.withLock(func(h *HandleContext) error {
+		if handleCtx.resp == nil {
+			return fmt.Errorf("no response info found for request ID %d", reqID)
+		}
+		err := modify(handleCtx.responseChangeSet)
+		if err != nil {
 			return fmt.Errorf("failed to modify response: %w", err)
 		}
-	}
-	if shouldClear {
-		handleCtx.responseChangeSet = nil
-	}
-	return nil
+		if shouldClear {
+			handleCtx.responseChangeSet = nil
+		}
+		return nil
+	})
 }
 
 func DefaultModifyRequest(d *DiffData, r *http.Request) error {
@@ -182,12 +180,7 @@ func DefaultModifyRequest(d *DiffData, r *http.Request) error {
 			if r.Body == nil {
 				r.Body = io.NopCloser(bytes.NewReader(body.Body))
 			} else {
-				existingBody, err := io.ReadAll(r.Body)
-				if err != nil {
-					return fmt.Errorf("failed to read existing body: %w", err)
-				}
-				newBody := append(existingBody, body.Body...)
-				r.Body = io.NopCloser(bytes.NewReader(newBody))
+				r.Body = io.NopCloser(io.MultiReader(r.Body, bytes.NewReader(body.Body)))
 			}
 		}
 	case DiffDataType_Routing:
@@ -265,12 +258,7 @@ func DefaultModifyResponse(d *DiffData, resp *http.Response) error {
 			if resp.Body == nil {
 				resp.Body = io.NopCloser(bytes.NewReader(body.Body))
 			} else {
-				existingBody, err := io.ReadAll(resp.Body)
-				if err != nil {
-					return fmt.Errorf("failed to read existing body: %w", err)
-				}
-				newBody := append(existingBody, body.Body...)
-				resp.Body = io.NopCloser(bytes.NewReader(newBody))
+				resp.Body = io.NopCloser(io.MultiReader(resp.Body, bytes.NewReader(body.Body)))
 			}
 		}
 	case DiffDataType_Routing:
@@ -284,6 +272,7 @@ func DefaultModifyResponse(d *DiffData, resp *http.Response) error {
 var _ EdgeComputer = (*edgeComputing)(nil)
 
 type HandleContext struct {
+	m                 sync.Mutex
 	mod               api.Module
 	req               *RequestInfo
 	requestChangeSet  []DiffData
@@ -522,15 +511,20 @@ func (r *edgeComputing) saveBufferPointer(ctx context.Context, _ api.Module, poi
 		log.Printf("No request ID found in context")
 		return
 	}
-	r.handlerRW.Lock()
-	defer r.handlerRW.Unlock()
-	handleCtx, exists := r.handleContext[key]
-	if !exists {
-		log.Printf("No handle context found for request ID %d", key)
+	handleCtx, err := r.getHandleContext(key)
+	if err != nil {
+		log.Printf("Failed to get handle context for request ID %d: %v", key, err)
 		return
 	}
-	handleCtx.bufferPointer = pointer
-	handleCtx.bufferSize = size
+	err = handleCtx.withLock(func(h *HandleContext) error {
+		handleCtx.bufferPointer = pointer
+		handleCtx.bufferSize = size
+		return nil
+	})
+	if err != nil {
+		log.Printf("Failed to get lock for request ID %d: %v", key, err)
+		return
+	}
 }
 
 func (r *edgeComputing) getBufferPointer(ctx context.Context, mod api.Module, pointerToPointer uint32, pointerToSize uint32) {
@@ -539,15 +533,20 @@ func (r *edgeComputing) getBufferPointer(ctx context.Context, mod api.Module, po
 		log.Printf("No request ID found in context")
 		return
 	}
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[key]
-	r.handlerRW.RUnlock()
-	if !exists {
-		log.Printf("No handle context found for request ID %d", key)
+	handleCtx, err := r.getHandleContext(key)
+	if err != nil {
+		log.Printf("Failed to get handle context for request ID %d: %v", key, err)
 		return
 	}
-	mod.Memory().WriteUint32Le(pointerToPointer, handleCtx.bufferPointer)
-	mod.Memory().WriteUint32Le(pointerToSize, handleCtx.bufferSize)
+	err = handleCtx.withLock(func(h *HandleContext) error {
+		mod.Memory().WriteUint32Le(pointerToPointer, handleCtx.bufferPointer)
+		mod.Memory().WriteUint32Le(pointerToSize, handleCtx.bufferSize)
+		return nil
+	})
+	if err != nil {
+		log.Printf("Failed to get lock for request ID %d: %v", key, err)
+		return
+	}
 }
 
 func (r *edgeComputing) logOutput(c context.Context, mod api.Module, logLevel, pointer, size uint32) uint32 {
@@ -576,128 +575,102 @@ func (w *limitedWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func (r *edgeComputing) getRequestInfo(c context.Context, mod api.Module, pointer, size uint32) uint32 {
+func (r *edgeComputing) passInfoToWasm(c context.Context, mod api.Module, pointer, size uint32, getInfo func(uint64, *HandleContext) (interface{ Write(io.Writer) error }, error)) uint32 {
 	key, ok := c.Value(requestIDKey{}).(uint64)
 	if !ok {
 		log.Printf("No request ID found in context")
 		return 0
 	}
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[key]
-	r.handlerRW.RUnlock()
-	if !exists {
-		log.Printf("No handle context found for request ID %d", key)
-		return 0
-	}
-	if handleCtx.req == nil {
-		log.Printf("No request info found for request ID %d", key)
+	handleCtx, err := r.getHandleContext(key)
+	if err != nil {
+		log.Printf("Failed to get handle context for request ID %d: %v", key, err)
 		return 0
 	}
 	buf, ok := mod.Memory().Read(pointer, size)
 	if !ok {
-		log.Printf("Failed to read request info from memory at pointer %d with size %d", pointer, size)
+		log.Printf("Failed to read buffer from memory at pointer %d with size %d", pointer, size)
 		return 0
 	}
-	limited := &limitedWriter{buffer: buf}
-	if err := handleCtx.req.Write(limited); err != nil {
-		log.Printf("Failed to encode request info for request ID %d: %v", key, err)
+	var offset uint32
+	err = handleCtx.withLock(func(h *HandleContext) error {
+		info, err := getInfo(key, handleCtx)
+		if err != nil {
+			return fmt.Errorf("failed to get request info for request ID %d: %v", key, err)
+		}
+		limited := &limitedWriter{buffer: buf}
+		if err := info.Write(limited); err != nil {
+			return fmt.Errorf("failed to encode request info for request ID %d: %v", key, err)
+		}
+		offset = uint32(limited.offset)
+		return nil
+	})
+	if err != nil {
+		log.Printf("Failed to get lock for request ID %d: %v", key, err)
 		return 0
 	}
-	return uint32(limited.offset)
+	return offset
+}
+
+func (r *edgeComputing) getRequestInfo(c context.Context, mod api.Module, pointer, size uint32) uint32 {
+	return r.passInfoToWasm(c, mod, pointer, size, func(reqID uint64, handleCtx *HandleContext) (interface{ Write(io.Writer) error }, error) {
+		if handleCtx.req == nil {
+			return nil, fmt.Errorf("no request info found for request ID %d", reqID)
+		}
+		return handleCtx.req, nil
+	})
 }
 
 func (r *edgeComputing) getResponseInfo(c context.Context, mod api.Module, pointer, size uint32) uint32 {
+	return r.passInfoToWasm(c, mod, pointer, size, func(reqID uint64, handleCtx *HandleContext) (interface{ Write(io.Writer) error }, error) {
+		if handleCtx.resp == nil {
+			return nil, fmt.Errorf("no response info found for request ID %d", reqID)
+		}
+		return handleCtx.resp, nil
+	})
+}
+
+func (r *edgeComputing) addDiffFromWasm(c context.Context, mod api.Module, pointer, size uint32, addDiff func(*HandleContext, []DiffData)) uint32 {
 	key, ok := c.Value(requestIDKey{}).(uint64)
 	if !ok {
 		log.Printf("No request ID found in context")
 		return 0
 	}
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[key]
-	r.handlerRW.RUnlock()
-	if !exists {
-		log.Printf("No handle context found for request ID %d", key)
-		return 0
-	}
-	if handleCtx.resp == nil {
-		log.Printf("No response info found for request ID %d", key)
+	handleCtx, err := r.getHandleContext(key)
+	if err != nil {
+		log.Printf("Failed to get handle context for request ID %d: %v", key, err)
 		return 0
 	}
 	buf, ok := mod.Memory().Read(pointer, size)
 	if !ok {
-		log.Printf("Failed to read response info from memory at pointer %d with size %d", pointer, size)
+		log.Printf("Failed to read buffer from memory at pointer %d with size %d", pointer, size)
 		return 0
 	}
-	limited := &limitedWriter{buffer: buf}
-	if err := handleCtx.resp.Write(limited); err != nil {
-		log.Printf("Failed to encode response info for request ID %d: %v", key, err)
+	cc := &ChangeSet{}
+	if err := cc.DecodeExact(buf); err != nil {
+		log.Printf("Failed to decode change set for request ID %d: %v", key, err)
 		return 0
 	}
-	return uint32(limited.offset)
+	err = handleCtx.withLock(func(h *HandleContext) error {
+		addDiff(h, cc.Diff)
+		return nil
+	})
+	if err != nil {
+		log.Printf("Failed to get lock for request ID %d: %v", key, err)
+		return 0
+	}
+	return 1
 }
 
 func (r *edgeComputing) changeRequest(ctx context.Context, mod api.Module, pointer, size uint32) uint32 {
-	reqID, ok := ctx.Value(requestIDKey{}).(uint64)
-	if !ok {
-		log.Printf("No request ID found in context")
-		return 0
-	}
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[reqID]
-	r.handlerRW.RUnlock()
-	if !exists {
-		log.Printf("No handle context found for request ID %d", reqID)
-		return 0
-	}
-	if handleCtx.req == nil {
-		log.Printf("No request info found for request ID %d", reqID)
-		return 0
-	}
-	buf, ok := mod.Memory().Read(pointer, size)
-	if !ok {
-		log.Printf("Failed to read request info from memory at pointer %d with size %d", pointer, size)
-		return 0
-	}
-	cc := &ChangeSet{}
-	err := cc.DecodeExact(buf)
-	if err != nil {
-		log.Printf("Failed to decode change set for request ID %d: %v", reqID, err)
-		return 0
-	}
-	handleCtx.requestChangeSet = append(handleCtx.requestChangeSet, cc.Diff...)
-	return 1
+	return r.addDiffFromWasm(ctx, mod, pointer, size, func(h *HandleContext, diff []DiffData) {
+		h.requestChangeSet = append(h.requestChangeSet, diff...)
+	})
 }
 
 func (r *edgeComputing) changeResponse(ctx context.Context, mod api.Module, pointer, size uint32) uint32 {
-	reqID, ok := ctx.Value(requestIDKey{}).(uint64)
-	if !ok {
-		log.Printf("No request ID found in context")
-		return 0
-	}
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[reqID]
-	r.handlerRW.RUnlock()
-	if !exists {
-		log.Printf("No handle context found for request ID %d", reqID)
-		return 0
-	}
-	if handleCtx.resp == nil {
-		log.Printf("No response info found for request ID %d", reqID)
-		return 0
-	}
-	buf, ok := mod.Memory().Read(pointer, size)
-	if !ok {
-		log.Printf("Failed to read response info from memory at pointer %d with size %d", pointer, size)
-		return 0
-	}
-	cc := &ChangeSet{}
-	err := cc.DecodeExact(buf)
-	if err != nil {
-		log.Printf("Failed to decode change set for request ID %d: %v", reqID, err)
-		return 0
-	}
-	handleCtx.responseChangeSet = append(handleCtx.responseChangeSet, cc.Diff...)
-	return 1
+	return r.addDiffFromWasm(ctx, mod, pointer, size, func(h *HandleContext, diff []DiffData) {
+		h.responseChangeSet = append(h.responseChangeSet, diff...)
+	})
 }
 
 var ErrNoEdgeFunction = errors.New("no edge function registered for this request")
@@ -730,23 +703,18 @@ func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint
 	return reqID, nil
 }
 
-func (r *edgeComputing) ProcessRequest(ctx context.Context, reqID uint64, popID uint32, p *http.Request) error {
+func (r *edgeComputing) getHandleContext(reqID uint64) (*HandleContext, error) {
 	r.handlerRW.RLock()
+	defer r.handlerRW.RUnlock()
 	handleCtx, exists := r.handleContext[reqID]
-	r.handlerRW.RUnlock()
 	if !exists {
-		return fmt.Errorf("no handle context found for request ID %d", reqID)
+		return nil, fmt.Errorf("no handle context found for request ID %d", reqID)
 	}
-	info, err := getRequestInfo(popID, reqID, p)
-	if err != nil {
-		return fmt.Errorf("failed to get request info: %w", err)
-	}
-	handleCtx.req = info
-	mod := handleCtx.mod
-	if mod == nil {
-		return fmt.Errorf("no module found for request ID %d", reqID)
-	}
-	f := mod.ExportedFunction(hookOnRequest)
+	return handleCtx, nil
+}
+
+func (r *edgeComputing) executeWasm(ctx context.Context, mod api.Module, reqID uint64, fname string) error {
+	f := mod.ExportedFunction(fname)
 	if f != nil {
 		ctx := context.WithValue(ctx, requestIDKey{}, reqID)
 		ctx, cancel := context.WithTimeout(ctx, r.computingTimeout)
@@ -759,55 +727,96 @@ func (r *edgeComputing) ProcessRequest(ctx context.Context, reqID uint64, popID 
 	return nil
 }
 
-func (r *edgeComputing) ProcessResponse(ctx context.Context, reqID uint64, resp *http.Response) error {
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[reqID]
-	r.handlerRW.RUnlock()
-	if !exists {
-		return fmt.Errorf("no handle context found for request ID %d", reqID)
+func (c *HandleContext) withLock(task func(h *HandleContext) error) error {
+	c.m.Lock()
+	defer c.m.Unlock()
+	if err := task(c); err != nil {
+		return err
 	}
-	if handleCtx.resp != nil {
-		return fmt.Errorf("response already processed for request ID %d", reqID)
+	return nil
+}
+
+func (c *HandleContext) getModule(reqID uint64, task func(h *HandleContext) error) (api.Module, error) {
+	var mod api.Module
+	err := c.withLock(func(h *HandleContext) error {
+		if h.mod == nil {
+			return fmt.Errorf("module is not set for request ID %d", reqID)
+		}
+		mod = h.mod
+		if task != nil {
+			if err := task(h); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return mod, err
+}
+
+func (r *edgeComputing) ProcessRequest(ctx context.Context, reqID uint64, popID uint32, p *http.Request) error {
+	handleCtx, err := r.getHandleContext(reqID)
+	if err != nil {
+		return err
+	}
+	info, err := getRequestInfo(popID, reqID, p)
+	if err != nil {
+		return fmt.Errorf("failed to get request info: %w", err)
+	}
+	mod, err := handleCtx.getModule(reqID, func(h *HandleContext) error {
+		if h.req != nil {
+			return fmt.Errorf("request already processed for request ID %d", reqID)
+		}
+		h.req = info
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to process request for request ID %d: %w", reqID, err)
+	}
+	return r.executeWasm(ctx, mod, reqID, hookOnRequest)
+}
+
+func (r *edgeComputing) ProcessResponse(ctx context.Context, reqID uint64, resp *http.Response) error {
+	handleCtx, err := r.getHandleContext(reqID)
+	if err != nil {
+		return err
 	}
 	respInfo, err := getResponseInfo(resp)
 	if err != nil {
 		return fmt.Errorf("failed to get response info: %w", err)
 	}
-	handleCtx.resp = respInfo
-	mod := handleCtx.mod
-	f := mod.ExportedFunction(hookOnResponse)
-	if f != nil {
-		ctx := context.WithValue(ctx, requestIDKey{}, reqID)
-		ctx, cancel := context.WithTimeout(ctx, r.computingTimeout)
-		defer cancel()
-		_, err := f.Call(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to call on_response function: %w", err)
+	mod, err := handleCtx.getModule(reqID, func(h *HandleContext) error {
+		if h.resp != nil {
+			return fmt.Errorf("response already processed for request ID %d", reqID)
 		}
+		h.resp = respInfo
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to process request for request ID %d: %w", reqID, err)
 	}
-	return nil
+	return r.executeWasm(ctx, mod, reqID, hookOnResponse)
 }
 
 func (r *edgeComputing) FinishRequest(ctx context.Context, reqID uint64) error {
-	r.handlerRW.RLock()
-	handleCtx, exists := r.handleContext[reqID]
-	r.handlerRW.RUnlock()
-	if !exists {
-		return fmt.Errorf("no handle context found for request ID %d", reqID)
+	handleCtx, err := r.getHandleContext(reqID)
+	if err != nil {
+		return err
 	}
 	defer func() {
 		r.handlerRW.Lock()
 		defer r.handlerRW.Unlock()
 		delete(r.handleContext, reqID)
 	}()
-	mod := handleCtx.mod
-	ctx = context.WithValue(ctx, requestIDKey{}, reqID)
-	var err error
-	if f := mod.ExportedFunction(hookOnFinish); f != nil {
-		ctx, cancel := context.WithTimeout(ctx, r.computingTimeout)
-		defer cancel()
-		_, err = f.Call(ctx)
+	mod, err := handleCtx.getModule(reqID, func(h *HandleContext) error {
+		if h.req == nil {
+			return fmt.Errorf("request not processed for request ID %d", reqID)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get module for request ID %d: %w", reqID, err)
 	}
+	err = r.executeWasm(ctx, mod, reqID, hookOnFinish)
 	err2 := mod.Close(ctx)
 	return errors.Join(err, err2)
 }
