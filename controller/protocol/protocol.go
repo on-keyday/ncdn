@@ -64,7 +64,7 @@ func L4L7LBUpdate(info []*L7LBData) *ControlMessage {
 		Header: ControlMessageHeader{
 			Version:     0,
 			Len:         uint16(1),
-			MessageType: ControlMessageType_L7LbUpdate,
+			MessageType: ControlMessageType_L4LbL7LbUpdate,
 		},
 	}
 	var l7lbInfo []L7Lbinfo

@@ -1,4 +1,4 @@
-package transport
+package wstransport
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yzp0n/ncdn/controller/control"
+	"github.com/yzp0n/ncdn/controller/transport"
 	"golang.org/x/net/websocket"
 )
 
 // A compile-time check to ensure that *WebSocketConn implements the control.Connection interface.
-var _ control.Connection = (*WebSocketConn)(nil)
+var _ transport.Connection = (*WebSocketConn)(nil)
 
 // WebSocketConn is a connection that uses a WebSocket for communication.
 type WebSocketConn struct {
@@ -90,25 +90,23 @@ func (c *WebSocketConn) RemoteAddr() string {
 // WebSocketListener implements the control.Listener interface for WebSockets.
 type WebSocketListener struct {
 	httpServer *http.Server
-	connChan   chan control.Connection
+	connChan   chan transport.Connection
 	once       sync.Once
 }
 
-var _ control.Listener = (*WebSocketListener)(nil)
+var _ transport.Listener = (*WebSocketListener)(nil)
 
 // NewWebSocketListener creates and starts a new WebSocketListener.
 func NewWebSocketListener(addr string) (*WebSocketListener, error) {
 	listener := &WebSocketListener{
-		connChan: make(chan control.Connection),
+		connChan: make(chan transport.Connection),
 	}
 
-	handler := websocket.Server{
-		Handler: func(ws *websocket.Conn) {
-			ctx, cancel := context.WithCancel(ws.Request().Context())
-			listener.connChan <- NewWebSocketConn(ws, cancel)
-			<-ctx.Done() // Wait for the context to be done before closing the connection
-		},
-	}
+	handler := websocket.Handler(func(ws *websocket.Conn) {
+		ctx, cancel := context.WithCancel(ws.Request().Context())
+		listener.connChan <- NewWebSocketConn(ws, cancel)
+		<-ctx.Done() // Wait for the context to be done before closing the connection
+	})
 
 	listener.httpServer = &http.Server{Addr: addr}
 	http.Handle("/", handler)
@@ -123,7 +121,7 @@ func NewWebSocketListener(addr string) (*WebSocketListener, error) {
 }
 
 // Accept waits for and returns the next connection.
-func (l *WebSocketListener) Accept() (control.Connection, error) {
+func (l *WebSocketListener) Accept() (transport.Connection, error) {
 	conn, ok := <-l.connChan
 	if !ok {
 		return nil, errors.New("listener is closed")
@@ -139,4 +137,13 @@ func (l *WebSocketListener) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return l.httpServer.Shutdown(ctx)
+}
+
+func Connect(ctx context.Context, conf *websocket.Config) (transport.Connection, error) {
+	ws, err := conf.DialContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cancel := func() {}
+	return NewWebSocketConn(ws, cancel), nil
 }

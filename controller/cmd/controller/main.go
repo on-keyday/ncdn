@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yzp0n/ncdn/controller/control"
-	"github.com/yzp0n/ncdn/controller/transport"
+	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 )
 
 type lockedWriter struct {
@@ -30,7 +30,7 @@ func (lw *lockedWriter) Write(p []byte) (n int, err error) {
 }
 
 func main() {
-	lis, err := transport.NewWebSocketListener(":8080")
+	lis, err := wstransport.NewWebSocketListener(":8080")
 	if err != nil {
 		log.Fatalf("Failed to create WebSocket listener: %v", err)
 	}
@@ -92,7 +92,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
 		case tea.KeyEnter:
+			cmd := m.textInput.Value()
 			m.textInput.Reset()
+			switch cmd {
+			case "quit", "exit":
+				return m, tea.Quit
+			}
 		}
 	case writerUpdate:
 		m.buffer = append(m.buffer, string(msg))

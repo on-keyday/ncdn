@@ -10,26 +10,12 @@ import (
 	"time"
 
 	"github.com/yzp0n/ncdn/controller/protocol"
+	"github.com/yzp0n/ncdn/controller/transport"
 )
-
-type Connection interface {
-	Send([]byte) error
-	SendReader(control []byte, size int, reader io.ReaderAt) error
-	Receive() ([]byte, error)
-	ReceiveReader(size int) (io.Reader, error)
-	SetReadDeadline(time.Time) error
-	Close() error
-	RemoteAddr() string
-}
-
-type Listener interface {
-	Accept() (Connection, error)
-	Close() error
-}
 
 type Controller interface {
 	ShareKey([]byte)
-	Run(context.Context, Listener) error
+	Run(context.Context, transport.Listener) error
 }
 
 func NewController(logger *slog.Logger) Controller {
@@ -134,7 +120,7 @@ func (c *messageChannel) SendMessage(msg message) error {
 }
 
 type LBConn[T any] struct {
-	conn Connection
+	conn transport.Connection
 	data *T
 	messageChannel
 	logger *slog.Logger
@@ -148,7 +134,7 @@ func (l *LBConn[T]) Close() error {
 	return l.conn.Close()
 }
 
-func NewLBConn[T any](ctx context.Context, conn Connection, data *T, logger *slog.Logger) *LBConn[T] {
+func NewLBConn[T any](ctx context.Context, conn transport.Connection, data *T, logger *slog.Logger) *LBConn[T] {
 	ctx, cancel := context.WithCancelCause(ctx)
 	return &LBConn[T]{
 		conn: conn,
@@ -195,7 +181,7 @@ func (c *controller) ShareKey(key []byte) {
 	c.logger.Info("Shared key with L4LB and L7LBs", "key", c.sharedKey.key, "generation", c.sharedKey.generation)
 }
 
-func (c *controller) Run(ctx context.Context, lis Listener) error {
+func (c *controller) Run(ctx context.Context, lis transport.Listener) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errors.New("controller stopped"))
 	go func() {
@@ -233,7 +219,7 @@ func sendL4L7LBUpdate[T any](lbConn *LBConn[T], data []*protocol.L7LBData, seqNu
 	}
 }
 
-func (c *controller) handleConnection(ctx context.Context, conn Connection) {
+func (c *controller) handleConnection(ctx context.Context, conn transport.Connection) {
 	defer conn.Close()
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errors.New("connection closed"))
@@ -343,39 +329,39 @@ func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], clean 
 				if errors.Is(err, ErrChannelClosed) {
 					lbConn.logger.Info("L7LB message channel closed")
 				} else {
-					lbConn.logger.Error("Failed to receive message from L7LB", "error", err)
+					lbConn.logger.Error("Failed to receive message from controller", "error", err)
 				}
 				return
 			}
 			enc, err := msg.data.Encode()
 			if err != nil {
-				lbConn.logger.Error("Failed to encode message from L7LB", "error", err)
+				lbConn.logger.Error("Failed to encode message from controller", "error", err)
 				return
 			}
 			if err := lbConn.conn.Send(enc); err != nil {
-				lbConn.logger.Error("Failed to send message to L7LB", "error", err)
+				lbConn.logger.Error("Failed to send message to LB", "error", err)
 				return
 			}
-			lbConn.logger.Info("Sent message to L7LB", "message_type", msg.data.Header.MessageType, "seq_num", msg.seqNum)
+			lbConn.logger.Info("Sent message to LB", "message_type", msg.data.Header.MessageType, "seq_num", msg.seqNum)
 		}
 	}()
 	for {
 		data, err := lbConn.conn.Receive()
 		if err != nil {
-			lbConn.logger.Error("Failed to receive data from L7LB", "error", err)
+			lbConn.logger.Error("Failed to receive data from LB", "error", err)
 			return
 		}
 		msg := &protocol.ControlMessage{}
 		err = msg.DecodeExact(data)
 		if err != nil {
-			lbConn.logger.Error("Failed to decode message from L7LB", "error", err)
+			lbConn.logger.Error("Failed to decode message from LB", "error", err)
 			return
 		}
-		lbConn.logger.Info("Received message from L7LB", "message_type", msg.Header.MessageType)
+		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType)
 		if kl := msg.KeepAlive(); kl != nil {
 			lbConn.conn.SetReadDeadline(time.Now().Add(time.Duration(kl.NextPeriod)))
 		} else {
-			lbConn.logger.Error("Unexpected message type from L7LB", "type", msg.Header.MessageType)
+			lbConn.logger.Error("Unexpected message type from LB", "type", msg.Header.MessageType)
 			return
 		}
 	}
