@@ -41,9 +41,6 @@ func (r *edgeComputing) ModifyRequest(ctx context.Context, reqID uint64, modify 
 		return fmt.Errorf("failed to get handle context for request ID %d: %w", reqID, err)
 	}
 	return handleCtx.withLock(func(h *HandleContext) error {
-		if handleCtx.req == nil {
-			return fmt.Errorf("no request info found for request ID %d", reqID)
-		}
 		err := modify(handleCtx.requestChangeSet)
 		if err != nil {
 			return fmt.Errorf("failed to modify request: %w", err)
@@ -64,9 +61,6 @@ func (r *edgeComputing) ModifyResponse(ctx context.Context, reqID uint64, modify
 		return fmt.Errorf("failed to get handle context for request ID %d: %w", reqID, err)
 	}
 	return handleCtx.withLock(func(h *HandleContext) error {
-		if handleCtx.resp == nil {
-			return fmt.Errorf("no response info found for request ID %d", reqID)
-		}
 		err := modify(handleCtx.responseChangeSet)
 		if err != nil {
 			return fmt.Errorf("failed to modify response: %w", err)
@@ -318,8 +312,8 @@ type HandlerFunc func(c context.Context, mod api.Module, offset, size uint32) ui
 var wellKnownMethods map[string]Method
 
 func init() {
-	wellKnownMethods = make(map[string]Method, int(Method_Other))
-	for i := 0; i < int(Method_Other); i++ {
+	wellKnownMethods = make(map[string]Method, int(Method_WellKnownMax))
+	for i := 0; i < int(Method_WellKnownMax); i++ {
 		method := Method(i)
 		wellKnownMethods[method.String()] = method
 	}

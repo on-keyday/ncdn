@@ -175,6 +175,7 @@ impl Method  {
     pub const CONNECT:Self = Self(7);
     pub const PRI:Self = Self(8);
     pub const TRACE:Self = Self(9);
+    pub const WELL_KNOWN_MAX:Self = Self(10);
     pub const OTHER:Self = Self(255);
 }
 impl std::fmt::Display for Method {
@@ -190,6 +191,7 @@ impl std::fmt::Display for Method {
             Method::CONNECT => write!(f, "{}", "CONNECT"),
             Method::PRI => write!(f, "{}", "PRI"),
             Method::TRACE => write!(f, "{}", "TRACE"),
+            Method::WELL_KNOWN_MAX => write!(f, "{}", "WELL_KNOWN_MAX"),
             Method::OTHER => write!(f, "{}", "OTHER"),
             _ => write!(f, "Method({})",self.0),
         }
@@ -208,6 +210,7 @@ impl std::convert::From<Method> for std::option::Option<&str> {
             Method::CONNECT => Some("CONNECT"),
             Method::PRI => Some("PRI"),
             Method::TRACE => Some("TRACE"),
+            Method::WELL_KNOWN_MAX => Some("WELL_KNOWN_MAX"),
             Method::OTHER => Some("OTHER"),
             _ =>  None,
         }
@@ -226,6 +229,7 @@ impl Method {
             Method::CONNECT => true,
             Method::PRI => true,
             Method::TRACE => true,
+            Method::WELL_KNOWN_MAX => true,
             Method::OTHER => true,
             _ => false,
         }
@@ -442,99 +446,99 @@ enum Variant32<'a> {
     Variant33(Variant33<'a>),
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-struct Variant81<'a> {
+struct Variant83<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
     pub len: u8,
     pub method_name: std::borrow::Cow<'a,[u8]>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-enum Variant80<'a> {
+enum Variant82<'a> {
     #[default]
     None,
-    Variant81(Variant81<'a>),
+    Variant83(Variant83<'a>),
 }
 impl <'a>Address<'a> {
     pub fn is_v6(&self) -> bool {
-        ((self.field_119>>7) & 1) as u8 != 0}
+        ((self.field_121>>7) & 1) as u8 != 0}
     pub fn set_is_v6(&mut self, value: bool) -> bool {
-        self.field_119 = self.field_119& !(1<< 7) | ((if value {1} else {0} as u8) << 7);
+        self.field_121 = self.field_121& !(1<< 7) | ((if value {1} else {0} as u8) << 7);
         true
     }
 }
 impl <'a>Address<'a> {
     pub fn reserved(&self) -> u8 {
-        ((self.field_119>>0) & 127) as u8}
+        ((self.field_121>>0) & 127) as u8}
     pub fn set_reserved(&mut self, value: u8) -> bool {
         if value > 127 {
         return false;
         }
-        self.field_119 = self.field_119& !(127<< 0) | ((value as u8) << 0);
+        self.field_121 = self.field_121& !(127<< 0) | ((value as u8) << 0);
         true
     }
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-struct Variant126<'a> {
+struct Variant128<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
     pub addr_v6: [u8; 16],
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-struct Variant129<'a> {
+struct Variant131<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
     pub addr_v4: [u8; 4],
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-enum Variant125<'a> {
+enum Variant127<'a> {
     #[default]
     None,
-    Variant126(Variant126<'a>),
-    Variant129(Variant129<'a>),
-}
-#[derive(Debug,Default, Clone, PartialEq, Eq)]
-struct Variant188<'a> {
-    pub _phantom: std::marker::PhantomData<&'a ()>,
-    pub header: Header<'a>,
+    Variant128(Variant128<'a>),
+    Variant131(Variant131<'a>),
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
 struct Variant190<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
-    pub field: Field<'a>,
+    pub header: Header<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-struct Variant193<'a> {
+struct Variant192<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
-    pub method: MethodInfo<'a>,
+    pub field: Field<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
 struct Variant195<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
-    pub path: PathInfo<'a>,
+    pub method: MethodInfo<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
 struct Variant197<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
-    pub status: u16,
+    pub path: PathInfo<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
 struct Variant199<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
+    pub status: u16,
+}
+#[derive(Debug,Default, Clone, PartialEq, Eq)]
+struct Variant201<'a> {
+    pub _phantom: std::marker::PhantomData<&'a ()>,
     pub body: Body<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-struct Variant202<'a> {
+struct Variant204<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
     pub routing: Routing,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
-enum Variant187<'a> {
+enum Variant189<'a> {
     #[default]
     None,
-    Variant188(Variant188<'a>),
     Variant190(Variant190<'a>),
-    Variant193(Variant193<'a>),
+    Variant192(Variant192<'a>),
     Variant195(Variant195<'a>),
     Variant197(Variant197<'a>),
     Variant199(Variant199<'a>),
-    Variant202(Variant202<'a>),
+    Variant201(Variant201<'a>),
+    Variant204(Variant204<'a>),
 }
 /* Unimplemented op: IMMEDIATE_STRING */
 /* Unimplemented op: METADATA */
@@ -552,7 +556,7 @@ pub struct MethodInfo<'a> {
     /* Unimplemented op: DEFINE_ENCODER */
     /* Unimplemented op: DEFINE_DECODER */
     pub method: Method,
-    pub field79: Variant80<'a>,
+    pub field81: Variant82<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
 pub struct String<'a> {
@@ -576,11 +580,11 @@ pub struct Address<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
     /* Unimplemented op: DEFINE_ENCODER */
     /* Unimplemented op: DEFINE_DECODER */
-    field_119 :u8,/*is_v6 :1*/
+    field_121 :u8,/*is_v6 :1*/
     /*reserved :7*/
     
     
-    pub field124: Variant125<'a>,
+    pub field126: Variant127<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
 pub struct Field<'a> {
@@ -622,7 +626,7 @@ pub struct DiffData<'a> {
     /* Unimplemented op: DEFINE_DECODER */
     pub diff_type: DiffDataType,
     pub kind: DiffKind,
-    pub field186: Variant187<'a>,
+    pub field188: Variant189<'a>,
 }
 #[derive(Debug,Default, Clone, PartialEq, Eq)]
 pub struct ChangeSet<'a> {
@@ -669,19 +673,19 @@ impl <'a>ProtocolInfo<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp777 = <[u8; 1]>::default();
-        (tmp777)[0 as usize] = u8::from(self.protocol);
-        w.write_all(&tmp777[0..1 as usize]).map_err(|e| Error::EncodeError("ProtocolInfo::protocol",e))?;
+        let mut tmp779 = <[u8; 1]>::default();
+        (tmp779)[0 as usize] = u8::from(self.protocol);
+        w.write_all(&tmp779[0..1 as usize]).map_err(|e| Error::EncodeError("ProtocolInfo::protocol",e))?;
         if (self.protocol == Protocol::other) {
             if !matches!(self.field31,Variant32::Variant33(_)) {
                 return Err(Error::InvalidUnionVariant("Variant32::Variant33"));
             }
-            let mut tmp782 = <[u8; 1]>::default();
-            (tmp782)[0 as usize] = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
-            w.write_all(&tmp782[0..1 as usize]).map_err(|e| Error::EncodeError("ProtocolInfo::Variant32::Variant33::len",e))?;
-            let mut tmp351 = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
-            if match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.len() != tmp351 as usize {
-            return Err(Error::ArrayLengthMismatch("encode ProtocolInfo::Variant32::Variant33::protocol_name", tmp351 as usize, match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.len()));
+            let mut tmp784 = <[u8; 1]>::default();
+            (tmp784)[0 as usize] = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
+            w.write_all(&tmp784[0..1 as usize]).map_err(|e| Error::EncodeError("ProtocolInfo::Variant32::Variant33::len",e))?;
+            let mut tmp353 = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
+            if match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.len() != tmp353 as usize {
+            return Err(Error::ArrayLengthMismatch("encode ProtocolInfo::Variant32::Variant33::protocol_name", tmp353 as usize, match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.len()));
             }
             w.write_all(&match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name[0..match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.len() as usize]).map_err(|e| Error::EncodeError("ProtocolInfo::Variant32::Variant33::protocol_name",e))?;
         }
@@ -711,21 +715,21 @@ impl <'a>MethodInfo<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp787 = <[u8; 1]>::default();
-        (tmp787)[0 as usize] = u8::from(self.method);
-        w.write_all(&tmp787[0..1 as usize]).map_err(|e| Error::EncodeError("MethodInfo::method",e))?;
+        let mut tmp789 = <[u8; 1]>::default();
+        (tmp789)[0 as usize] = u8::from(self.method);
+        w.write_all(&tmp789[0..1 as usize]).map_err(|e| Error::EncodeError("MethodInfo::method",e))?;
         if (self.method == Method::OTHER) {
-            if !matches!(self.field79,Variant80::Variant81(_)) {
-                return Err(Error::InvalidUnionVariant("Variant80::Variant81"));
+            if !matches!(self.field81,Variant82::Variant83(_)) {
+                return Err(Error::InvalidUnionVariant("Variant82::Variant83"));
             }
-            let mut tmp792 = <[u8; 1]>::default();
-            (tmp792)[0 as usize] = match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len;
-            w.write_all(&tmp792[0..1 as usize]).map_err(|e| Error::EncodeError("MethodInfo::Variant80::Variant81::len",e))?;
-            let mut tmp359 = match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len;
-            if match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name.len() != tmp359 as usize {
-            return Err(Error::ArrayLengthMismatch("encode MethodInfo::Variant80::Variant81::method_name", tmp359 as usize, match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name.len()));
+            let mut tmp794 = <[u8; 1]>::default();
+            (tmp794)[0 as usize] = match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len;
+            w.write_all(&tmp794[0..1 as usize]).map_err(|e| Error::EncodeError("MethodInfo::Variant82::Variant83::len",e))?;
+            let mut tmp361 = match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len;
+            if match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name.len() != tmp361 as usize {
+            return Err(Error::ArrayLengthMismatch("encode MethodInfo::Variant82::Variant83::method_name", tmp361 as usize, match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name.len()));
             }
-            w.write_all(&match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name[0..match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name.len() as usize]).map_err(|e| Error::EncodeError("MethodInfo::Variant80::Variant81::method_name",e))?;
+            w.write_all(&match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name[0..match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name.len() as usize]).map_err(|e| Error::EncodeError("MethodInfo::Variant82::Variant83::method_name",e))?;
         }
         return Ok(());
     }
@@ -751,17 +755,17 @@ impl <'a>PathInfo<'a> {
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
         self.path.encode(w)?;
-        let mut tmp797 = <[u8; 1]>::default();
-        (tmp797)[0 as usize] = self.query_len;
-        w.write_all(&tmp797[0..1 as usize]).map_err(|e| Error::EncodeError("PathInfo::query_len",e))?;
-        let mut tmp362 = self.query_len;
-        if self.query.len() != tmp362 as usize {
-        return Err(Error::ArrayLengthMismatch("encode PathInfo::query", tmp362 as usize, self.query.len()));
+        let mut tmp799 = <[u8; 1]>::default();
+        (tmp799)[0 as usize] = self.query_len;
+        w.write_all(&tmp799[0..1 as usize]).map_err(|e| Error::EncodeError("PathInfo::query_len",e))?;
+        let mut tmp364 = self.query_len;
+        if self.query.len() != tmp364 as usize {
+        return Err(Error::ArrayLengthMismatch("encode PathInfo::query", tmp364 as usize, self.query.len()));
         }
-        let mut tmp363 = 0;
-        while((tmp363 < self.query.len())) {
-            (self.query)[tmp363 as usize].encode(w)?;
-            tmp363+= 1;
+        let mut tmp365 = 0;
+        while((tmp365 < self.query.len())) {
+            (self.query)[tmp365 as usize].encode(w)?;
+            tmp365+= 1;
         }
         return Ok(());
     }
@@ -786,16 +790,16 @@ impl <'a>String<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp803 = <[u8; 2]>::default();
-        let mut tmp804 = 0;
-        while((tmp804 < 2)) {
-            (tmp803)[tmp804 as usize] = (((self.len >> (tmp804 * 8)) & 255) as u8);
-            tmp804+= 1;
+        let mut tmp805 = <[u8; 2]>::default();
+        let mut tmp806 = 0;
+        while((tmp806 < 2)) {
+            (tmp805)[tmp806 as usize] = (((self.len >> (tmp806 * 8)) & 255) as u8);
+            tmp806+= 1;
         }
-        w.write_all(&tmp803[0..2 as usize]).map_err(|e| Error::EncodeError("String::len",e))?;
-        let mut tmp368 = self.len;
-        if self.data.len() != tmp368 as usize {
-        return Err(Error::ArrayLengthMismatch("encode String::data", tmp368 as usize, self.data.len()));
+        w.write_all(&tmp805[0..2 as usize]).map_err(|e| Error::EncodeError("String::len",e))?;
+        let mut tmp370 = self.len;
+        if self.data.len() != tmp370 as usize {
+        return Err(Error::ArrayLengthMismatch("encode String::data", tmp370 as usize, self.data.len()));
         }
         w.write_all(&self.data[0..self.data.len() as usize]).map_err(|e| Error::EncodeError("String::data",e))?;
         return Ok(());
@@ -844,21 +848,21 @@ impl <'a>Header<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp814 = <[u8; 2]>::default();
-        let mut tmp815 = 0;
-        while((tmp815 < 2)) {
-            (tmp814)[tmp815 as usize] = (((self.len >> (tmp815 * 8)) & 255) as u8);
-            tmp815+= 1;
+        let mut tmp816 = <[u8; 2]>::default();
+        let mut tmp817 = 0;
+        while((tmp817 < 2)) {
+            (tmp816)[tmp817 as usize] = (((self.len >> (tmp817 * 8)) & 255) as u8);
+            tmp817+= 1;
         }
-        w.write_all(&tmp814[0..2 as usize]).map_err(|e| Error::EncodeError("Header::len",e))?;
-        let mut tmp372 = self.len;
-        if self.fields.len() != tmp372 as usize {
-        return Err(Error::ArrayLengthMismatch("encode Header::fields", tmp372 as usize, self.fields.len()));
+        w.write_all(&tmp816[0..2 as usize]).map_err(|e| Error::EncodeError("Header::len",e))?;
+        let mut tmp374 = self.len;
+        if self.fields.len() != tmp374 as usize {
+        return Err(Error::ArrayLengthMismatch("encode Header::fields", tmp374 as usize, self.fields.len()));
         }
-        let mut tmp373 = 0;
-        while((tmp373 < self.fields.len())) {
-            (self.fields)[tmp373 as usize].encode(w)?;
-            tmp373+= 1;
+        let mut tmp375 = 0;
+        while((tmp375 < self.fields.len())) {
+            (self.fields)[tmp375 as usize].encode(w)?;
+            tmp375+= 1;
         }
         return Ok(());
     }
@@ -885,23 +889,23 @@ impl <'a>Body<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp825 = <[u8; 4]>::default();
-        let mut tmp826 = 0;
-        while((tmp826 < 4)) {
-            (tmp825)[tmp826 as usize] = (((self.offset >> (tmp826 * 8)) & 255) as u8);
-            tmp826+= 1;
+        let mut tmp827 = <[u8; 4]>::default();
+        let mut tmp828 = 0;
+        while((tmp828 < 4)) {
+            (tmp827)[tmp828 as usize] = (((self.offset >> (tmp828 * 8)) & 255) as u8);
+            tmp828+= 1;
         }
-        w.write_all(&tmp825[0..4 as usize]).map_err(|e| Error::EncodeError("Body::offset",e))?;
-        let mut tmp836 = <[u8; 4]>::default();
-        let mut tmp837 = 0;
-        while((tmp837 < 4)) {
-            (tmp836)[tmp837 as usize] = (((self.len >> (tmp837 * 8)) & 255) as u8);
-            tmp837+= 1;
+        w.write_all(&tmp827[0..4 as usize]).map_err(|e| Error::EncodeError("Body::offset",e))?;
+        let mut tmp838 = <[u8; 4]>::default();
+        let mut tmp839 = 0;
+        while((tmp839 < 4)) {
+            (tmp838)[tmp839 as usize] = (((self.len >> (tmp839 * 8)) & 255) as u8);
+            tmp839+= 1;
         }
-        w.write_all(&tmp836[0..4 as usize]).map_err(|e| Error::EncodeError("Body::len",e))?;
-        let mut tmp378 = self.len;
-        if self.body.len() != tmp378 as usize {
-        return Err(Error::ArrayLengthMismatch("encode Body::body", tmp378 as usize, self.body.len()));
+        w.write_all(&tmp838[0..4 as usize]).map_err(|e| Error::EncodeError("Body::len",e))?;
+        let mut tmp380 = self.len;
+        if self.body.len() != tmp380 as usize {
+        return Err(Error::ArrayLengthMismatch("encode Body::body", tmp380 as usize, self.body.len()));
         }
         w.write_all(&self.body[0..self.body.len() as usize]).map_err(|e| Error::EncodeError("Body::body",e))?;
         return Ok(());
@@ -936,25 +940,25 @@ impl <'a>Address<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp735 = <u8>::default();
-        let mut tmp737 = 0;
-        tmp735 = (tmp735 | ((if self.is_v6() {1} else {0} & 1) << tmp737));
-        tmp737 = (tmp737 + 1);
-        tmp735 = (tmp735 | (((self.reserved() as u8) & 127) << tmp737));
-        tmp737 = (tmp737 + 7);
-        let mut tmp1067 = <[u8; 1]>::default();
-        (tmp1067)[0 as usize] = tmp735;
-        w.write_all(&tmp1067[0..1 as usize]).map_err(|e| Error::EncodeError("Address::bit_field_is_v6_reserved",e))?;
+        let mut tmp737 = <u8>::default();
+        let mut tmp739 = 0;
+        tmp737 = (tmp737 | ((if self.is_v6() {1} else {0} & 1) << tmp739));
+        tmp739 = (tmp739 + 1);
+        tmp737 = (tmp737 | (((self.reserved() as u8) & 127) << tmp739));
+        tmp739 = (tmp739 + 7);
+        let mut tmp1069 = <[u8; 1]>::default();
+        (tmp1069)[0 as usize] = tmp737;
+        w.write_all(&tmp1069[0..1 as usize]).map_err(|e| Error::EncodeError("Address::bit_field_is_v6_reserved",e))?;
         if (if self.is_v6() {1} else {0} == 1) {
-            if !matches!(self.field124,Variant125::Variant126(_)) {
-                return Err(Error::InvalidUnionVariant("Variant125::Variant126"));
+            if !matches!(self.field126,Variant127::Variant128(_)) {
+                return Err(Error::InvalidUnionVariant("Variant127::Variant128"));
             }
-            w.write_all(&match &self.field124 {  Variant125::Variant126(x) => x, _ => unreachable!() }.addr_v6[0..16 as usize]).map_err(|e| Error::EncodeError("Address::Variant125::Variant126::addr_v6",e))?;
+            w.write_all(&match &self.field126 {  Variant127::Variant128(x) => x, _ => unreachable!() }.addr_v6[0..16 as usize]).map_err(|e| Error::EncodeError("Address::Variant127::Variant128::addr_v6",e))?;
         } else {
-            if !matches!(self.field124,Variant125::Variant129(_)) {
-                return Err(Error::InvalidUnionVariant("Variant125::Variant129"));
+            if !matches!(self.field126,Variant127::Variant131(_)) {
+                return Err(Error::InvalidUnionVariant("Variant127::Variant131"));
             }
-            w.write_all(&match &self.field124 {  Variant125::Variant129(x) => x, _ => unreachable!() }.addr_v4[0..4 as usize]).map_err(|e| Error::EncodeError("Address::Variant125::Variant129::addr_v4",e))?;
+            w.write_all(&match &self.field126 {  Variant127::Variant131(x) => x, _ => unreachable!() }.addr_v4[0..4 as usize]).map_err(|e| Error::EncodeError("Address::Variant127::Variant131::addr_v4",e))?;
         }
         return Ok(());
     }
@@ -983,29 +987,29 @@ impl <'a>RequestInfo<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp847 = <[u8; 4]>::default();
-        let mut tmp848 = 0;
-        while((tmp848 < 4)) {
-            (tmp847)[tmp848 as usize] = (((self.popID >> (tmp848 * 8)) & 255) as u8);
-            tmp848+= 1;
+        let mut tmp849 = <[u8; 4]>::default();
+        let mut tmp850 = 0;
+        while((tmp850 < 4)) {
+            (tmp849)[tmp850 as usize] = (((self.popID >> (tmp850 * 8)) & 255) as u8);
+            tmp850+= 1;
         }
-        w.write_all(&tmp847[0..4 as usize]).map_err(|e| Error::EncodeError("RequestInfo::popID",e))?;
-        let mut tmp859 = <[u8; 8]>::default();
-        let mut tmp860 = 0;
-        while((tmp860 < 8)) {
-            (tmp859)[tmp860 as usize] = (((self.reqID >> (tmp860 * 8)) & 255) as u8);
-            tmp860+= 1;
+        w.write_all(&tmp849[0..4 as usize]).map_err(|e| Error::EncodeError("RequestInfo::popID",e))?;
+        let mut tmp861 = <[u8; 8]>::default();
+        let mut tmp862 = 0;
+        while((tmp862 < 8)) {
+            (tmp861)[tmp862 as usize] = (((self.reqID >> (tmp862 * 8)) & 255) as u8);
+            tmp862+= 1;
         }
-        w.write_all(&tmp859[0..8 as usize]).map_err(|e| Error::EncodeError("RequestInfo::reqID",e))?;
+        w.write_all(&tmp861[0..8 as usize]).map_err(|e| Error::EncodeError("RequestInfo::reqID",e))?;
         self.protocol.encode(w)?;
         self.remoteAddr.encode(w)?;
-        let mut tmp870 = <[u8; 2]>::default();
-        let mut tmp871 = 0;
-        while((tmp871 < 2)) {
-            (tmp870)[tmp871 as usize] = (((self.remotePort >> (tmp871 * 8)) & 255) as u8);
-            tmp871+= 1;
+        let mut tmp872 = <[u8; 2]>::default();
+        let mut tmp873 = 0;
+        while((tmp873 < 2)) {
+            (tmp872)[tmp873 as usize] = (((self.remotePort >> (tmp873 * 8)) & 255) as u8);
+            tmp873+= 1;
         }
-        w.write_all(&tmp870[0..2 as usize]).map_err(|e| Error::EncodeError("RequestInfo::remotePort",e))?;
+        w.write_all(&tmp872[0..2 as usize]).map_err(|e| Error::EncodeError("RequestInfo::remotePort",e))?;
         self.method.encode(w)?;
         self.path.encode(w)?;
         self.header.encode(w)?;
@@ -1032,13 +1036,13 @@ impl <'a>ResponseInfo<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp881 = <[u8; 2]>::default();
-        let mut tmp882 = 0;
-        while((tmp882 < 2)) {
-            (tmp881)[tmp882 as usize] = (((self.status >> (tmp882 * 8)) & 255) as u8);
-            tmp882+= 1;
+        let mut tmp883 = <[u8; 2]>::default();
+        let mut tmp884 = 0;
+        while((tmp884 < 2)) {
+            (tmp883)[tmp884 as usize] = (((self.status >> (tmp884 * 8)) & 255) as u8);
+            tmp884+= 1;
         }
-        w.write_all(&tmp881[0..2 as usize]).map_err(|e| Error::EncodeError("ResponseInfo::status",e))?;
+        w.write_all(&tmp883[0..2 as usize]).map_err(|e| Error::EncodeError("ResponseInfo::status",e))?;
         self.header.encode(w)?;
         return Ok(());
     }
@@ -1076,56 +1080,56 @@ impl <'a>DiffData<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp892 = <[u8; 1]>::default();
-        (tmp892)[0 as usize] = u8::from(self.diff_type);
-        w.write_all(&tmp892[0..1 as usize]).map_err(|e| Error::EncodeError("DiffData::diff_type",e))?;
-        let mut tmp897 = <[u8; 1]>::default();
-        (tmp897)[0 as usize] = u8::from(self.kind);
-        w.write_all(&tmp897[0..1 as usize]).map_err(|e| Error::EncodeError("DiffData::kind",e))?;
-        let mut tmp389 = self.diff_type;
-        if (tmp389 == DiffDataType::header) {
-            if !matches!(self.field186,Variant187::Variant188(_)) {
-                return Err(Error::InvalidUnionVariant("Variant187::Variant188"));
+        let mut tmp894 = <[u8; 1]>::default();
+        (tmp894)[0 as usize] = u8::from(self.diff_type);
+        w.write_all(&tmp894[0..1 as usize]).map_err(|e| Error::EncodeError("DiffData::diff_type",e))?;
+        let mut tmp899 = <[u8; 1]>::default();
+        (tmp899)[0 as usize] = u8::from(self.kind);
+        w.write_all(&tmp899[0..1 as usize]).map_err(|e| Error::EncodeError("DiffData::kind",e))?;
+        let mut tmp391 = self.diff_type;
+        if (tmp391 == DiffDataType::header) {
+            if !matches!(self.field188,Variant189::Variant190(_)) {
+                return Err(Error::InvalidUnionVariant("Variant189::Variant190"));
             }
-            match &self.field186 {  Variant187::Variant188(x) => x, _ => unreachable!() }.header.encode(w)?;
-        } else if((tmp389 == DiffDataType::field)) {
-            if !matches!(self.field186,Variant187::Variant190(_)) {
-                return Err(Error::InvalidUnionVariant("Variant187::Variant190"));
+            match &self.field188 {  Variant189::Variant190(x) => x, _ => unreachable!() }.header.encode(w)?;
+        } else if((tmp391 == DiffDataType::field)) {
+            if !matches!(self.field188,Variant189::Variant192(_)) {
+                return Err(Error::InvalidUnionVariant("Variant189::Variant192"));
             }
-            match &self.field186 {  Variant187::Variant190(x) => x, _ => unreachable!() }.field.encode(w)?;
-        } else if((tmp389 == DiffDataType::method)) {
-            if !matches!(self.field186,Variant187::Variant193(_)) {
-                return Err(Error::InvalidUnionVariant("Variant187::Variant193"));
+            match &self.field188 {  Variant189::Variant192(x) => x, _ => unreachable!() }.field.encode(w)?;
+        } else if((tmp391 == DiffDataType::method)) {
+            if !matches!(self.field188,Variant189::Variant195(_)) {
+                return Err(Error::InvalidUnionVariant("Variant189::Variant195"));
             }
-            match &self.field186 {  Variant187::Variant193(x) => x, _ => unreachable!() }.method.encode(w)?;
-        } else if((tmp389 == DiffDataType::path)) {
-            if !matches!(self.field186,Variant187::Variant195(_)) {
-                return Err(Error::InvalidUnionVariant("Variant187::Variant195"));
+            match &self.field188 {  Variant189::Variant195(x) => x, _ => unreachable!() }.method.encode(w)?;
+        } else if((tmp391 == DiffDataType::path)) {
+            if !matches!(self.field188,Variant189::Variant197(_)) {
+                return Err(Error::InvalidUnionVariant("Variant189::Variant197"));
             }
-            match &self.field186 {  Variant187::Variant195(x) => x, _ => unreachable!() }.path.encode(w)?;
-        } else if((tmp389 == DiffDataType::status)) {
-            if !matches!(self.field186,Variant187::Variant197(_)) {
-                return Err(Error::InvalidUnionVariant("Variant187::Variant197"));
+            match &self.field188 {  Variant189::Variant197(x) => x, _ => unreachable!() }.path.encode(w)?;
+        } else if((tmp391 == DiffDataType::status)) {
+            if !matches!(self.field188,Variant189::Variant199(_)) {
+                return Err(Error::InvalidUnionVariant("Variant189::Variant199"));
             }
-            let mut tmp902 = <[u8; 2]>::default();
-            let mut tmp903 = 0;
-            while((tmp903 < 2)) {
-                (tmp902)[tmp903 as usize] = (((match &self.field186 {  Variant187::Variant197(x) => x, _ => unreachable!() }.status >> (tmp903 * 8)) & 255) as u8);
-                tmp903+= 1;
+            let mut tmp904 = <[u8; 2]>::default();
+            let mut tmp905 = 0;
+            while((tmp905 < 2)) {
+                (tmp904)[tmp905 as usize] = (((match &self.field188 {  Variant189::Variant199(x) => x, _ => unreachable!() }.status >> (tmp905 * 8)) & 255) as u8);
+                tmp905+= 1;
             }
-            w.write_all(&tmp902[0..2 as usize]).map_err(|e| Error::EncodeError("DiffData::Variant187::Variant197::status",e))?;
-        } else if((tmp389 == DiffDataType::body)) {
-            if !matches!(self.field186,Variant187::Variant199(_)) {
-                return Err(Error::InvalidUnionVariant("Variant187::Variant199"));
+            w.write_all(&tmp904[0..2 as usize]).map_err(|e| Error::EncodeError("DiffData::Variant189::Variant199::status",e))?;
+        } else if((tmp391 == DiffDataType::body)) {
+            if !matches!(self.field188,Variant189::Variant201(_)) {
+                return Err(Error::InvalidUnionVariant("Variant189::Variant201"));
             }
-            match &self.field186 {  Variant187::Variant199(x) => x, _ => unreachable!() }.body.encode(w)?;
-        } else if((tmp389 == DiffDataType::routing)) {
-            if !matches!(self.field186,Variant187::Variant202(_)) {
-                return Err(Error::InvalidUnionVariant("Variant187::Variant202"));
+            match &self.field188 {  Variant189::Variant201(x) => x, _ => unreachable!() }.body.encode(w)?;
+        } else if((tmp391 == DiffDataType::routing)) {
+            if !matches!(self.field188,Variant189::Variant204(_)) {
+                return Err(Error::InvalidUnionVariant("Variant189::Variant204"));
             }
-            let mut tmp913 = <[u8; 1]>::default();
-            (tmp913)[0 as usize] = u8::from(match &self.field186 {  Variant187::Variant202(x) => x, _ => unreachable!() }.routing);
-            w.write_all(&tmp913[0..1 as usize]).map_err(|e| Error::EncodeError("DiffData::Variant187::Variant202::routing",e))?;
+            let mut tmp915 = <[u8; 1]>::default();
+            (tmp915)[0 as usize] = u8::from(match &self.field188 {  Variant189::Variant204(x) => x, _ => unreachable!() }.routing);
+            w.write_all(&tmp915[0..1 as usize]).map_err(|e| Error::EncodeError("DiffData::Variant189::Variant204::routing",e))?;
         }
         return Ok(());
     }
@@ -1150,17 +1154,17 @@ impl <'a>ChangeSet<'a> {
         Ok(&data[0..written])
     }
     pub fn encode<W: std::io::Write>(&self, w :&mut W) -> std::result::Result<(), Error> {
-        let mut tmp918 = <[u8; 1]>::default();
-        (tmp918)[0 as usize] = self.len;
-        w.write_all(&tmp918[0..1 as usize]).map_err(|e| Error::EncodeError("ChangeSet::len",e))?;
-        let mut tmp421 = self.len;
-        if self.diff.len() != tmp421 as usize {
-        return Err(Error::ArrayLengthMismatch("encode ChangeSet::diff", tmp421 as usize, self.diff.len()));
+        let mut tmp920 = <[u8; 1]>::default();
+        (tmp920)[0 as usize] = self.len;
+        w.write_all(&tmp920[0..1 as usize]).map_err(|e| Error::EncodeError("ChangeSet::len",e))?;
+        let mut tmp423 = self.len;
+        if self.diff.len() != tmp423 as usize {
+        return Err(Error::ArrayLengthMismatch("encode ChangeSet::diff", tmp423 as usize, self.diff.len()));
         }
-        let mut tmp422 = 0;
-        while((tmp422 < self.diff.len())) {
-            (self.diff)[tmp422 as usize].encode(w)?;
-            tmp422+= 1;
+        let mut tmp424 = 0;
+        while((tmp424 < self.diff.len())) {
+            (self.diff)[tmp424 as usize].encode(w)?;
+            tmp424+= 1;
         }
         return Ok(());
     }
@@ -1194,20 +1198,20 @@ impl <'a>ProtocolInfo<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp427 = <u8>::default();
-        let mut tmp923 = <[u8; 1]>::default();
-        r.read_exact(&mut tmp923[0..1 as usize]).map_err(|e| Error::DecodeError("ProtocolInfo::protocol",e))?;
-        tmp427 = (tmp923)[0 as usize];
-        self.protocol = Protocol::from(tmp427);
+        let mut tmp429 = <u8>::default();
+        let mut tmp925 = <[u8; 1]>::default();
+        r.read_exact(&mut tmp925[0..1 as usize]).map_err(|e| Error::DecodeError("ProtocolInfo::protocol",e))?;
+        tmp429 = (tmp925)[0 as usize];
+        self.protocol = Protocol::from(tmp429);
         if (self.protocol == Protocol::other) {
             if !matches!(self.field31,Variant32::Variant33(_)) {
                 self.field31 = Variant32::Variant33(Variant33::default());
             }
-            let mut tmp928 = <[u8; 1]>::default();
-            r.read_exact(&mut tmp928[0..1 as usize]).map_err(|e| Error::DecodeError("ProtocolInfo::Variant32::Variant33::len",e))?;
-            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = (tmp928)[0 as usize];
-            let mut tmp434 = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
-            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.to_mut().resize(tmp434 as usize,0);
+            let mut tmp930 = <[u8; 1]>::default();
+            r.read_exact(&mut tmp930[0..1 as usize]).map_err(|e| Error::DecodeError("ProtocolInfo::Variant32::Variant33::len",e))?;
+            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = (tmp930)[0 as usize];
+            let mut tmp436 = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
+            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.to_mut().resize(tmp436 as usize,0);
             r.read_exact(match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name.to_mut()).map_err(|e| Error::DecodeError("ProtocolInfo::Variant32::Variant33::protocol_name",e))?;
         }
         return Ok(());
@@ -1229,32 +1233,32 @@ impl <'a>ProtocolInfo<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp427 = <u8>::default();
-        let mut tmp923 = <[u8; 1]>::default();
+        let mut tmp429 = <u8>::default();
+        let mut tmp925 = <[u8; 1]>::default();
         if *offset + 1 as usize > r.len() {
         return Err(Error::DecodeError("ProtocolInfo::protocol",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp923.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+        tmp925.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
         *offset += 1 as usize;
-        tmp427 = (tmp923)[0 as usize];
-        self.protocol = Protocol::from(tmp427);
+        tmp429 = (tmp925)[0 as usize];
+        self.protocol = Protocol::from(tmp429);
         if (self.protocol == Protocol::other) {
             if !matches!(self.field31,Variant32::Variant33(_)) {
                 self.field31 = Variant32::Variant33(Variant33::default());
             }
-            let mut tmp928 = <[u8; 1]>::default();
+            let mut tmp930 = <[u8; 1]>::default();
             if *offset + 1 as usize > r.len() {
             return Err(Error::DecodeError("ProtocolInfo::Variant32::Variant33::len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            tmp928.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+            tmp930.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
             *offset += 1 as usize;
-            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = (tmp928)[0 as usize];
-            let mut tmp434 = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
-            if *offset + tmp434 as usize > r.len() {
+            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = (tmp930)[0 as usize];
+            let mut tmp436 = match &self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len;
+            if *offset + tmp436 as usize > r.len() {
             return Err(Error::DecodeError("ProtocolInfo::Variant32::Variant33::protocol_name",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp434 as usize)]);
-            *offset += tmp434 as usize;
+            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp436 as usize)]);
+            *offset += tmp436 as usize;
         }
         return Ok(());
     }
@@ -1288,21 +1292,21 @@ impl <'a>MethodInfo<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp437 = <u8>::default();
-        let mut tmp933 = <[u8; 1]>::default();
-        r.read_exact(&mut tmp933[0..1 as usize]).map_err(|e| Error::DecodeError("MethodInfo::method",e))?;
-        tmp437 = (tmp933)[0 as usize];
-        self.method = Method::from(tmp437);
+        let mut tmp439 = <u8>::default();
+        let mut tmp935 = <[u8; 1]>::default();
+        r.read_exact(&mut tmp935[0..1 as usize]).map_err(|e| Error::DecodeError("MethodInfo::method",e))?;
+        tmp439 = (tmp935)[0 as usize];
+        self.method = Method::from(tmp439);
         if (self.method == Method::OTHER) {
-            if !matches!(self.field79,Variant80::Variant81(_)) {
-                self.field79 = Variant80::Variant81(Variant81::default());
+            if !matches!(self.field81,Variant82::Variant83(_)) {
+                self.field81 = Variant82::Variant83(Variant83::default());
             }
-            let mut tmp938 = <[u8; 1]>::default();
-            r.read_exact(&mut tmp938[0..1 as usize]).map_err(|e| Error::DecodeError("MethodInfo::Variant80::Variant81::len",e))?;
-            match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len = (tmp938)[0 as usize];
-            let mut tmp444 = match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len;
-            match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name.to_mut().resize(tmp444 as usize,0);
-            r.read_exact(match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name.to_mut()).map_err(|e| Error::DecodeError("MethodInfo::Variant80::Variant81::method_name",e))?;
+            let mut tmp940 = <[u8; 1]>::default();
+            r.read_exact(&mut tmp940[0..1 as usize]).map_err(|e| Error::DecodeError("MethodInfo::Variant82::Variant83::len",e))?;
+            match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len = (tmp940)[0 as usize];
+            let mut tmp446 = match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len;
+            match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name.to_mut().resize(tmp446 as usize,0);
+            r.read_exact(match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name.to_mut()).map_err(|e| Error::DecodeError("MethodInfo::Variant82::Variant83::method_name",e))?;
         }
         return Ok(());
     }
@@ -1323,32 +1327,32 @@ impl <'a>MethodInfo<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp437 = <u8>::default();
-        let mut tmp933 = <[u8; 1]>::default();
+        let mut tmp439 = <u8>::default();
+        let mut tmp935 = <[u8; 1]>::default();
         if *offset + 1 as usize > r.len() {
         return Err(Error::DecodeError("MethodInfo::method",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp933.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+        tmp935.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
         *offset += 1 as usize;
-        tmp437 = (tmp933)[0 as usize];
-        self.method = Method::from(tmp437);
+        tmp439 = (tmp935)[0 as usize];
+        self.method = Method::from(tmp439);
         if (self.method == Method::OTHER) {
-            if !matches!(self.field79,Variant80::Variant81(_)) {
-                self.field79 = Variant80::Variant81(Variant81::default());
+            if !matches!(self.field81,Variant82::Variant83(_)) {
+                self.field81 = Variant82::Variant83(Variant83::default());
             }
-            let mut tmp938 = <[u8; 1]>::default();
+            let mut tmp940 = <[u8; 1]>::default();
             if *offset + 1 as usize > r.len() {
-            return Err(Error::DecodeError("MethodInfo::Variant80::Variant81::len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
+            return Err(Error::DecodeError("MethodInfo::Variant82::Variant83::len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            tmp938.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+            tmp940.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
             *offset += 1 as usize;
-            match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len = (tmp938)[0 as usize];
-            let mut tmp444 = match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len;
-            if *offset + tmp444 as usize > r.len() {
-            return Err(Error::DecodeError("MethodInfo::Variant80::Variant81::method_name",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
+            match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len = (tmp940)[0 as usize];
+            let mut tmp446 = match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len;
+            if *offset + tmp446 as usize > r.len() {
+            return Err(Error::DecodeError("MethodInfo::Variant82::Variant83::method_name",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp444 as usize)]);
-            *offset += tmp444 as usize;
+            match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp446 as usize)]);
+            *offset += tmp446 as usize;
         }
         return Ok(());
     }
@@ -1379,16 +1383,16 @@ impl <'a>PathInfo<'a> {
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
         self.path.decode(r)?;
-        let mut tmp943 = <[u8; 1]>::default();
-        r.read_exact(&mut tmp943[0..1 as usize]).map_err(|e| Error::DecodeError("PathInfo::query_len",e))?;
-        self.query_len = (tmp943)[0 as usize];
-        let mut tmp446 = self.query_len;
-        let mut tmp447 = 0;
-        while((tmp447 < tmp446)) {
-            let mut tmp450 = <Field<'a>>::default();
-            tmp450.decode(r)?;
-            self.query.to_mut().push(tmp450);
-            tmp447+= 1;
+        let mut tmp945 = <[u8; 1]>::default();
+        r.read_exact(&mut tmp945[0..1 as usize]).map_err(|e| Error::DecodeError("PathInfo::query_len",e))?;
+        self.query_len = (tmp945)[0 as usize];
+        let mut tmp448 = self.query_len;
+        let mut tmp449 = 0;
+        while((tmp449 < tmp448)) {
+            let mut tmp452 = <Field<'a>>::default();
+            tmp452.decode(r)?;
+            self.query.to_mut().push(tmp452);
+            tmp449+= 1;
         }
         return Ok(());
     }
@@ -1410,20 +1414,20 @@ impl <'a>PathInfo<'a> {
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
         self.path.decode_direct(r, offset)?;
-        let mut tmp943 = <[u8; 1]>::default();
+        let mut tmp945 = <[u8; 1]>::default();
         if *offset + 1 as usize > r.len() {
         return Err(Error::DecodeError("PathInfo::query_len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp943.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+        tmp945.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
         *offset += 1 as usize;
-        self.query_len = (tmp943)[0 as usize];
-        let mut tmp446 = self.query_len;
-        let mut tmp447 = 0;
-        while((tmp447 < tmp446)) {
-            let mut tmp450 = <Field<'a>>::default();
-            tmp450.decode_direct(r, offset)?;
-            self.query.to_mut().push(tmp450);
-            tmp447+= 1;
+        self.query_len = (tmp945)[0 as usize];
+        let mut tmp448 = self.query_len;
+        let mut tmp449 = 0;
+        while((tmp449 < tmp448)) {
+            let mut tmp452 = <Field<'a>>::default();
+            tmp452.decode_direct(r, offset)?;
+            self.query.to_mut().push(tmp452);
+            tmp449+= 1;
         }
         return Ok(());
     }
@@ -1451,15 +1455,15 @@ impl <'a>String<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp948 = <[u8; 2]>::default();
-        r.read_exact(&mut tmp948[0..2 as usize]).map_err(|e| Error::DecodeError("String::len",e))?;
-        let mut tmp949 = 0;
-        while((tmp949 < 2)) {
-            self.len = (self.len | (((tmp948)[tmp949 as usize] as u16) << (tmp949 * 8)));
-            tmp949+= 1;
+        let mut tmp950 = <[u8; 2]>::default();
+        r.read_exact(&mut tmp950[0..2 as usize]).map_err(|e| Error::DecodeError("String::len",e))?;
+        let mut tmp951 = 0;
+        while((tmp951 < 2)) {
+            self.len = (self.len | (((tmp950)[tmp951 as usize] as u16) << (tmp951 * 8)));
+            tmp951+= 1;
         }
-        let mut tmp452 = self.len;
-        self.data.to_mut().resize(tmp452 as usize,0);
+        let mut tmp454 = self.len;
+        self.data.to_mut().resize(tmp454 as usize,0);
         r.read_exact(self.data.to_mut()).map_err(|e| Error::DecodeError("String::data",e))?;
         return Ok(());
     }
@@ -1480,23 +1484,23 @@ impl <'a>String<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp948 = <[u8; 2]>::default();
+        let mut tmp950 = <[u8; 2]>::default();
         if *offset + 2 as usize > r.len() {
         return Err(Error::DecodeError("String::len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp948.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
+        tmp950.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
         *offset += 2 as usize;
-        let mut tmp949 = 0;
-        while((tmp949 < 2)) {
-            self.len = (self.len | (((tmp948)[tmp949 as usize] as u16) << (tmp949 * 8)));
-            tmp949+= 1;
+        let mut tmp951 = 0;
+        while((tmp951 < 2)) {
+            self.len = (self.len | (((tmp950)[tmp951 as usize] as u16) << (tmp951 * 8)));
+            tmp951+= 1;
         }
-        let mut tmp452 = self.len;
-        if *offset + tmp452 as usize > r.len() {
+        let mut tmp454 = self.len;
+        if *offset + tmp454 as usize > r.len() {
         return Err(Error::DecodeError("String::data",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        self.data = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp452 as usize)]);
-        *offset += tmp452 as usize;
+        self.data = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp454 as usize)]);
+        *offset += tmp454 as usize;
         return Ok(());
     }
 }
@@ -1570,20 +1574,20 @@ impl <'a>Header<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp959 = <[u8; 2]>::default();
-        r.read_exact(&mut tmp959[0..2 as usize]).map_err(|e| Error::DecodeError("Header::len",e))?;
-        let mut tmp960 = 0;
-        while((tmp960 < 2)) {
-            self.len = (self.len | (((tmp959)[tmp960 as usize] as u16) << (tmp960 * 8)));
-            tmp960+= 1;
+        let mut tmp961 = <[u8; 2]>::default();
+        r.read_exact(&mut tmp961[0..2 as usize]).map_err(|e| Error::DecodeError("Header::len",e))?;
+        let mut tmp962 = 0;
+        while((tmp962 < 2)) {
+            self.len = (self.len | (((tmp961)[tmp962 as usize] as u16) << (tmp962 * 8)));
+            tmp962+= 1;
         }
-        let mut tmp455 = self.len;
-        let mut tmp456 = 0;
-        while((tmp456 < tmp455)) {
-            let mut tmp459 = <Field<'a>>::default();
-            tmp459.decode(r)?;
-            self.fields.to_mut().push(tmp459);
-            tmp456+= 1;
+        let mut tmp457 = self.len;
+        let mut tmp458 = 0;
+        while((tmp458 < tmp457)) {
+            let mut tmp461 = <Field<'a>>::default();
+            tmp461.decode(r)?;
+            self.fields.to_mut().push(tmp461);
+            tmp458+= 1;
         }
         return Ok(());
     }
@@ -1604,24 +1608,24 @@ impl <'a>Header<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp959 = <[u8; 2]>::default();
+        let mut tmp961 = <[u8; 2]>::default();
         if *offset + 2 as usize > r.len() {
         return Err(Error::DecodeError("Header::len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp959.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
+        tmp961.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
         *offset += 2 as usize;
-        let mut tmp960 = 0;
-        while((tmp960 < 2)) {
-            self.len = (self.len | (((tmp959)[tmp960 as usize] as u16) << (tmp960 * 8)));
-            tmp960+= 1;
+        let mut tmp962 = 0;
+        while((tmp962 < 2)) {
+            self.len = (self.len | (((tmp961)[tmp962 as usize] as u16) << (tmp962 * 8)));
+            tmp962+= 1;
         }
-        let mut tmp455 = self.len;
-        let mut tmp456 = 0;
-        while((tmp456 < tmp455)) {
-            let mut tmp459 = <Field<'a>>::default();
-            tmp459.decode_direct(r, offset)?;
-            self.fields.to_mut().push(tmp459);
-            tmp456+= 1;
+        let mut tmp457 = self.len;
+        let mut tmp458 = 0;
+        while((tmp458 < tmp457)) {
+            let mut tmp461 = <Field<'a>>::default();
+            tmp461.decode_direct(r, offset)?;
+            self.fields.to_mut().push(tmp461);
+            tmp458+= 1;
         }
         return Ok(());
     }
@@ -1653,22 +1657,22 @@ impl <'a>Body<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp970 = <[u8; 4]>::default();
-        r.read_exact(&mut tmp970[0..4 as usize]).map_err(|e| Error::DecodeError("Body::offset",e))?;
-        let mut tmp971 = 0;
-        while((tmp971 < 4)) {
-            self.offset = (self.offset | (((tmp970)[tmp971 as usize] as u32) << (tmp971 * 8)));
-            tmp971+= 1;
+        let mut tmp972 = <[u8; 4]>::default();
+        r.read_exact(&mut tmp972[0..4 as usize]).map_err(|e| Error::DecodeError("Body::offset",e))?;
+        let mut tmp973 = 0;
+        while((tmp973 < 4)) {
+            self.offset = (self.offset | (((tmp972)[tmp973 as usize] as u32) << (tmp973 * 8)));
+            tmp973+= 1;
         }
-        let mut tmp981 = <[u8; 4]>::default();
-        r.read_exact(&mut tmp981[0..4 as usize]).map_err(|e| Error::DecodeError("Body::len",e))?;
-        let mut tmp982 = 0;
-        while((tmp982 < 4)) {
-            self.len = (self.len | (((tmp981)[tmp982 as usize] as u32) << (tmp982 * 8)));
-            tmp982+= 1;
+        let mut tmp983 = <[u8; 4]>::default();
+        r.read_exact(&mut tmp983[0..4 as usize]).map_err(|e| Error::DecodeError("Body::len",e))?;
+        let mut tmp984 = 0;
+        while((tmp984 < 4)) {
+            self.len = (self.len | (((tmp983)[tmp984 as usize] as u32) << (tmp984 * 8)));
+            tmp984+= 1;
         }
-        let mut tmp461 = self.len;
-        self.body.to_mut().resize(tmp461 as usize,0);
+        let mut tmp463 = self.len;
+        self.body.to_mut().resize(tmp463 as usize,0);
         r.read_exact(self.body.to_mut()).map_err(|e| Error::DecodeError("Body::body",e))?;
         return Ok(());
     }
@@ -1689,34 +1693,34 @@ impl <'a>Body<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp970 = <[u8; 4]>::default();
+        let mut tmp972 = <[u8; 4]>::default();
         if *offset + 4 as usize > r.len() {
         return Err(Error::DecodeError("Body::offset",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp970.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
+        tmp972.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
         *offset += 4 as usize;
-        let mut tmp971 = 0;
-        while((tmp971 < 4)) {
-            self.offset = (self.offset | (((tmp970)[tmp971 as usize] as u32) << (tmp971 * 8)));
-            tmp971+= 1;
+        let mut tmp973 = 0;
+        while((tmp973 < 4)) {
+            self.offset = (self.offset | (((tmp972)[tmp973 as usize] as u32) << (tmp973 * 8)));
+            tmp973+= 1;
         }
-        let mut tmp981 = <[u8; 4]>::default();
+        let mut tmp983 = <[u8; 4]>::default();
         if *offset + 4 as usize > r.len() {
         return Err(Error::DecodeError("Body::len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp981.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
+        tmp983.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
         *offset += 4 as usize;
-        let mut tmp982 = 0;
-        while((tmp982 < 4)) {
-            self.len = (self.len | (((tmp981)[tmp982 as usize] as u32) << (tmp982 * 8)));
-            tmp982+= 1;
+        let mut tmp984 = 0;
+        while((tmp984 < 4)) {
+            self.len = (self.len | (((tmp983)[tmp984 as usize] as u32) << (tmp984 * 8)));
+            tmp984+= 1;
         }
-        let mut tmp461 = self.len;
-        if *offset + tmp461 as usize > r.len() {
+        let mut tmp463 = self.len;
+        if *offset + tmp463 as usize > r.len() {
         return Err(Error::DecodeError("Body::body",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        self.body = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp461 as usize)]);
-        *offset += tmp461 as usize;
+        self.body = std::borrow::Cow::Borrowed(&r[*offset..(*offset + tmp463 as usize)]);
+        *offset += tmp463 as usize;
         return Ok(());
     }
 }
@@ -1761,25 +1765,25 @@ impl <'a>Address<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp757 = <u8>::default();
-        let mut tmp758 = 0;
-        let mut tmp1072 = <[u8; 1]>::default();
-        r.read_exact(&mut tmp1072[0..1 as usize]).map_err(|e| Error::DecodeError("Address::bit_field_is_v6_reserved",e))?;
-        tmp757 = (tmp1072)[0 as usize];
-        self.set_is_v6(((tmp757 >> tmp758) & 1) != 0);
-        tmp758 = (tmp758 + 1);
-        self.set_reserved((((tmp757 >> tmp758) & 127) as u8));
-        tmp758 = (tmp758 + 7);
+        let mut tmp759 = <u8>::default();
+        let mut tmp760 = 0;
+        let mut tmp1074 = <[u8; 1]>::default();
+        r.read_exact(&mut tmp1074[0..1 as usize]).map_err(|e| Error::DecodeError("Address::bit_field_is_v6_reserved",e))?;
+        tmp759 = (tmp1074)[0 as usize];
+        self.set_is_v6(((tmp759 >> tmp760) & 1) != 0);
+        tmp760 = (tmp760 + 1);
+        self.set_reserved((((tmp759 >> tmp760) & 127) as u8));
+        tmp760 = (tmp760 + 7);
         if (if self.is_v6() {1} else {0} == 1) {
-            if !matches!(self.field124,Variant125::Variant126(_)) {
-                self.field124 = Variant125::Variant126(Variant126::default());
+            if !matches!(self.field126,Variant127::Variant128(_)) {
+                self.field126 = Variant127::Variant128(Variant128::default());
             }
-            r.read_exact(&mut match &mut self.field124 {  Variant125::Variant126(x) => x, _ => unreachable!() }.addr_v6[0..16 as usize]).map_err(|e| Error::DecodeError("Address::Variant125::Variant126::addr_v6",e))?;
+            r.read_exact(&mut match &mut self.field126 {  Variant127::Variant128(x) => x, _ => unreachable!() }.addr_v6[0..16 as usize]).map_err(|e| Error::DecodeError("Address::Variant127::Variant128::addr_v6",e))?;
         } else {
-            if !matches!(self.field124,Variant125::Variant129(_)) {
-                self.field124 = Variant125::Variant129(Variant129::default());
+            if !matches!(self.field126,Variant127::Variant131(_)) {
+                self.field126 = Variant127::Variant131(Variant131::default());
             }
-            r.read_exact(&mut match &mut self.field124 {  Variant125::Variant129(x) => x, _ => unreachable!() }.addr_v4[0..4 as usize]).map_err(|e| Error::DecodeError("Address::Variant125::Variant129::addr_v4",e))?;
+            r.read_exact(&mut match &mut self.field126 {  Variant127::Variant131(x) => x, _ => unreachable!() }.addr_v4[0..4 as usize]).map_err(|e| Error::DecodeError("Address::Variant127::Variant131::addr_v4",e))?;
         }
         return Ok(());
     }
@@ -1800,36 +1804,36 @@ impl <'a>Address<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp757 = <u8>::default();
-        let mut tmp758 = 0;
-        let mut tmp1072 = <[u8; 1]>::default();
+        let mut tmp759 = <u8>::default();
+        let mut tmp760 = 0;
+        let mut tmp1074 = <[u8; 1]>::default();
         if *offset + 1 as usize > r.len() {
         return Err(Error::DecodeError("Address::bit_field_is_v6_reserved",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp1072.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+        tmp1074.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
         *offset += 1 as usize;
-        tmp757 = (tmp1072)[0 as usize];
-        self.set_is_v6(((tmp757 >> tmp758) & 1) != 0);
-        tmp758 = (tmp758 + 1);
-        self.set_reserved((((tmp757 >> tmp758) & 127) as u8));
-        tmp758 = (tmp758 + 7);
+        tmp759 = (tmp1074)[0 as usize];
+        self.set_is_v6(((tmp759 >> tmp760) & 1) != 0);
+        tmp760 = (tmp760 + 1);
+        self.set_reserved((((tmp759 >> tmp760) & 127) as u8));
+        tmp760 = (tmp760 + 7);
         if (if self.is_v6() {1} else {0} == 1) {
-            if !matches!(self.field124,Variant125::Variant126(_)) {
-                self.field124 = Variant125::Variant126(Variant126::default());
+            if !matches!(self.field126,Variant127::Variant128(_)) {
+                self.field126 = Variant127::Variant128(Variant128::default());
             }
             if *offset + 16 as usize > r.len() {
-            return Err(Error::DecodeError("Address::Variant125::Variant126::addr_v6",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
+            return Err(Error::DecodeError("Address::Variant127::Variant128::addr_v6",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            match &mut self.field124 {  Variant125::Variant126(x) => x, _ => unreachable!() }.addr_v6.copy_from_slice(&r[*offset..(*offset + 16 as usize)]);
+            match &mut self.field126 {  Variant127::Variant128(x) => x, _ => unreachable!() }.addr_v6.copy_from_slice(&r[*offset..(*offset + 16 as usize)]);
             *offset += 16 as usize;
         } else {
-            if !matches!(self.field124,Variant125::Variant129(_)) {
-                self.field124 = Variant125::Variant129(Variant129::default());
+            if !matches!(self.field126,Variant127::Variant131(_)) {
+                self.field126 = Variant127::Variant131(Variant131::default());
             }
             if *offset + 4 as usize > r.len() {
-            return Err(Error::DecodeError("Address::Variant125::Variant129::addr_v4",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
+            return Err(Error::DecodeError("Address::Variant127::Variant131::addr_v4",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            match &mut self.field124 {  Variant125::Variant129(x) => x, _ => unreachable!() }.addr_v4.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
+            match &mut self.field126 {  Variant127::Variant131(x) => x, _ => unreachable!() }.addr_v4.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
             *offset += 4 as usize;
         }
         return Ok(());
@@ -1866,28 +1870,28 @@ impl <'a>RequestInfo<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp992 = <[u8; 4]>::default();
-        r.read_exact(&mut tmp992[0..4 as usize]).map_err(|e| Error::DecodeError("RequestInfo::popID",e))?;
-        let mut tmp993 = 0;
-        while((tmp993 < 4)) {
-            self.popID = (self.popID | (((tmp992)[tmp993 as usize] as u32) << (tmp993 * 8)));
-            tmp993+= 1;
+        let mut tmp994 = <[u8; 4]>::default();
+        r.read_exact(&mut tmp994[0..4 as usize]).map_err(|e| Error::DecodeError("RequestInfo::popID",e))?;
+        let mut tmp995 = 0;
+        while((tmp995 < 4)) {
+            self.popID = (self.popID | (((tmp994)[tmp995 as usize] as u32) << (tmp995 * 8)));
+            tmp995+= 1;
         }
-        let mut tmp1003 = <[u8; 8]>::default();
-        r.read_exact(&mut tmp1003[0..8 as usize]).map_err(|e| Error::DecodeError("RequestInfo::reqID",e))?;
-        let mut tmp1004 = 0;
-        while((tmp1004 < 8)) {
-            self.reqID = (self.reqID | (((tmp1003)[tmp1004 as usize] as u64) << (tmp1004 * 8)));
-            tmp1004+= 1;
+        let mut tmp1005 = <[u8; 8]>::default();
+        r.read_exact(&mut tmp1005[0..8 as usize]).map_err(|e| Error::DecodeError("RequestInfo::reqID",e))?;
+        let mut tmp1006 = 0;
+        while((tmp1006 < 8)) {
+            self.reqID = (self.reqID | (((tmp1005)[tmp1006 as usize] as u64) << (tmp1006 * 8)));
+            tmp1006+= 1;
         }
         self.protocol.decode(r)?;
         self.remoteAddr.decode(r)?;
-        let mut tmp1014 = <[u8; 2]>::default();
-        r.read_exact(&mut tmp1014[0..2 as usize]).map_err(|e| Error::DecodeError("RequestInfo::remotePort",e))?;
-        let mut tmp1015 = 0;
-        while((tmp1015 < 2)) {
-            self.remotePort = (self.remotePort | (((tmp1014)[tmp1015 as usize] as u16) << (tmp1015 * 8)));
-            tmp1015+= 1;
+        let mut tmp1016 = <[u8; 2]>::default();
+        r.read_exact(&mut tmp1016[0..2 as usize]).map_err(|e| Error::DecodeError("RequestInfo::remotePort",e))?;
+        let mut tmp1017 = 0;
+        while((tmp1017 < 2)) {
+            self.remotePort = (self.remotePort | (((tmp1016)[tmp1017 as usize] as u16) << (tmp1017 * 8)));
+            tmp1017+= 1;
         }
         self.method.decode(r)?;
         self.path.decode(r)?;
@@ -1911,40 +1915,40 @@ impl <'a>RequestInfo<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp992 = <[u8; 4]>::default();
+        let mut tmp994 = <[u8; 4]>::default();
         if *offset + 4 as usize > r.len() {
         return Err(Error::DecodeError("RequestInfo::popID",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp992.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
+        tmp994.copy_from_slice(&r[*offset..(*offset + 4 as usize)]);
         *offset += 4 as usize;
-        let mut tmp993 = 0;
-        while((tmp993 < 4)) {
-            self.popID = (self.popID | (((tmp992)[tmp993 as usize] as u32) << (tmp993 * 8)));
-            tmp993+= 1;
+        let mut tmp995 = 0;
+        while((tmp995 < 4)) {
+            self.popID = (self.popID | (((tmp994)[tmp995 as usize] as u32) << (tmp995 * 8)));
+            tmp995+= 1;
         }
-        let mut tmp1003 = <[u8; 8]>::default();
+        let mut tmp1005 = <[u8; 8]>::default();
         if *offset + 8 as usize > r.len() {
         return Err(Error::DecodeError("RequestInfo::reqID",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp1003.copy_from_slice(&r[*offset..(*offset + 8 as usize)]);
+        tmp1005.copy_from_slice(&r[*offset..(*offset + 8 as usize)]);
         *offset += 8 as usize;
-        let mut tmp1004 = 0;
-        while((tmp1004 < 8)) {
-            self.reqID = (self.reqID | (((tmp1003)[tmp1004 as usize] as u64) << (tmp1004 * 8)));
-            tmp1004+= 1;
+        let mut tmp1006 = 0;
+        while((tmp1006 < 8)) {
+            self.reqID = (self.reqID | (((tmp1005)[tmp1006 as usize] as u64) << (tmp1006 * 8)));
+            tmp1006+= 1;
         }
         self.protocol.decode_direct(r, offset)?;
         self.remoteAddr.decode_direct(r, offset)?;
-        let mut tmp1014 = <[u8; 2]>::default();
+        let mut tmp1016 = <[u8; 2]>::default();
         if *offset + 2 as usize > r.len() {
         return Err(Error::DecodeError("RequestInfo::remotePort",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp1014.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
+        tmp1016.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
         *offset += 2 as usize;
-        let mut tmp1015 = 0;
-        while((tmp1015 < 2)) {
-            self.remotePort = (self.remotePort | (((tmp1014)[tmp1015 as usize] as u16) << (tmp1015 * 8)));
-            tmp1015+= 1;
+        let mut tmp1017 = 0;
+        while((tmp1017 < 2)) {
+            self.remotePort = (self.remotePort | (((tmp1016)[tmp1017 as usize] as u16) << (tmp1017 * 8)));
+            tmp1017+= 1;
         }
         self.method.decode_direct(r, offset)?;
         self.path.decode_direct(r, offset)?;
@@ -1975,12 +1979,12 @@ impl <'a>ResponseInfo<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp1025 = <[u8; 2]>::default();
-        r.read_exact(&mut tmp1025[0..2 as usize]).map_err(|e| Error::DecodeError("ResponseInfo::status",e))?;
-        let mut tmp1026 = 0;
-        while((tmp1026 < 2)) {
-            self.status = (self.status | (((tmp1025)[tmp1026 as usize] as u16) << (tmp1026 * 8)));
-            tmp1026+= 1;
+        let mut tmp1027 = <[u8; 2]>::default();
+        r.read_exact(&mut tmp1027[0..2 as usize]).map_err(|e| Error::DecodeError("ResponseInfo::status",e))?;
+        let mut tmp1028 = 0;
+        while((tmp1028 < 2)) {
+            self.status = (self.status | (((tmp1027)[tmp1028 as usize] as u16) << (tmp1028 * 8)));
+            tmp1028+= 1;
         }
         self.header.decode(r)?;
         return Ok(());
@@ -2002,16 +2006,16 @@ impl <'a>ResponseInfo<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp1025 = <[u8; 2]>::default();
+        let mut tmp1027 = <[u8; 2]>::default();
         if *offset + 2 as usize > r.len() {
         return Err(Error::DecodeError("ResponseInfo::status",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp1025.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
+        tmp1027.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
         *offset += 2 as usize;
-        let mut tmp1026 = 0;
-        while((tmp1026 < 2)) {
-            self.status = (self.status | (((tmp1025)[tmp1026 as usize] as u16) << (tmp1026 * 8)));
-            tmp1026+= 1;
+        let mut tmp1028 = 0;
+        while((tmp1028 < 2)) {
+            self.status = (self.status | (((tmp1027)[tmp1028 as usize] as u16) << (tmp1028 * 8)));
+            tmp1028+= 1;
         }
         self.header.decode_direct(r, offset)?;
         return Ok(());
@@ -2066,62 +2070,62 @@ impl <'a>DiffData<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp470 = <u8>::default();
-        let mut tmp1036 = <[u8; 1]>::default();
-        r.read_exact(&mut tmp1036[0..1 as usize]).map_err(|e| Error::DecodeError("DiffData::diff_type",e))?;
-        tmp470 = (tmp1036)[0 as usize];
-        self.diff_type = DiffDataType::from(tmp470);
-        let mut tmp474 = <u8>::default();
-        let mut tmp1041 = <[u8; 1]>::default();
-        r.read_exact(&mut tmp1041[0..1 as usize]).map_err(|e| Error::DecodeError("DiffData::kind",e))?;
-        tmp474 = (tmp1041)[0 as usize];
-        self.kind = DiffKind::from(tmp474);
-        let mut tmp477 = self.diff_type;
-        if (tmp477 == DiffDataType::header) {
-            if !matches!(self.field186,Variant187::Variant188(_)) {
-                self.field186 = Variant187::Variant188(Variant188::default());
+        let mut tmp472 = <u8>::default();
+        let mut tmp1038 = <[u8; 1]>::default();
+        r.read_exact(&mut tmp1038[0..1 as usize]).map_err(|e| Error::DecodeError("DiffData::diff_type",e))?;
+        tmp472 = (tmp1038)[0 as usize];
+        self.diff_type = DiffDataType::from(tmp472);
+        let mut tmp476 = <u8>::default();
+        let mut tmp1043 = <[u8; 1]>::default();
+        r.read_exact(&mut tmp1043[0..1 as usize]).map_err(|e| Error::DecodeError("DiffData::kind",e))?;
+        tmp476 = (tmp1043)[0 as usize];
+        self.kind = DiffKind::from(tmp476);
+        let mut tmp479 = self.diff_type;
+        if (tmp479 == DiffDataType::header) {
+            if !matches!(self.field188,Variant189::Variant190(_)) {
+                self.field188 = Variant189::Variant190(Variant190::default());
             }
-            match &mut self.field186 {  Variant187::Variant188(x) => x, _ => unreachable!() }.header.decode(r)?;
-        } else if((tmp477 == DiffDataType::field)) {
-            if !matches!(self.field186,Variant187::Variant190(_)) {
-                self.field186 = Variant187::Variant190(Variant190::default());
+            match &mut self.field188 {  Variant189::Variant190(x) => x, _ => unreachable!() }.header.decode(r)?;
+        } else if((tmp479 == DiffDataType::field)) {
+            if !matches!(self.field188,Variant189::Variant192(_)) {
+                self.field188 = Variant189::Variant192(Variant192::default());
             }
-            match &mut self.field186 {  Variant187::Variant190(x) => x, _ => unreachable!() }.field.decode(r)?;
-        } else if((tmp477 == DiffDataType::method)) {
-            if !matches!(self.field186,Variant187::Variant193(_)) {
-                self.field186 = Variant187::Variant193(Variant193::default());
+            match &mut self.field188 {  Variant189::Variant192(x) => x, _ => unreachable!() }.field.decode(r)?;
+        } else if((tmp479 == DiffDataType::method)) {
+            if !matches!(self.field188,Variant189::Variant195(_)) {
+                self.field188 = Variant189::Variant195(Variant195::default());
             }
-            match &mut self.field186 {  Variant187::Variant193(x) => x, _ => unreachable!() }.method.decode(r)?;
-        } else if((tmp477 == DiffDataType::path)) {
-            if !matches!(self.field186,Variant187::Variant195(_)) {
-                self.field186 = Variant187::Variant195(Variant195::default());
+            match &mut self.field188 {  Variant189::Variant195(x) => x, _ => unreachable!() }.method.decode(r)?;
+        } else if((tmp479 == DiffDataType::path)) {
+            if !matches!(self.field188,Variant189::Variant197(_)) {
+                self.field188 = Variant189::Variant197(Variant197::default());
             }
-            match &mut self.field186 {  Variant187::Variant195(x) => x, _ => unreachable!() }.path.decode(r)?;
-        } else if((tmp477 == DiffDataType::status)) {
-            if !matches!(self.field186,Variant187::Variant197(_)) {
-                self.field186 = Variant187::Variant197(Variant197::default());
+            match &mut self.field188 {  Variant189::Variant197(x) => x, _ => unreachable!() }.path.decode(r)?;
+        } else if((tmp479 == DiffDataType::status)) {
+            if !matches!(self.field188,Variant189::Variant199(_)) {
+                self.field188 = Variant189::Variant199(Variant199::default());
             }
-            let mut tmp1046 = <[u8; 2]>::default();
-            r.read_exact(&mut tmp1046[0..2 as usize]).map_err(|e| Error::DecodeError("DiffData::Variant187::Variant197::status",e))?;
-            let mut tmp1047 = 0;
-            while((tmp1047 < 2)) {
-                match &mut self.field186 {  Variant187::Variant197(x) => x, _ => unreachable!() }.status = (match &self.field186 {  Variant187::Variant197(x) => x, _ => unreachable!() }.status | (((tmp1046)[tmp1047 as usize] as u16) << (tmp1047 * 8)));
-                tmp1047+= 1;
+            let mut tmp1048 = <[u8; 2]>::default();
+            r.read_exact(&mut tmp1048[0..2 as usize]).map_err(|e| Error::DecodeError("DiffData::Variant189::Variant199::status",e))?;
+            let mut tmp1049 = 0;
+            while((tmp1049 < 2)) {
+                match &mut self.field188 {  Variant189::Variant199(x) => x, _ => unreachable!() }.status = (match &self.field188 {  Variant189::Variant199(x) => x, _ => unreachable!() }.status | (((tmp1048)[tmp1049 as usize] as u16) << (tmp1049 * 8)));
+                tmp1049+= 1;
             }
-        } else if((tmp477 == DiffDataType::body)) {
-            if !matches!(self.field186,Variant187::Variant199(_)) {
-                self.field186 = Variant187::Variant199(Variant199::default());
+        } else if((tmp479 == DiffDataType::body)) {
+            if !matches!(self.field188,Variant189::Variant201(_)) {
+                self.field188 = Variant189::Variant201(Variant201::default());
             }
-            match &mut self.field186 {  Variant187::Variant199(x) => x, _ => unreachable!() }.body.decode(r)?;
-        } else if((tmp477 == DiffDataType::routing)) {
-            if !matches!(self.field186,Variant187::Variant202(_)) {
-                self.field186 = Variant187::Variant202(Variant202::default());
+            match &mut self.field188 {  Variant189::Variant201(x) => x, _ => unreachable!() }.body.decode(r)?;
+        } else if((tmp479 == DiffDataType::routing)) {
+            if !matches!(self.field188,Variant189::Variant204(_)) {
+                self.field188 = Variant189::Variant204(Variant204::default());
             }
-            let mut tmp507 = <u8>::default();
-            let mut tmp1057 = <[u8; 1]>::default();
-            r.read_exact(&mut tmp1057[0..1 as usize]).map_err(|e| Error::DecodeError("DiffData::Variant187::Variant202::routing",e))?;
-            tmp507 = (tmp1057)[0 as usize];
-            match &mut self.field186 {  Variant187::Variant202(x) => x, _ => unreachable!() }.routing = Routing::from(tmp507);
+            let mut tmp509 = <u8>::default();
+            let mut tmp1059 = <[u8; 1]>::default();
+            r.read_exact(&mut tmp1059[0..1 as usize]).map_err(|e| Error::DecodeError("DiffData::Variant189::Variant204::routing",e))?;
+            tmp509 = (tmp1059)[0 as usize];
+            match &mut self.field188 {  Variant189::Variant204(x) => x, _ => unreachable!() }.routing = Routing::from(tmp509);
         }
         return Ok(());
     }
@@ -2142,78 +2146,78 @@ impl <'a>DiffData<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp470 = <u8>::default();
-        let mut tmp1036 = <[u8; 1]>::default();
+        let mut tmp472 = <u8>::default();
+        let mut tmp1038 = <[u8; 1]>::default();
         if *offset + 1 as usize > r.len() {
         return Err(Error::DecodeError("DiffData::diff_type",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp1036.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+        tmp1038.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
         *offset += 1 as usize;
-        tmp470 = (tmp1036)[0 as usize];
-        self.diff_type = DiffDataType::from(tmp470);
-        let mut tmp474 = <u8>::default();
-        let mut tmp1041 = <[u8; 1]>::default();
+        tmp472 = (tmp1038)[0 as usize];
+        self.diff_type = DiffDataType::from(tmp472);
+        let mut tmp476 = <u8>::default();
+        let mut tmp1043 = <[u8; 1]>::default();
         if *offset + 1 as usize > r.len() {
         return Err(Error::DecodeError("DiffData::kind",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp1041.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+        tmp1043.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
         *offset += 1 as usize;
-        tmp474 = (tmp1041)[0 as usize];
-        self.kind = DiffKind::from(tmp474);
-        let mut tmp477 = self.diff_type;
-        if (tmp477 == DiffDataType::header) {
-            if !matches!(self.field186,Variant187::Variant188(_)) {
-                self.field186 = Variant187::Variant188(Variant188::default());
+        tmp476 = (tmp1043)[0 as usize];
+        self.kind = DiffKind::from(tmp476);
+        let mut tmp479 = self.diff_type;
+        if (tmp479 == DiffDataType::header) {
+            if !matches!(self.field188,Variant189::Variant190(_)) {
+                self.field188 = Variant189::Variant190(Variant190::default());
             }
-            match &mut self.field186 {  Variant187::Variant188(x) => x, _ => unreachable!() }.header.decode_direct(r, offset)?;
-        } else if((tmp477 == DiffDataType::field)) {
-            if !matches!(self.field186,Variant187::Variant190(_)) {
-                self.field186 = Variant187::Variant190(Variant190::default());
+            match &mut self.field188 {  Variant189::Variant190(x) => x, _ => unreachable!() }.header.decode_direct(r, offset)?;
+        } else if((tmp479 == DiffDataType::field)) {
+            if !matches!(self.field188,Variant189::Variant192(_)) {
+                self.field188 = Variant189::Variant192(Variant192::default());
             }
-            match &mut self.field186 {  Variant187::Variant190(x) => x, _ => unreachable!() }.field.decode_direct(r, offset)?;
-        } else if((tmp477 == DiffDataType::method)) {
-            if !matches!(self.field186,Variant187::Variant193(_)) {
-                self.field186 = Variant187::Variant193(Variant193::default());
+            match &mut self.field188 {  Variant189::Variant192(x) => x, _ => unreachable!() }.field.decode_direct(r, offset)?;
+        } else if((tmp479 == DiffDataType::method)) {
+            if !matches!(self.field188,Variant189::Variant195(_)) {
+                self.field188 = Variant189::Variant195(Variant195::default());
             }
-            match &mut self.field186 {  Variant187::Variant193(x) => x, _ => unreachable!() }.method.decode_direct(r, offset)?;
-        } else if((tmp477 == DiffDataType::path)) {
-            if !matches!(self.field186,Variant187::Variant195(_)) {
-                self.field186 = Variant187::Variant195(Variant195::default());
+            match &mut self.field188 {  Variant189::Variant195(x) => x, _ => unreachable!() }.method.decode_direct(r, offset)?;
+        } else if((tmp479 == DiffDataType::path)) {
+            if !matches!(self.field188,Variant189::Variant197(_)) {
+                self.field188 = Variant189::Variant197(Variant197::default());
             }
-            match &mut self.field186 {  Variant187::Variant195(x) => x, _ => unreachable!() }.path.decode_direct(r, offset)?;
-        } else if((tmp477 == DiffDataType::status)) {
-            if !matches!(self.field186,Variant187::Variant197(_)) {
-                self.field186 = Variant187::Variant197(Variant197::default());
+            match &mut self.field188 {  Variant189::Variant197(x) => x, _ => unreachable!() }.path.decode_direct(r, offset)?;
+        } else if((tmp479 == DiffDataType::status)) {
+            if !matches!(self.field188,Variant189::Variant199(_)) {
+                self.field188 = Variant189::Variant199(Variant199::default());
             }
-            let mut tmp1046 = <[u8; 2]>::default();
+            let mut tmp1048 = <[u8; 2]>::default();
             if *offset + 2 as usize > r.len() {
-            return Err(Error::DecodeError("DiffData::Variant187::Variant197::status",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
+            return Err(Error::DecodeError("DiffData::Variant189::Variant199::status",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            tmp1046.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
+            tmp1048.copy_from_slice(&r[*offset..(*offset + 2 as usize)]);
             *offset += 2 as usize;
-            let mut tmp1047 = 0;
-            while((tmp1047 < 2)) {
-                match &mut self.field186 {  Variant187::Variant197(x) => x, _ => unreachable!() }.status = (match &self.field186 {  Variant187::Variant197(x) => x, _ => unreachable!() }.status | (((tmp1046)[tmp1047 as usize] as u16) << (tmp1047 * 8)));
-                tmp1047+= 1;
+            let mut tmp1049 = 0;
+            while((tmp1049 < 2)) {
+                match &mut self.field188 {  Variant189::Variant199(x) => x, _ => unreachable!() }.status = (match &self.field188 {  Variant189::Variant199(x) => x, _ => unreachable!() }.status | (((tmp1048)[tmp1049 as usize] as u16) << (tmp1049 * 8)));
+                tmp1049+= 1;
             }
-        } else if((tmp477 == DiffDataType::body)) {
-            if !matches!(self.field186,Variant187::Variant199(_)) {
-                self.field186 = Variant187::Variant199(Variant199::default());
+        } else if((tmp479 == DiffDataType::body)) {
+            if !matches!(self.field188,Variant189::Variant201(_)) {
+                self.field188 = Variant189::Variant201(Variant201::default());
             }
-            match &mut self.field186 {  Variant187::Variant199(x) => x, _ => unreachable!() }.body.decode_direct(r, offset)?;
-        } else if((tmp477 == DiffDataType::routing)) {
-            if !matches!(self.field186,Variant187::Variant202(_)) {
-                self.field186 = Variant187::Variant202(Variant202::default());
+            match &mut self.field188 {  Variant189::Variant201(x) => x, _ => unreachable!() }.body.decode_direct(r, offset)?;
+        } else if((tmp479 == DiffDataType::routing)) {
+            if !matches!(self.field188,Variant189::Variant204(_)) {
+                self.field188 = Variant189::Variant204(Variant204::default());
             }
-            let mut tmp507 = <u8>::default();
-            let mut tmp1057 = <[u8; 1]>::default();
+            let mut tmp509 = <u8>::default();
+            let mut tmp1059 = <[u8; 1]>::default();
             if *offset + 1 as usize > r.len() {
-            return Err(Error::DecodeError("DiffData::Variant187::Variant202::routing",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
+            return Err(Error::DecodeError("DiffData::Variant189::Variant204::routing",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
             }
-            tmp1057.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+            tmp1059.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
             *offset += 1 as usize;
-            tmp507 = (tmp1057)[0 as usize];
-            match &mut self.field186 {  Variant187::Variant202(x) => x, _ => unreachable!() }.routing = Routing::from(tmp507);
+            tmp509 = (tmp1059)[0 as usize];
+            match &mut self.field188 {  Variant189::Variant204(x) => x, _ => unreachable!() }.routing = Routing::from(tmp509);
         }
         return Ok(());
     }
@@ -2243,16 +2247,16 @@ impl <'a>ChangeSet<'a> {
         Ok(result)
     }
     pub fn decode<R: std::io::Read>(&mut self, r :&mut R) -> std::result::Result<(), Error> {
-        let mut tmp1062 = <[u8; 1]>::default();
-        r.read_exact(&mut tmp1062[0..1 as usize]).map_err(|e| Error::DecodeError("ChangeSet::len",e))?;
-        self.len = (tmp1062)[0 as usize];
-        let mut tmp511 = self.len;
-        let mut tmp512 = 0;
-        while((tmp512 < tmp511)) {
-            let mut tmp516 = <DiffData<'a>>::default();
-            tmp516.decode(r)?;
-            self.diff.to_mut().push(tmp516);
-            tmp512+= 1;
+        let mut tmp1064 = <[u8; 1]>::default();
+        r.read_exact(&mut tmp1064[0..1 as usize]).map_err(|e| Error::DecodeError("ChangeSet::len",e))?;
+        self.len = (tmp1064)[0 as usize];
+        let mut tmp513 = self.len;
+        let mut tmp514 = 0;
+        while((tmp514 < tmp513)) {
+            let mut tmp518 = <DiffData<'a>>::default();
+            tmp518.decode(r)?;
+            self.diff.to_mut().push(tmp518);
+            tmp514+= 1;
         }
         return Ok(());
     }
@@ -2273,20 +2277,20 @@ impl <'a>ChangeSet<'a> {
         Ok(result)
     }
     pub fn decode_direct(&mut self, r :&'a [u8], offset :&mut usize) -> std::result::Result<(), Error> {
-        let mut tmp1062 = <[u8; 1]>::default();
+        let mut tmp1064 = <[u8; 1]>::default();
         if *offset + 1 as usize > r.len() {
         return Err(Error::DecodeError("ChangeSet::len",std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of input")));
         }
-        tmp1062.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
+        tmp1064.copy_from_slice(&r[*offset..(*offset + 1 as usize)]);
         *offset += 1 as usize;
-        self.len = (tmp1062)[0 as usize];
-        let mut tmp511 = self.len;
-        let mut tmp512 = 0;
-        while((tmp512 < tmp511)) {
-            let mut tmp516 = <DiffData<'a>>::default();
-            tmp516.decode_direct(r, offset)?;
-            self.diff.to_mut().push(tmp516);
-            tmp512+= 1;
+        self.len = (tmp1064)[0 as usize];
+        let mut tmp513 = self.len;
+        let mut tmp514 = 0;
+        while((tmp514 < tmp513)) {
+            let mut tmp518 = <DiffData<'a>>::default();
+            tmp518.decode_direct(r, offset)?;
+            self.diff.to_mut().push(tmp518);
+            tmp514+= 1;
         }
         return Ok(());
     }
@@ -2307,12 +2311,12 @@ impl <'a>ProtocolInfo<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>ProtocolInfo<'a> {
-    pub fn set_len(&mut self, param551: u8) -> std::result::Result<(), Error> {
+    pub fn set_len(&mut self, param553: u8) -> std::result::Result<(), Error> {
         if (self.protocol == Protocol::other) {
             if !matches!(self.field31,Variant32::Variant33(_)) {
                 self.field31 = Variant32::Variant33(Variant33::default());
             }
-            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = param551;
+            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = param553;
             return Ok(());
         }
         return Err(Error::PropertySetterError("ProtocolInfo::len"));
@@ -2334,16 +2338,16 @@ impl <'a>ProtocolInfo<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>ProtocolInfo<'a> {
-    pub fn set_protocol_name(&mut self, param558: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
+    pub fn set_protocol_name(&mut self, param560: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
         if (self.protocol == Protocol::other) {
             if !matches!(self.field31,Variant32::Variant33(_)) {
                 self.field31 = Variant32::Variant33(Variant33::default());
             }
-            if(!(param558.len() <= 255)) { 
-            return Err(Error::AssertError("(param558.len() <= 255)"));
+            if(!(param560.len() <= 255)) { 
+            return Err(Error::AssertError("(param560.len() <= 255)"));
             }
-            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = (param558.len() as u8);
-            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name = param558;
+            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.len = (param560.len() as u8);
+            match &mut self.field31 {  Variant32::Variant33(x) => x, _ => unreachable!() }.protocol_name = param560;
             return Ok(());
         }
         return Err(Error::PropertySetterError("ProtocolInfo::protocol_name"));
@@ -2354,10 +2358,10 @@ impl <'a>ProtocolInfo<'a> {
 impl <'a>MethodInfo<'a> {
     pub fn len(&self) -> std::option::Option<&u8> {
         if (self.method == Method::OTHER) {
-            if !matches!(self.field79,Variant80::Variant81(_)) {
+            if !matches!(self.field81,Variant82::Variant83(_)) {
                 return None;
             }
-            return Some(&match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len);
+            return Some(&match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len);
         }
         return None;
     }
@@ -2365,12 +2369,12 @@ impl <'a>MethodInfo<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>MethodInfo<'a> {
-    pub fn set_len(&mut self, param568: u8) -> std::result::Result<(), Error> {
+    pub fn set_len(&mut self, param570: u8) -> std::result::Result<(), Error> {
         if (self.method == Method::OTHER) {
-            if !matches!(self.field79,Variant80::Variant81(_)) {
-                self.field79 = Variant80::Variant81(Variant81::default());
+            if !matches!(self.field81,Variant82::Variant83(_)) {
+                self.field81 = Variant82::Variant83(Variant83::default());
             }
-            match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len = param568;
+            match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len = param570;
             return Ok(());
         }
         return Err(Error::PropertySetterError("MethodInfo::len"));
@@ -2381,10 +2385,10 @@ impl <'a>MethodInfo<'a> {
 impl <'a>MethodInfo<'a> {
     pub fn method_name(&self) -> std::option::Option<&std::borrow::Cow<'a,[u8]>> {
         if (self.method == Method::OTHER) {
-            if !matches!(self.field79,Variant80::Variant81(_)) {
+            if !matches!(self.field81,Variant82::Variant83(_)) {
                 return None;
             }
-            return Some(&match &self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name);
+            return Some(&match &self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name);
         }
         return None;
     }
@@ -2392,16 +2396,16 @@ impl <'a>MethodInfo<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>MethodInfo<'a> {
-    pub fn set_method_name(&mut self, param573: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
+    pub fn set_method_name(&mut self, param575: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
         if (self.method == Method::OTHER) {
-            if !matches!(self.field79,Variant80::Variant81(_)) {
-                self.field79 = Variant80::Variant81(Variant81::default());
+            if !matches!(self.field81,Variant82::Variant83(_)) {
+                self.field81 = Variant82::Variant83(Variant83::default());
             }
-            if(!(param573.len() <= 255)) { 
-            return Err(Error::AssertError("(param573.len() <= 255)"));
+            if(!(param575.len() <= 255)) { 
+            return Err(Error::AssertError("(param575.len() <= 255)"));
             }
-            match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.len = (param573.len() as u8);
-            match &mut self.field79 {  Variant80::Variant81(x) => x, _ => unreachable!() }.method_name = param573;
+            match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.len = (param575.len() as u8);
+            match &mut self.field81 {  Variant82::Variant83(x) => x, _ => unreachable!() }.method_name = param575;
             return Ok(());
         }
         return Err(Error::PropertySetterError("MethodInfo::method_name"));
@@ -2410,48 +2414,48 @@ impl <'a>MethodInfo<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>PathInfo<'a> {
-    pub fn set_query(&mut self, param580: std::borrow::Cow<'a,[Field<'a>]>) -> std::result::Result<(), Error> {
-        if(!(param580.len() <= 255)) { 
-        return Err(Error::AssertError("(param580.len() <= 255)"));
+    pub fn set_query(&mut self, param582: std::borrow::Cow<'a,[Field<'a>]>) -> std::result::Result<(), Error> {
+        if(!(param582.len() <= 255)) { 
+        return Err(Error::AssertError("(param582.len() <= 255)"));
         }
-        self.query_len = (param580.len() as u8);
-        self.query = param580;
+        self.query_len = (param582.len() as u8);
+        self.query = param582;
         return Ok(());
     }
 }
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>String<'a> {
-    pub fn set_data(&mut self, param586: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
-        if(!(param586.len() <= 65535)) { 
-        return Err(Error::AssertError("(param586.len() <= 65535)"));
+    pub fn set_data(&mut self, param588: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
+        if(!(param588.len() <= 65535)) { 
+        return Err(Error::AssertError("(param588.len() <= 65535)"));
         }
-        self.len = (param586.len() as u16);
-        self.data = param586;
+        self.len = (param588.len() as u16);
+        self.data = param588;
         return Ok(());
     }
 }
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>Header<'a> {
-    pub fn set_fields(&mut self, param594: std::borrow::Cow<'a,[Field<'a>]>) -> std::result::Result<(), Error> {
-        if(!(param594.len() <= 65535)) { 
-        return Err(Error::AssertError("(param594.len() <= 65535)"));
+    pub fn set_fields(&mut self, param596: std::borrow::Cow<'a,[Field<'a>]>) -> std::result::Result<(), Error> {
+        if(!(param596.len() <= 65535)) { 
+        return Err(Error::AssertError("(param596.len() <= 65535)"));
         }
-        self.len = (param594.len() as u16);
-        self.fields = param594;
+        self.len = (param596.len() as u16);
+        self.fields = param596;
         return Ok(());
     }
 }
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>Body<'a> {
-    pub fn set_body(&mut self, param600: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
-        if(!(param600.len() <= 4294967295)) { 
-        return Err(Error::AssertError("(param600.len() <= 4294967295)"));
+    pub fn set_body(&mut self, param602: std::borrow::Cow<'a,[u8]>) -> std::result::Result<(), Error> {
+        if(!(param602.len() <= 4294967295)) { 
+        return Err(Error::AssertError("(param602.len() <= 4294967295)"));
         }
-        self.len = (param600.len() as u32);
-        self.body = param600;
+        self.len = (param602.len() as u32);
+        self.body = param602;
         return Ok(());
     }
 }
@@ -2463,10 +2467,10 @@ impl <'a>Address<'a> {
             return None;
         }
         if true {
-            if !matches!(self.field124,Variant125::Variant129(_)) {
+            if !matches!(self.field126,Variant127::Variant131(_)) {
                 return None;
             }
-            return Some(&match &self.field124 {  Variant125::Variant129(x) => x, _ => unreachable!() }.addr_v4);
+            return Some(&match &self.field126 {  Variant127::Variant131(x) => x, _ => unreachable!() }.addr_v4);
         }
         return None;
     }
@@ -2474,15 +2478,15 @@ impl <'a>Address<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>Address<'a> {
-    pub fn set_addr_v4(&mut self, param612: [u8; 4]) -> std::result::Result<(), Error> {
+    pub fn set_addr_v4(&mut self, param614: [u8; 4]) -> std::result::Result<(), Error> {
         if (if self.is_v6() {1} else {0} == 1) {
             return Err(Error::PropertySetterError("Address::addr_v4"));
         }
         if true {
-            if !matches!(self.field124,Variant125::Variant129(_)) {
-                self.field124 = Variant125::Variant129(Variant129::default());
+            if !matches!(self.field126,Variant127::Variant131(_)) {
+                self.field126 = Variant127::Variant131(Variant131::default());
             }
-            match &mut self.field124 {  Variant125::Variant129(x) => x, _ => unreachable!() }.addr_v4 = param612;
+            match &mut self.field126 {  Variant127::Variant131(x) => x, _ => unreachable!() }.addr_v4 = param614;
             return Ok(());
         }
         return Err(Error::PropertySetterError("Address::addr_v4"));
@@ -2493,10 +2497,10 @@ impl <'a>Address<'a> {
 impl <'a>Address<'a> {
     pub fn addr_v6(&self) -> std::option::Option<&[u8; 16]> {
         if (if self.is_v6() {1} else {0} == 1) {
-            if !matches!(self.field124,Variant125::Variant126(_)) {
+            if !matches!(self.field126,Variant127::Variant128(_)) {
                 return None;
             }
-            return Some(&match &self.field124 {  Variant125::Variant126(x) => x, _ => unreachable!() }.addr_v6);
+            return Some(&match &self.field126 {  Variant127::Variant128(x) => x, _ => unreachable!() }.addr_v6);
         }
         return None;
     }
@@ -2504,12 +2508,12 @@ impl <'a>Address<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>Address<'a> {
-    pub fn set_addr_v6(&mut self, param618: [u8; 16]) -> std::result::Result<(), Error> {
+    pub fn set_addr_v6(&mut self, param620: [u8; 16]) -> std::result::Result<(), Error> {
         if (if self.is_v6() {1} else {0} == 1) {
-            if !matches!(self.field124,Variant125::Variant126(_)) {
-                self.field124 = Variant125::Variant126(Variant126::default());
+            if !matches!(self.field126,Variant127::Variant128(_)) {
+                self.field126 = Variant127::Variant128(Variant128::default());
             }
-            match &mut self.field124 {  Variant125::Variant126(x) => x, _ => unreachable!() }.addr_v6 = param618;
+            match &mut self.field126 {  Variant127::Variant128(x) => x, _ => unreachable!() }.addr_v6 = param620;
             return Ok(());
         }
         return Err(Error::PropertySetterError("Address::addr_v6"));
@@ -2519,15 +2523,15 @@ impl <'a>Address<'a> {
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
     pub fn body(&self) -> std::option::Option<&Body<'a>> {
-        let mut tmp207 = self.diff_type;
-        if ((tmp207 == DiffDataType::header) || ((tmp207 == DiffDataType::field) || ((tmp207 == DiffDataType::method) || ((tmp207 == DiffDataType::path) || (tmp207 == DiffDataType::status))))) {
+        let mut tmp209 = self.diff_type;
+        if ((tmp209 == DiffDataType::header) || ((tmp209 == DiffDataType::field) || ((tmp209 == DiffDataType::method) || ((tmp209 == DiffDataType::path) || (tmp209 == DiffDataType::status))))) {
             return None;
         }
-        if (tmp207 == DiffDataType::body) {
-            if !matches!(self.field186,Variant187::Variant199(_)) {
+        if (tmp209 == DiffDataType::body) {
+            if !matches!(self.field188,Variant189::Variant201(_)) {
                 return None;
             }
-            return Some(&match &self.field186 {  Variant187::Variant199(x) => x, _ => unreachable!() }.body);
+            return Some(&match &self.field188 {  Variant189::Variant201(x) => x, _ => unreachable!() }.body);
         }
         return None;
     }
@@ -2535,16 +2539,16 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
-    pub fn set_body(&mut self, param629: Body<'a>) -> std::result::Result<(), Error> {
-        let mut tmp207 = self.diff_type;
-        if ((tmp207 == DiffDataType::header) || ((tmp207 == DiffDataType::field) || ((tmp207 == DiffDataType::method) || ((tmp207 == DiffDataType::path) || (tmp207 == DiffDataType::status))))) {
+    pub fn set_body(&mut self, param631: Body<'a>) -> std::result::Result<(), Error> {
+        let mut tmp209 = self.diff_type;
+        if ((tmp209 == DiffDataType::header) || ((tmp209 == DiffDataType::field) || ((tmp209 == DiffDataType::method) || ((tmp209 == DiffDataType::path) || (tmp209 == DiffDataType::status))))) {
             return Err(Error::PropertySetterError("DiffData::body"));
         }
-        if (tmp207 == DiffDataType::body) {
-            if !matches!(self.field186,Variant187::Variant199(_)) {
-                self.field186 = Variant187::Variant199(Variant199::default());
+        if (tmp209 == DiffDataType::body) {
+            if !matches!(self.field188,Variant189::Variant201(_)) {
+                self.field188 = Variant189::Variant201(Variant201::default());
             }
-            match &mut self.field186 {  Variant187::Variant199(x) => x, _ => unreachable!() }.body = param629;
+            match &mut self.field188 {  Variant189::Variant201(x) => x, _ => unreachable!() }.body = param631;
             return Ok(());
         }
         return Err(Error::PropertySetterError("DiffData::body"));
@@ -2554,15 +2558,15 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
     pub fn field(&self) -> std::option::Option<&Field<'a>> {
-        let mut tmp234 = self.diff_type;
-        if (tmp234 == DiffDataType::header) {
+        let mut tmp236 = self.diff_type;
+        if (tmp236 == DiffDataType::header) {
             return None;
         }
-        if (tmp234 == DiffDataType::field) {
-            if !matches!(self.field186,Variant187::Variant190(_)) {
+        if (tmp236 == DiffDataType::field) {
+            if !matches!(self.field188,Variant189::Variant192(_)) {
                 return None;
             }
-            return Some(&match &self.field186 {  Variant187::Variant190(x) => x, _ => unreachable!() }.field);
+            return Some(&match &self.field188 {  Variant189::Variant192(x) => x, _ => unreachable!() }.field);
         }
         return None;
     }
@@ -2570,16 +2574,16 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
-    pub fn set_field(&mut self, param640: Field<'a>) -> std::result::Result<(), Error> {
-        let mut tmp234 = self.diff_type;
-        if (tmp234 == DiffDataType::header) {
+    pub fn set_field(&mut self, param642: Field<'a>) -> std::result::Result<(), Error> {
+        let mut tmp236 = self.diff_type;
+        if (tmp236 == DiffDataType::header) {
             return Err(Error::PropertySetterError("DiffData::field"));
         }
-        if (tmp234 == DiffDataType::field) {
-            if !matches!(self.field186,Variant187::Variant190(_)) {
-                self.field186 = Variant187::Variant190(Variant190::default());
+        if (tmp236 == DiffDataType::field) {
+            if !matches!(self.field188,Variant189::Variant192(_)) {
+                self.field188 = Variant189::Variant192(Variant192::default());
             }
-            match &mut self.field186 {  Variant187::Variant190(x) => x, _ => unreachable!() }.field = param640;
+            match &mut self.field188 {  Variant189::Variant192(x) => x, _ => unreachable!() }.field = param642;
             return Ok(());
         }
         return Err(Error::PropertySetterError("DiffData::field"));
@@ -2589,12 +2593,12 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
     pub fn header(&self) -> std::option::Option<&Header<'a>> {
-        let mut tmp245 = self.diff_type;
-        if (tmp245 == DiffDataType::header) {
-            if !matches!(self.field186,Variant187::Variant188(_)) {
+        let mut tmp247 = self.diff_type;
+        if (tmp247 == DiffDataType::header) {
+            if !matches!(self.field188,Variant189::Variant190(_)) {
                 return None;
             }
-            return Some(&match &self.field186 {  Variant187::Variant188(x) => x, _ => unreachable!() }.header);
+            return Some(&match &self.field188 {  Variant189::Variant190(x) => x, _ => unreachable!() }.header);
         }
         return None;
     }
@@ -2602,13 +2606,13 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
-    pub fn set_header(&mut self, param646: Header<'a>) -> std::result::Result<(), Error> {
-        let mut tmp245 = self.diff_type;
-        if (tmp245 == DiffDataType::header) {
-            if !matches!(self.field186,Variant187::Variant188(_)) {
-                self.field186 = Variant187::Variant188(Variant188::default());
+    pub fn set_header(&mut self, param648: Header<'a>) -> std::result::Result<(), Error> {
+        let mut tmp247 = self.diff_type;
+        if (tmp247 == DiffDataType::header) {
+            if !matches!(self.field188,Variant189::Variant190(_)) {
+                self.field188 = Variant189::Variant190(Variant190::default());
             }
-            match &mut self.field186 {  Variant187::Variant188(x) => x, _ => unreachable!() }.header = param646;
+            match &mut self.field188 {  Variant189::Variant190(x) => x, _ => unreachable!() }.header = param648;
             return Ok(());
         }
         return Err(Error::PropertySetterError("DiffData::header"));
@@ -2618,15 +2622,15 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
     pub fn method(&self) -> std::option::Option<&MethodInfo<'a>> {
-        let mut tmp252 = self.diff_type;
-        if ((tmp252 == DiffDataType::header) || (tmp252 == DiffDataType::field)) {
+        let mut tmp254 = self.diff_type;
+        if ((tmp254 == DiffDataType::header) || (tmp254 == DiffDataType::field)) {
             return None;
         }
-        if (tmp252 == DiffDataType::method) {
-            if !matches!(self.field186,Variant187::Variant193(_)) {
+        if (tmp254 == DiffDataType::method) {
+            if !matches!(self.field188,Variant189::Variant195(_)) {
                 return None;
             }
-            return Some(&match &self.field186 {  Variant187::Variant193(x) => x, _ => unreachable!() }.method);
+            return Some(&match &self.field188 {  Variant189::Variant195(x) => x, _ => unreachable!() }.method);
         }
         return None;
     }
@@ -2634,16 +2638,16 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
-    pub fn set_method(&mut self, param654: MethodInfo<'a>) -> std::result::Result<(), Error> {
-        let mut tmp252 = self.diff_type;
-        if ((tmp252 == DiffDataType::header) || (tmp252 == DiffDataType::field)) {
+    pub fn set_method(&mut self, param656: MethodInfo<'a>) -> std::result::Result<(), Error> {
+        let mut tmp254 = self.diff_type;
+        if ((tmp254 == DiffDataType::header) || (tmp254 == DiffDataType::field)) {
             return Err(Error::PropertySetterError("DiffData::method"));
         }
-        if (tmp252 == DiffDataType::method) {
-            if !matches!(self.field186,Variant187::Variant193(_)) {
-                self.field186 = Variant187::Variant193(Variant193::default());
+        if (tmp254 == DiffDataType::method) {
+            if !matches!(self.field188,Variant189::Variant195(_)) {
+                self.field188 = Variant189::Variant195(Variant195::default());
             }
-            match &mut self.field186 {  Variant187::Variant193(x) => x, _ => unreachable!() }.method = param654;
+            match &mut self.field188 {  Variant189::Variant195(x) => x, _ => unreachable!() }.method = param656;
             return Ok(());
         }
         return Err(Error::PropertySetterError("DiffData::method"));
@@ -2653,15 +2657,15 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
     pub fn path(&self) -> std::option::Option<&PathInfo<'a>> {
-        let mut tmp267 = self.diff_type;
-        if ((tmp267 == DiffDataType::header) || ((tmp267 == DiffDataType::field) || (tmp267 == DiffDataType::method))) {
+        let mut tmp269 = self.diff_type;
+        if ((tmp269 == DiffDataType::header) || ((tmp269 == DiffDataType::field) || (tmp269 == DiffDataType::method))) {
             return None;
         }
-        if (tmp267 == DiffDataType::path) {
-            if !matches!(self.field186,Variant187::Variant195(_)) {
+        if (tmp269 == DiffDataType::path) {
+            if !matches!(self.field188,Variant189::Variant197(_)) {
                 return None;
             }
-            return Some(&match &self.field186 {  Variant187::Variant195(x) => x, _ => unreachable!() }.path);
+            return Some(&match &self.field188 {  Variant189::Variant197(x) => x, _ => unreachable!() }.path);
         }
         return None;
     }
@@ -2669,16 +2673,16 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
-    pub fn set_path(&mut self, param664: PathInfo<'a>) -> std::result::Result<(), Error> {
-        let mut tmp267 = self.diff_type;
-        if ((tmp267 == DiffDataType::header) || ((tmp267 == DiffDataType::field) || (tmp267 == DiffDataType::method))) {
+    pub fn set_path(&mut self, param666: PathInfo<'a>) -> std::result::Result<(), Error> {
+        let mut tmp269 = self.diff_type;
+        if ((tmp269 == DiffDataType::header) || ((tmp269 == DiffDataType::field) || (tmp269 == DiffDataType::method))) {
             return Err(Error::PropertySetterError("DiffData::path"));
         }
-        if (tmp267 == DiffDataType::path) {
-            if !matches!(self.field186,Variant187::Variant195(_)) {
-                self.field186 = Variant187::Variant195(Variant195::default());
+        if (tmp269 == DiffDataType::path) {
+            if !matches!(self.field188,Variant189::Variant197(_)) {
+                self.field188 = Variant189::Variant197(Variant197::default());
             }
-            match &mut self.field186 {  Variant187::Variant195(x) => x, _ => unreachable!() }.path = param664;
+            match &mut self.field188 {  Variant189::Variant197(x) => x, _ => unreachable!() }.path = param666;
             return Ok(());
         }
         return Err(Error::PropertySetterError("DiffData::path"));
@@ -2688,15 +2692,15 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
     pub fn routing(&self) -> std::option::Option<&Routing> {
-        let mut tmp286 = self.diff_type;
-        if ((tmp286 == DiffDataType::header) || ((tmp286 == DiffDataType::field) || ((tmp286 == DiffDataType::method) || ((tmp286 == DiffDataType::path) || ((tmp286 == DiffDataType::status) || (tmp286 == DiffDataType::body)))))) {
+        let mut tmp288 = self.diff_type;
+        if ((tmp288 == DiffDataType::header) || ((tmp288 == DiffDataType::field) || ((tmp288 == DiffDataType::method) || ((tmp288 == DiffDataType::path) || ((tmp288 == DiffDataType::status) || (tmp288 == DiffDataType::body)))))) {
             return None;
         }
-        if (tmp286 == DiffDataType::routing) {
-            if !matches!(self.field186,Variant187::Variant202(_)) {
+        if (tmp288 == DiffDataType::routing) {
+            if !matches!(self.field188,Variant189::Variant204(_)) {
                 return None;
             }
-            return Some(&match &self.field186 {  Variant187::Variant202(x) => x, _ => unreachable!() }.routing);
+            return Some(&match &self.field188 {  Variant189::Variant204(x) => x, _ => unreachable!() }.routing);
         }
         return None;
     }
@@ -2704,16 +2708,16 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
-    pub fn set_routing(&mut self, param678: Routing) -> std::result::Result<(), Error> {
-        let mut tmp286 = self.diff_type;
-        if ((tmp286 == DiffDataType::header) || ((tmp286 == DiffDataType::field) || ((tmp286 == DiffDataType::method) || ((tmp286 == DiffDataType::path) || ((tmp286 == DiffDataType::status) || (tmp286 == DiffDataType::body)))))) {
+    pub fn set_routing(&mut self, param680: Routing) -> std::result::Result<(), Error> {
+        let mut tmp288 = self.diff_type;
+        if ((tmp288 == DiffDataType::header) || ((tmp288 == DiffDataType::field) || ((tmp288 == DiffDataType::method) || ((tmp288 == DiffDataType::path) || ((tmp288 == DiffDataType::status) || (tmp288 == DiffDataType::body)))))) {
             return Err(Error::PropertySetterError("DiffData::routing"));
         }
-        if (tmp286 == DiffDataType::routing) {
-            if !matches!(self.field186,Variant187::Variant202(_)) {
-                self.field186 = Variant187::Variant202(Variant202::default());
+        if (tmp288 == DiffDataType::routing) {
+            if !matches!(self.field188,Variant189::Variant204(_)) {
+                self.field188 = Variant189::Variant204(Variant204::default());
             }
-            match &mut self.field186 {  Variant187::Variant202(x) => x, _ => unreachable!() }.routing = param678;
+            match &mut self.field188 {  Variant189::Variant204(x) => x, _ => unreachable!() }.routing = param680;
             return Ok(());
         }
         return Err(Error::PropertySetterError("DiffData::routing"));
@@ -2723,15 +2727,15 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
     pub fn status(&self) -> std::option::Option<&u16> {
-        let mut tmp317 = self.diff_type;
-        if ((tmp317 == DiffDataType::header) || ((tmp317 == DiffDataType::field) || ((tmp317 == DiffDataType::method) || (tmp317 == DiffDataType::path)))) {
+        let mut tmp319 = self.diff_type;
+        if ((tmp319 == DiffDataType::header) || ((tmp319 == DiffDataType::field) || ((tmp319 == DiffDataType::method) || (tmp319 == DiffDataType::path)))) {
             return None;
         }
-        if (tmp317 == DiffDataType::status) {
-            if !matches!(self.field186,Variant187::Variant197(_)) {
+        if (tmp319 == DiffDataType::status) {
+            if !matches!(self.field188,Variant189::Variant199(_)) {
                 return None;
             }
-            return Some(&match &self.field186 {  Variant187::Variant197(x) => x, _ => unreachable!() }.status);
+            return Some(&match &self.field188 {  Variant189::Variant199(x) => x, _ => unreachable!() }.status);
         }
         return None;
     }
@@ -2739,16 +2743,16 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>DiffData<'a> {
-    pub fn set_status(&mut self, param693: u16) -> std::result::Result<(), Error> {
-        let mut tmp317 = self.diff_type;
-        if ((tmp317 == DiffDataType::header) || ((tmp317 == DiffDataType::field) || ((tmp317 == DiffDataType::method) || (tmp317 == DiffDataType::path)))) {
+    pub fn set_status(&mut self, param695: u16) -> std::result::Result<(), Error> {
+        let mut tmp319 = self.diff_type;
+        if ((tmp319 == DiffDataType::header) || ((tmp319 == DiffDataType::field) || ((tmp319 == DiffDataType::method) || (tmp319 == DiffDataType::path)))) {
             return Err(Error::PropertySetterError("DiffData::status"));
         }
-        if (tmp317 == DiffDataType::status) {
-            if !matches!(self.field186,Variant187::Variant197(_)) {
-                self.field186 = Variant187::Variant197(Variant197::default());
+        if (tmp319 == DiffDataType::status) {
+            if !matches!(self.field188,Variant189::Variant199(_)) {
+                self.field188 = Variant189::Variant199(Variant199::default());
             }
-            match &mut self.field186 {  Variant187::Variant197(x) => x, _ => unreachable!() }.status = param693;
+            match &mut self.field188 {  Variant189::Variant199(x) => x, _ => unreachable!() }.status = param695;
             return Ok(());
         }
         return Err(Error::PropertySetterError("DiffData::status"));
@@ -2757,12 +2761,12 @@ impl <'a>DiffData<'a> {
 /* Unimplemented op: RETURN_TYPE */
 /* Unimplemented op: PROPERTY_FUNCTION */
 impl <'a>ChangeSet<'a> {
-    pub fn set_diff(&mut self, param699: std::borrow::Cow<'a,[DiffData<'a>]>) -> std::result::Result<(), Error> {
-        if(!(param699.len() <= 255)) { 
-        return Err(Error::AssertError("(param699.len() <= 255)"));
+    pub fn set_diff(&mut self, param701: std::borrow::Cow<'a,[DiffData<'a>]>) -> std::result::Result<(), Error> {
+        if(!(param701.len() <= 255)) { 
+        return Err(Error::AssertError("(param701.len() <= 255)"));
         }
-        self.len = (param699.len() as u8);
-        self.diff = param699;
+        self.len = (param701.len() as u8);
+        self.diff = param701;
         return Ok(());
     }
 }

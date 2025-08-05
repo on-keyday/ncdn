@@ -1,6 +1,7 @@
 package l4lbdrv
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -155,15 +156,16 @@ func NowNanoseconds() uint64 {
 type DestinationEntry struct {
 	IPAddr       netip.Addr
 	HardwareAddr net.HardwareAddr
+	ServerID     uint32
 }
 
 func (e DestinationEntry) String() string {
-	return fmt.Sprintf("{IPAddr: %v, HardwareAddr: %v}", e.IPAddr, e.HardwareAddr)
+	return fmt.Sprintf("{IPAddr: %v, HardwareAddr: %v, ServerID: %d}", e.IPAddr, e.HardwareAddr, e.ServerID)
 }
 
 type DestinationEntries []DestinationEntry
 
-const DestinationEntrySize = 10
+const DestinationEntrySize = 14
 
 func (es DestinationEntries) MarshalBinary() ([]byte, error) {
 	buf := make([]byte, len(es)*DestinationEntrySize)
@@ -179,6 +181,9 @@ func (es DestinationEntries) MarshalBinary() ([]byte, error) {
 		}
 		copy(bs[0:6], e.HardwareAddr)
 		bs = bs[6:]
+		// ServerID is a uint32, so we need to convert it to native byte order
+		binary.NativeEndian.PutUint32(bs[0:4], e.ServerID)
+		bs = bs[4:]
 	}
 
 	return buf, nil

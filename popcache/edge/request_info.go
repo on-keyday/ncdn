@@ -65,17 +65,18 @@ func (t Protocol) String() string {
 type Method uint8
 
 const (
-	Method_Get     Method = 0
-	Method_Post    Method = 1
-	Method_Put     Method = 2
-	Method_Head    Method = 3
-	Method_Options Method = 4
-	Method_Patch   Method = 5
-	Method_Delete  Method = 6
-	Method_Connect Method = 7
-	Method_Pri     Method = 8
-	Method_Trace   Method = 9
-	Method_Other   Method = 0xff
+	Method_Get          Method = 0
+	Method_Post         Method = 1
+	Method_Put          Method = 2
+	Method_Head         Method = 3
+	Method_Options      Method = 4
+	Method_Patch        Method = 5
+	Method_Delete       Method = 6
+	Method_Connect      Method = 7
+	Method_Pri          Method = 8
+	Method_Trace        Method = 9
+	Method_WellKnownMax Method = 10
+	Method_Other        Method = 0xff
 )
 
 func (t Method) String() string {
@@ -100,6 +101,8 @@ func (t Method) String() string {
 		return "PRI"
 	case Method_Trace:
 		return "TRACE"
+	case Method_WellKnownMax:
+		return "WellKnownMax"
 	case Method_Other:
 		return "Other"
 	}

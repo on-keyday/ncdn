@@ -2,6 +2,7 @@ package control
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"slices"
 	"sync"
@@ -12,11 +13,14 @@ import (
 
 type Connection interface {
 	Send([]byte) error
+	SendReader(control []byte, size int, reader io.ReaderAt) error
 	Receive() ([]byte, error)
+	ReceiveReader(size int) (io.Reader, error)
 	SetDeadline(time.Time) error
 	Close() error
 	RemoteAddr() string
 }
+
 type Listener interface {
 	Accept() (Connection, error)
 	Close() error
@@ -29,43 +33,109 @@ type Controller interface {
 
 func NewController(logger slog.Logger) Controller {
 	c := &controller{
-		loger:            logger,
-		notifyL4L7Update: make(chan []*protocol.L7LBData, 100),
+		logger: logger,
 	}
-	go c.handleNotify()
 	return c
 }
 
-type controller struct {
-	lock             sync.Mutex
-	l4lb             *L4LB // currently only one L4LB is supported
-	l7lbList         []*L7LB
-	loger            slog.Logger
-	notifyL4L7Update chan []*protocol.L7LBData
-	sharedKey        []byte
+type sharedKey struct {
+	generation uint64
+	key        []byte
 }
 
-func (c *controller) handleNotify() {
-	for data := range c.notifyL4L7Update {
-		msg := protocol.L4L7LBUpdate(data)
-		enc, err := msg.Encode()
-		if err != nil {
-			c.loger.Error("Failed to encode L4L7LBUpdate message", "error", err)
-			continue
-		}
-		var l4lb *L4LB
-		c.withLock(func() {
-			l4lb = c.l4lb
-		})
-		if l4lb != nil {
-			if err := l4lb.conn.Send(enc); err != nil {
-				c.loger.Error("Failed to send L4L7LBUpdate message", "error", err)
-			} else {
-				c.loger.Info("Sent L4L7LBUpdate message", "data", data)
+type message struct {
+	seqNum uint64
+	data   *protocol.ControlMessage
+}
+
+type l7List struct {
+	generation uint64
+	list       []*L7LB
+}
+
+type controller struct {
+	lock      sync.Mutex
+	l4lb      *L4LB // currently only one L4LB is supported
+	l7lbList  l7List
+	logger    slog.Logger
+	sharedKey sharedKey
+	msgSeqNum uint64
+}
+
+type messageChannel struct {
+	messageChan       chan message
+	closedChan        chan struct{}
+	closed            sync.Once
+	latestSeqPerEvent map[protocol.ControlMessageType]uint64
+}
+
+func (c *messageChannel) CloseChannel() {
+	c.closed.Do(func() {
+		close(c.closedChan)
+	})
+}
+
+var ErrChannelClosed = errors.New("message channel closed")
+
+func (c *messageChannel) ReceiveMessage() (message, error) {
+	for {
+		select {
+		case msg := <-c.messageChan:
+			if latest, ok := c.latestSeqPerEvent[msg.data.Header.MessageType]; ok && msg.seqNum <= latest {
+				continue // Skip messages with sequence number less than or equal to the latest
 			}
-		} else {
-			c.loger.Warn("No L4LB connection available to send update")
+			c.latestSeqPerEvent[msg.data.Header.MessageType] = msg.seqNum
+			return msg, nil
+		case <-c.closedChan:
+			return message{}, ErrChannelClosed
 		}
+	}
+}
+
+func (c *messageChannel) SendMessage(msg message) error {
+	select {
+	case c.messageChan <- msg:
+	case <-c.closedChan:
+		return ErrChannelClosed
+	}
+	return nil
+}
+
+type LBConn[T any] struct {
+	conn Connection
+	data *T
+	messageChannel
+}
+
+type L4LB = LBConn[protocol.L4LBData]
+type L7LB = LBConn[protocol.L7LBData]
+
+func (l *LBConn[T]) Close() error {
+	l.CloseChannel()
+	return l.conn.Close()
+}
+
+func NewL4LB(conn Connection, data *protocol.L4LBData) *L4LB {
+	return &L4LB{
+		conn: conn,
+		data: data,
+		messageChannel: messageChannel{
+			messageChan:       make(chan message, 100),
+			closedChan:        make(chan struct{}),
+			latestSeqPerEvent: make(map[protocol.ControlMessageType]uint64),
+		},
+	}
+}
+
+func NewL7LB(conn Connection, data *protocol.L7LBData) *L7LB {
+	return &L7LB{
+		conn: conn,
+		data: data,
+		messageChannel: messageChannel{
+			messageChan:       make(chan message, 100),
+			closedChan:        make(chan struct{}),
+			latestSeqPerEvent: make(map[protocol.ControlMessageType]uint64),
+		},
 	}
 }
 
@@ -75,21 +145,37 @@ func (c *controller) withLock(fn func()) {
 	fn()
 }
 
-type L4LB struct {
-	conn Connection
-	data *protocol.L4LBData
-}
-
-type L7LB struct {
-	conn Connection
-	data *protocol.L7LBData
+func (c *controller) ShareKey(key []byte) {
+	var l4lb *L4LB
+	var l7lbList l7List
+	c.withLock(func() {
+		c.sharedKey.generation = c.msgSeqNum
+		c.sharedKey.key = key
+		c.msgSeqNum++
+		l4lb = c.l4lb
+		l7lbList.list = append([]*L7LB{}, c.l7lbList.list...)
+		l7lbList.generation = c.l7lbList.generation
+	})
+	if l4lb != nil {
+		l4lb.SendMessage(message{
+			seqNum: c.sharedKey.generation,
+			data:   protocol.KeyShare(protocol.KeyType_Quiclb, c.sharedKey.key),
+		})
+	}
+	for _, l7lb := range l7lbList.list {
+		l7lb.SendMessage(message{
+			seqNum: c.sharedKey.generation,
+			data:   protocol.KeyShare(protocol.KeyType_Quiclb, c.sharedKey.key),
+		})
+	}
+	c.logger.Info("Shared key with L4LB and L7LBs", "key", c.sharedKey.key, "generation", c.sharedKey.generation)
 }
 
 func (c *controller) Run(lis Listener) error {
 	for {
 		conn, err := lis.Accept()
 		if err != nil {
-			c.loger.Error("Failed to accept connection", "error", err)
+			c.logger.Error("Failed to accept connection", "error", err)
 			continue
 		}
 		go c.handleConnection(conn)
@@ -98,159 +184,189 @@ func (c *controller) Run(lis Listener) error {
 
 func (c *controller) handleConnection(conn Connection) {
 	defer conn.Close()
-	c.loger.Info("New connection established", "remote_addr", conn.RemoteAddr())
+	c.logger.Info("New connection established", "remote_addr", conn.RemoteAddr())
 	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		c.loger.Error("Failed to set deadline", "error", err)
+		c.logger.Error("Failed to set deadline", "error", err)
 		return
 	}
 	data, err := conn.Receive()
 	if err != nil {
-		c.loger.Error("Failed to receive data", "error", err)
+		c.logger.Error("Failed to receive data", "error", err)
 		return
 	}
 	msg := &protocol.ControlMessage{}
 	err = msg.DecodeExact(data)
 	if err != nil {
-		c.loger.Error("Failed to decode message", "error", err)
+		c.logger.Error("Failed to decode message", "error", err)
 		return
 	}
 	switch msg.Header.MessageType {
 	case protocol.ControlMessageType_L4LbHello:
-		l4lbData := msg.L4LbHello()
+		l4lbInfo := msg.L4LbHello()
 		var err error
-		l4lb := &L4LB{
-			conn: conn,
-			data: protocol.L4LBInfoToData(l4lbData),
-		}
+		l4lb := NewL4LB(conn, protocol.L4LBInfoToData(l4lbInfo))
 		var updateInfo []*protocol.L7LBData
-		var sharedKey []byte
+		var l7generation uint64
+		var sharedKey sharedKey
 		c.withLock(func() {
 			if c.l4lb != nil {
 				err = errors.New("L4LB already exists")
 				return
 			}
 			c.l4lb = l4lb
-			for _, v := range c.l7lbList {
+			for _, v := range c.l7lbList.list {
 				updateInfo = append(updateInfo, v.data)
 			}
+			l7generation = c.l7lbList.generation
 			sharedKey = c.sharedKey
 		})
 		if err != nil {
-			c.loger.Error("Failed to set L4LB", "error", err)
+			c.logger.Error("Failed to set L4LB", "error", err)
 			return
 		}
-		keyShareMsg, err := protocol.KeyShare(protocol.KeyType_Quiclb, sharedKey).Encode()
-		if err != nil {
-			c.loger.Error("Failed to encode KeyShare message", "error", err)
-			return
-		}
-		if err := l4lb.conn.Send(keyShareMsg); err != nil {
-			c.loger.Error("Failed to send KeyShare message", "error", err)
-			return
-		}
-		c.notifyL4L7Update <- updateInfo
+		l4lb.SendMessage(message{
+			seqNum: sharedKey.generation,
+			data:   protocol.KeyShare(protocol.KeyType_Quiclb, sharedKey.key),
+		})
+		l4lb.SendMessage(message{
+			seqNum: l7generation,
+			data:   protocol.L4L7LBUpdate(updateInfo),
+		})
 		c.handleL4LB(l4lb)
 	case protocol.ControlMessageType_L7LbHello:
-		l7lbData := msg.L7LbHello()
-		l7lb := &L7LB{
-			conn: conn,
-			data: protocol.L7LBInfoToData(l7lbData),
-		}
+		l7lbInfo := msg.L7LbHello()
+		l7lb := NewL7LB(conn, protocol.L7LBInfoToData(l7lbInfo))
 		var err error
 		var data []*protocol.L7LBData
+		var sharedKey sharedKey
+		var l7generation uint64
+		var l4lb *L4LB
 		c.withLock(func() {
-			for _, v := range c.l7lbList {
+			for _, v := range c.l7lbList.list {
 				if v.data.ServerID == l7lb.data.ServerID {
 					err = errors.New("L7LB with this ServerID already exists")
 					return
 				}
 			}
-			c.l7lbList = append(c.l7lbList, l7lb)
-			slices.SortFunc(c.l7lbList, func(a, b *L7LB) int {
+			c.l7lbList.list = append(c.l7lbList.list, l7lb)
+			c.l7lbList.generation = c.msgSeqNum
+			c.msgSeqNum++
+			slices.SortFunc(c.l7lbList.list, func(a, b *L7LB) int {
 				return int(a.data.ServerID) - int(b.data.ServerID)
 			})
-			for _, v := range c.l7lbList {
+			for _, v := range c.l7lbList.list {
 				data = append(data, v.data)
 			}
+			l4lb = c.l4lb
+			l7generation = c.l7lbList.generation
+			sharedKey = c.sharedKey
 		})
 		if err != nil {
-			c.loger.Error("Failed to set L7LB", "error", err)
+			c.logger.Error("Failed to set L7LB", "error", err)
 			return
 		}
-		c.notifyL4L7Update <- data
+		l7lb.SendMessage(message{
+			seqNum: l7generation,
+			data:   protocol.KeyShare(protocol.KeyType_Quiclb, sharedKey.key),
+		})
+		if l4lb != nil {
+			l4lb.SendMessage(message{
+				seqNum: l7generation,
+				data:   protocol.L4L7LBUpdate(data),
+			})
+		}
 		c.handleL7LB(l7lb)
 	default:
-		c.loger.Error("Unknown message type", "type", msg.Header.MessageType)
+		c.logger.Error("Unknown message type", "type", msg.Header.MessageType)
 		return
 	}
 }
 
-func (c *controller) handleL7LB(l7lb *L7LB) {
-	// Handle L7LB specific logic here
-	c.loger.Info("L7LB Connected", "data", l7lb.data)
-	defer func() {
-		var data []*protocol.L7LBData
-		c.withLock(func() {
-			for i, v := range c.l7lbList {
-				if v == l7lb {
-					c.l7lbList = append(c.l7lbList[:i], c.l7lbList[i+1:]...)
-					continue
+func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], clean func()) {
+	c.logger.Info("LB Connected", "data", lbConn.data, "type", lbType)
+	defer lbConn.Close()
+	defer clean()
+	go func() {
+		defer lbConn.Close()
+		for {
+			msg, err := lbConn.ReceiveMessage()
+			if err != nil {
+				if errors.Is(err, ErrChannelClosed) {
+					c.logger.Info("L7LB message channel closed")
+				} else {
+					c.logger.Error("Failed to receive message from L7LB", "error", err)
 				}
-				data = append(data, v.data)
+				return
 			}
-		})
-		c.loger.Info("L7LB disconnected", "remote_addr", l7lb.conn.RemoteAddr())
-		c.notifyL4L7Update <- data
+			enc, err := msg.data.Encode()
+			if err != nil {
+				c.logger.Error("Failed to encode message from L7LB", "error", err)
+				return
+			}
+			if err := lbConn.conn.Send(enc); err != nil {
+				c.logger.Error("Failed to send message to L7LB", "error", err)
+				return
+			}
+			c.logger.Info("Sent message to L7LB", "message_type", msg.data.Header.MessageType, "seq_num", msg.seqNum)
+		}
 	}()
 	for {
-		data, err := l7lb.conn.Receive()
+		data, err := lbConn.conn.Receive()
 		if err != nil {
-			c.loger.Error("Failed to receive data from L7LB", "error", err)
+			c.logger.Error("Failed to receive data from L7LB", "error", err)
 			return
 		}
 		msg := &protocol.ControlMessage{}
 		err = msg.DecodeExact(data)
 		if err != nil {
-			c.loger.Error("Failed to decode message from L7LB", "error", err)
+			c.logger.Error("Failed to decode message from L7LB", "error", err)
 			return
 		}
-		c.loger.Info("Received message from L7LB", "message_type", msg.Header.MessageType)
+		c.logger.Info("Received message from L7LB", "message_type", msg.Header.MessageType)
 		if kl := msg.KeepAlive(); kl != nil {
-			l7lb.conn.SetDeadline(time.Now().Add(time.Duration(kl.NextPeriod)))
+			lbConn.conn.SetDeadline(time.Now().Add(time.Duration(kl.NextPeriod)))
 		} else {
-			c.loger.Error("Unexpected message type from L7LB", "type", msg.Header.MessageType)
+			c.logger.Error("Unexpected message type from L7LB", "type", msg.Header.MessageType)
 			return
 		}
 	}
 }
 
+func (c *controller) handleL7LB(l7lb *L7LB) {
+	handleLBConn(c, "L7LB", l7lb, func() {
+		var data []*protocol.L7LBData
+		var l4lb *L4LB
+		var l7generation uint64
+		c.withLock(func() {
+			for i, v := range c.l7lbList.list {
+				if v == l7lb {
+					c.l7lbList.list = append(c.l7lbList.list[:i], c.l7lbList.list[i+1:]...)
+					break
+				}
+			}
+			for _, v := range c.l7lbList.list {
+				data = append(data, v.data)
+			}
+			c.l7lbList.generation = c.msgSeqNum
+			c.msgSeqNum++
+			l7generation = c.l7lbList.generation
+			l4lb = c.l4lb
+		})
+		c.logger.Info("L7LB disconnected", "remote_addr", l7lb.conn.RemoteAddr())
+		if l4lb != nil {
+			l4lb.SendMessage(message{
+				seqNum: l7generation,
+				data:   protocol.L4L7LBUpdate(data),
+			})
+		}
+	})
+}
+
 func (c *controller) handleL4LB(l4lb *L4LB) {
-	// Handle L4LB specific logic here
-	c.loger.Info("L4LB Connected", "data", l4lb.data)
-	defer func() {
+	handleLBConn(c, "L4LB", l4lb, func() {
 		c.withLock(func() {
 			c.l4lb = nil // Clear L4LB after handling
 		})
-		c.loger.Info("L4LB disconnected", "remote_addr", l4lb.conn.RemoteAddr())
-	}()
-	for {
-		data, err := l4lb.conn.Receive()
-		if err != nil {
-			c.loger.Error("Failed to receive data from L4LB", "error", err)
-			return
-		}
-		msg := &protocol.ControlMessage{}
-		err = msg.DecodeExact(data)
-		if err != nil {
-			c.loger.Error("Failed to decode message from L4LB", "error", err)
-			return
-		}
-		c.loger.Info("Received message from L4LB", "message_type", msg.Header.MessageType)
-		kl := msg.KeepAlive()
-		if kl == nil {
-			c.loger.Error("Unexpected message type from L4LB", "type", msg.Header.MessageType)
-			return
-		}
-		l4lb.conn.SetDeadline(time.Now().Add(time.Duration(kl.NextPeriod)))
-	}
+		c.logger.Info("L4LB disconnected", "remote_addr", l4lb.conn.RemoteAddr())
+	})
 }
