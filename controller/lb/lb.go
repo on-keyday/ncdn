@@ -7,6 +7,12 @@ import (
 	"github.com/yzp0n/ncdn/controller/transport"
 )
 
+type LoadBalancer interface {
+	KeepAlive(t time.Duration) error
+	Receive() (*protocol.ControlMessage, error)
+	Close() error
+}
+
 type LBState[T any] struct {
 	Data *T
 	Conn transport.Connection
@@ -65,4 +71,13 @@ func (lb *LBState[T]) Receive() (*protocol.ControlMessage, error) {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func (lb *LBState[T]) Close() error {
+	if lb.Conn == nil {
+		return nil
+	}
+	err := lb.Conn.Close()
+	lb.Conn = nil // Prevent double close
+	return err
 }

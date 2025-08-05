@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net/url"
 	"time"
@@ -20,7 +21,11 @@ func mustParseURL(rawURL string) *url.URL {
 	return u
 }
 
+var isL7 = flag.Bool("l7", false, "Use L7 load balancer instead of L4")
+var id = flag.Int("id", 1, "Server ID for the load balancer")
+
 func main() {
+	flag.Parse()
 	conn, err := wstransport.Connect(context.Background(), &websocket.Config{
 		Location: mustParseURL("ws://localhost:8080"),
 		Origin:   mustParseURL("http://localhost:8080"),
@@ -30,15 +35,22 @@ func main() {
 		panic(err)
 	}
 	defer conn.Close()
-	lb, err := lb.ConnectL4LB(conn, &protocol.L4LBData{
-		ServerID: 1,
-	}, 20*time.Second)
+	var clb lb.LoadBalancer
+	if *isL7 {
+		clb, err = lb.ConnectL7LB(conn, &protocol.L7LBData{
+			ServerID: uint32(*id),
+		}, 20*time.Second)
+	} else {
+		clb, err = lb.ConnectL4LB(conn, &protocol.L4LBData{
+			ServerID: uint32(*id),
+		}, 20*time.Second)
+	}
 	if err != nil {
 		panic(err)
 	}
-	defer lb.Conn.Close()
+	defer clb.Close()
 	for {
-		msg, err := lb.Receive()
+		msg, err := clb.Receive()
 		if err != nil {
 			log.Printf("Error receiving message: %v", err)
 			break

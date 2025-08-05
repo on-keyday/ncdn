@@ -13,9 +13,33 @@ import (
 	"github.com/yzp0n/ncdn/controller/transport"
 )
 
+type ControllerStatus struct {
+	L4LBData []*protocol.L4LBData
+	L7LBData []*protocol.L7LBData
+}
+
 type Controller interface {
 	ShareKey([]byte)
 	Run(context.Context, transport.Listener) error
+	Status() *ControllerStatus
+}
+
+func (c *controller) Status() *ControllerStatus {
+	s := &ControllerStatus{}
+	c.withLock(func() {
+		if c.l4lb != nil {
+			cloned := *c.l4lb.data
+			s.L4LBData = append(s.L4LBData, &cloned)
+		}
+		s.L7LBData = make([]*protocol.L7LBData, len(c.l7lbList.list))
+		for i, lb := range c.l7lbList.list {
+			cloned := *lb.data
+			cloned.Ports = make([]uint16, len(lb.data.Ports))
+			copy(cloned.Ports, lb.data.Ports)
+			s.L7LBData[i] = &cloned
+		}
+	})
+	return s
 }
 
 func NewController(logger *slog.Logger) Controller {
@@ -327,7 +351,7 @@ func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], clean 
 			msg, err := lbConn.ReceiveMessage()
 			if err != nil {
 				if errors.Is(err, ErrChannelClosed) {
-					lbConn.logger.Info("L7LB message channel closed")
+					lbConn.logger.Info("Controller message channel closed")
 				} else {
 					lbConn.logger.Error("Failed to receive message from controller", "error", err)
 				}
