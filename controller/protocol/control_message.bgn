@@ -31,8 +31,8 @@ format ControlMessage:
         ControlMessageType.l4lb_l7lb_update => l4lb_l7lb_update :L4LBL7LBUpdate(input = input.subrange(header.len))
         ControlMessageType.l4lb_update => l4lb_update :L4LBUpdate(input = input.subrange(header.len))
         ControlMessageType.key_share => key_share :KeyShareInfo(input = input.subrange(header.len))
-        ControlMessageType.wasm_install => wasm_install :WasmInstall(input = input.subrange(header.len))
-        ControlMessageType.wasm_uninstall => wasm_uninstall :WasmUninstall(input = input.subrange(header.len))
+        ControlMessageType.wasm_install => wasm_install :WasmInstallInfo(input = input.subrange(header.len))
+        ControlMessageType.wasm_uninstall => wasm_uninstall :WasmUninstallInfo(input = input.subrange(header.len))
         .. => data :[header.len]u8
 
 
@@ -62,11 +62,16 @@ format L4LBInfo:
 format L4LBUpdate:
     virtual_address :[4]u8
 
+enum KeyType:
+    :u8
+    quiclb
+
 format KeyShareInfo:
+    type :KeyType
     len :u16
     key :[len]u8
 
-format WasmInstall:
+format WasmInstallInfo:
     id :u32
     method_len :u8
     method :[method_len]u8
@@ -74,5 +79,5 @@ format WasmInstall:
     path :[path_len]u8
     binary_size :u64 # followed by single data websocket frame contains webassembly
 
-format WasmUninstall:
+format WasmUninstallInfo:
     id :u32

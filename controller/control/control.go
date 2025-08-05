@@ -22,15 +22,30 @@ type Listener interface {
 	Close() error
 }
 
-type Controller struct {
-	lock             sync.RWMutex
+type Controller interface {
+	ShareKey([]byte)
+	Run(Listener) error
+}
+
+func NewController(logger slog.Logger) Controller {
+	c := &controller{
+		loger:            logger,
+		notifyL4L7Update: make(chan []*protocol.L7LBData, 100),
+	}
+	go c.handleNotify()
+	return c
+}
+
+type controller struct {
+	lock             sync.Mutex
 	l4lb             *L4LB // currently only one L4LB is supported
 	l7lbList         []*L7LB
 	loger            slog.Logger
 	notifyL4L7Update chan []*protocol.L7LBData
+	sharedKey        []byte
 }
 
-func (c *Controller) handleNotify() {
+func (c *controller) handleNotify() {
 	for data := range c.notifyL4L7Update {
 		msg := protocol.L4L7LBUpdate(data)
 		enc, err := msg.Encode()
@@ -54,7 +69,7 @@ func (c *Controller) handleNotify() {
 	}
 }
 
-func (c *Controller) withLock(fn func()) {
+func (c *controller) withLock(fn func()) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	fn()
@@ -70,7 +85,7 @@ type L7LB struct {
 	data *protocol.L7LBData
 }
 
-func (c *Controller) Run(lis Listener) error {
+func (c *controller) Run(lis Listener) error {
 	for {
 		conn, err := lis.Accept()
 		if err != nil {
@@ -81,7 +96,7 @@ func (c *Controller) Run(lis Listener) error {
 	}
 }
 
-func (c *Controller) handleConnection(conn Connection) {
+func (c *controller) handleConnection(conn Connection) {
 	defer conn.Close()
 	c.loger.Info("New connection established", "remote_addr", conn.RemoteAddr())
 	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
@@ -108,6 +123,7 @@ func (c *Controller) handleConnection(conn Connection) {
 			data: protocol.L4LBInfoToData(l4lbData),
 		}
 		var updateInfo []*protocol.L7LBData
+		var sharedKey []byte
 		c.withLock(func() {
 			if c.l4lb != nil {
 				err = errors.New("L4LB already exists")
@@ -117,9 +133,19 @@ func (c *Controller) handleConnection(conn Connection) {
 			for _, v := range c.l7lbList {
 				updateInfo = append(updateInfo, v.data)
 			}
+			sharedKey = c.sharedKey
 		})
 		if err != nil {
 			c.loger.Error("Failed to set L4LB", "error", err)
+			return
+		}
+		keyShareMsg, err := protocol.KeyShare(protocol.KeyType_Quiclb, sharedKey).Encode()
+		if err != nil {
+			c.loger.Error("Failed to encode KeyShare message", "error", err)
+			return
+		}
+		if err := l4lb.conn.Send(keyShareMsg); err != nil {
+			c.loger.Error("Failed to send KeyShare message", "error", err)
 			return
 		}
 		c.notifyL4L7Update <- updateInfo
@@ -159,19 +185,22 @@ func (c *Controller) handleConnection(conn Connection) {
 	}
 }
 
-func (c *Controller) handleL7LB(l7lb *L7LB) {
+func (c *controller) handleL7LB(l7lb *L7LB) {
 	// Handle L7LB specific logic here
 	c.loger.Info("L7LB Connected", "data", l7lb.data)
 	defer func() {
+		var data []*protocol.L7LBData
 		c.withLock(func() {
 			for i, v := range c.l7lbList {
 				if v == l7lb {
 					c.l7lbList = append(c.l7lbList[:i], c.l7lbList[i+1:]...)
-					break
+					continue
 				}
+				data = append(data, v.data)
 			}
 		})
 		c.loger.Info("L7LB disconnected", "remote_addr", l7lb.conn.RemoteAddr())
+		c.notifyL4L7Update <- data
 	}()
 	for {
 		data, err := l7lb.conn.Receive()
@@ -195,7 +224,7 @@ func (c *Controller) handleL7LB(l7lb *L7LB) {
 	}
 }
 
-func (c *Controller) handleL4LB(l4lb *L4LB) {
+func (c *controller) handleL4LB(l4lb *L4LB) {
 	// Handle L4LB specific logic here
 	c.loger.Info("L4LB Connected", "data", l4lb.data)
 	defer func() {

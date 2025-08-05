@@ -145,6 +145,7 @@ func main() {
 		reqID, err := ec.StartRequest(r.Context(), r)
 		var handleRequest func(*http.Request)
 		var handleResponse func(*http.Response)
+		routing := edge.Routing_Cont
 		if err != nil {
 			if !errors.Is(err, edge.ErrNoEdgeFunction) {
 				log.Printf("Failed to start request: %v", err)
@@ -164,19 +165,113 @@ func main() {
 				if err != nil {
 					log.Printf("Failed to process request: %v", err)
 				}
+				cloned := req.Clone(r.Context())
+				changeRoute := edge.Routing_Cont
+				err = ec.ModifyRequest(r.Context(), reqID, func(d []edge.DiffData) error {
+					for i := range d {
+						if r := d[i].Routing(); r != nil {
+							changeRoute = *r
+							continue
+						}
+						err := edge.DefaultModifyRequest(&d[i], cloned)
+						if err != nil {
+							return err
+						}
+					}
+					return nil
+				}, true)
+				if err != nil {
+					return
+				}
+				*req = *cloned
+				routing = changeRoute
 			}
 			handleResponse = func(resp *http.Response) {
-				err := ec.ProcessResponse(r.Context(), reqID, resp)
+				// first, apply the changes from on_request
+				err := ec.ModifyResponse(r.Context(), reqID, func(d []edge.DiffData) error {
+					for i := range d {
+						if r := d[i].Routing(); r != nil {
+							routing = *r
+							continue
+						}
+						err := edge.DefaultModifyResponse(&d[i], resp)
+						if err != nil {
+							return err
+						}
+					}
+					return nil
+				}, true)
+				if err != nil {
+					log.Printf("Failed to modify response: %v", err)
+					return
+				}
+				err = ec.ProcessResponse(r.Context(), reqID, resp)
 				if err != nil {
 					log.Printf("Failed to process response: %v", err)
 				}
+				// then, apply the changes from on_response
+				err = ec.ModifyResponse(r.Context(), reqID, func(d []edge.DiffData) error {
+					for i := range d {
+						if r := d[i].Routing(); r != nil {
+							routing = *r
+							continue
+						}
+						err := edge.DefaultModifyResponse(&d[i], resp)
+						if err != nil {
+							return err
+						}
+					}
+					return nil
+				}, true)
+				if err != nil {
+					log.Printf("Failed to modify response: %v", err)
+					return
+				}
 			}
 		}
+		doAbort := func() {
+			log.Printf("Request %s %s is aborted by edge function, disconnect", r.Method, r.URL.Path)
+			hijacked, ok := w.(http.Hijacker)
+			if !ok {
+				log.Printf("Response writer does not support hijacking, cannot abort connection")
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			conn, _, err := hijacked.Hijack()
+			if err != nil {
+				log.Printf("Failed to hijack connection: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			log.Printf("Hijacking connection from %s", conn.RemoteAddr())
+			conn.Close() // Close the connection to abort
+
+		}
+		handleRequest(r)
+		if routing == edge.Routing_Abort {
+			doAbort()
+			return
+		}
+		if routing == edge.Routing_Deny {
+			resp := &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header:     http.Header{"Content-Type": []string{"text/plain"}},
+				Body:       io.NopCloser(bytes.NewBufferString("Access denied by edge function")),
+			}
+			handleResponse(resp)
+			w.Header().Set("X-NCDN-PoPCache-Hit", "false")
+			w.WriteHeader(resp.StatusCode)
+			if _, err := io.Copy(w, resp.Body); err != nil {
+				log.Printf("Failed to write response body: %v", err)
+			}
+			return
+		}
 		isCacheable := r.Method == http.MethodGet || r.Method == http.MethodHead
-		if isCacheable {
+		if isCacheable &&
+			!(routing == edge.Routing_NoCache ||
+				routing == edge.Routing_SkipCache) {
 			key := r.URL.String()
 			if cached, found := c.Get(key); found {
-				handleRequest(r)
 				log.Printf("Cache hit for %s", key)
 				for k, v := range cached.Header {
 					w.Header()[k] = v
@@ -186,24 +281,34 @@ func main() {
 					Header:     w.Header(),
 					Body:       io.NopCloser(bytes.NewReader(cached.Body)),
 				}
-				handleResponse(resp)
+				if routing == edge.Routing_SkipResponseExecIfCached {
+					handleResponse(resp)
+				}
 				w.Header().Set("X-NCDN-PoPCache-Hit", "true")
 				w.WriteHeader(resp.StatusCode)
-				_, _ = w.Write(cached.Body)
+				if _, err := io.Copy(w, resp.Body); err != nil {
+					log.Printf("Failed to write cached response body: %v", err)
+				}
 				return
 			}
 		}
 		// Handle GET and HEAD requests
 		reverseProxy := &httputil.ReverseProxy{
 			Rewrite: func(r *httputil.ProxyRequest) {
-				handleRequest(r.Out)
 				r.SetXForwarded()
 				r.Out.Header.Set("X-NCDN-PoPCache-NodeId", *nodeId)
 				r.SetURL(originURL)
 			},
 			ModifyResponse: func(resp *http.Response) error {
+				handleResponse(resp)
+				if routing == edge.Routing_Abort {
+					doAbort()
+					return nil
+				}
 				cacheControl := resp.Header.Get("Cache-Control")
-				if isCacheable && !strings.Contains(cacheControl, "no-store") {
+				if routing != edge.Routing_NoCache &&
+					(routing == edge.Routing_ForceCache ||
+						(isCacheable && !strings.Contains(cacheControl, "no-store"))) {
 					body, err := io.ReadAll(resp.Body)
 					if err != nil {
 						log.Printf("Failed to read response body: %v", err)
@@ -219,7 +324,6 @@ func main() {
 						StoredAt:   time.Now(),
 					})
 				}
-				handleResponse(resp)
 				resp.Header.Set("X-NCDN-PoPCache-Hit", "false")
 				return nil
 			},

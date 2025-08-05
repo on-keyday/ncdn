@@ -20,6 +20,8 @@ const (
 	ControlMessageType_L4LbHello      ControlMessageType = 4
 	ControlMessageType_L4LbUpdate     ControlMessageType = 5
 	ControlMessageType_KeyShare       ControlMessageType = 6
+	ControlMessageType_WasmInstall    ControlMessageType = 7
+	ControlMessageType_WasmUninstall  ControlMessageType = 8
 )
 
 func (t ControlMessageType) String() string {
@@ -38,8 +40,26 @@ func (t ControlMessageType) String() string {
 		return "L4LbUpdate"
 	case ControlMessageType_KeyShare:
 		return "KeyShare"
+	case ControlMessageType_WasmInstall:
+		return "WasmInstall"
+	case ControlMessageType_WasmUninstall:
+		return "WasmUninstall"
 	}
 	return fmt.Sprintf("ControlMessageType(%d)", t)
+}
+
+type KeyType uint8
+
+const (
+	KeyType_Quiclb KeyType = 0
+)
+
+func (t KeyType) String() string {
+	switch t {
+	case KeyType_Quiclb:
+		return "Quiclb"
+	}
+	return fmt.Sprintf("KeyType(%d)", t)
 }
 
 type ControlMessageHeader struct {
@@ -119,43 +139,61 @@ type L4Lbupdate struct {
 	VirtualAddress [4]uint8
 }
 type KeyShareInfo struct {
-	Len uint16
-	Key []uint8
+	Type KeyType
+	Len  uint16
+	Key  []uint8
+}
+type WasmInstallInfo struct {
+	Id         uint32
+	MethodLen  uint8
+	Method     []uint8
+	PathLen    uint16
+	Path       []uint8
+	BinarySize uint64
+}
+type WasmUninstallInfo struct {
+	Id uint32
 }
 type L4Lbl7Lbupdate struct {
 	Len  uint8
 	Info []L7Lbinfo
 }
-type union13_ControlMessage interface {
-	isunion12_()
-}
-type union_14_t struct {
-	KeepAlive KeepAliveInfo
-}
-type union_15_t struct {
-	L7LbHello L7Lbinfo
-}
-type union_16_t struct {
-	L7LbUpdate L7Lbupdate
-}
-type union_17_t struct {
-	L4LbHello L4Lbinfo
+type union17_ControlMessage interface {
+	isunion16_()
 }
 type union_18_t struct {
-	L4LbL7LbUpdate L4Lbl7Lbupdate
+	KeepAlive KeepAliveInfo
 }
 type union_19_t struct {
-	L4LbUpdate L4Lbupdate
+	L7LbHello L7Lbinfo
 }
 type union_20_t struct {
-	KeyShare KeyShareInfo
+	L7LbUpdate L7Lbupdate
 }
 type union_21_t struct {
+	L4LbHello L4Lbinfo
+}
+type union_22_t struct {
+	L4LbL7LbUpdate L4Lbl7Lbupdate
+}
+type union_23_t struct {
+	L4LbUpdate L4Lbupdate
+}
+type union_24_t struct {
+	KeyShare KeyShareInfo
+}
+type union_25_t struct {
+	WasmInstall WasmInstallInfo
+}
+type union_26_t struct {
+	WasmUninstall WasmUninstallInfo
+}
+type union_27_t struct {
 	Data []uint8
 }
 type ControlMessage struct {
 	Header   ControlMessageHeader
-	union12_ union13_ControlMessage
+	union16_ union17_ControlMessage
 }
 
 func (t *ControlMessageHeader) Visit(v VisitorJJRQX) {
@@ -570,6 +608,7 @@ func (t *KeyShareInfo) SetKey(v []uint8) bool {
 	return true
 }
 func (t *KeyShareInfo) Visit(v VisitorJJRQX) {
+	v.Visit(v, "Type", &t.Type)
 	v.Visit(v, "Len", &t.Len)
 	v.Visit(v, "Key", &t.Key)
 }
@@ -577,6 +616,9 @@ func (t *KeyShareInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *KeyShareInfo) Write(w io.Writer) (err error) {
+	if n, err := w.Write([]byte{byte(t.Type)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.Type: %w", err)
+	}
 	tmp9 := [2]byte{}
 	binary.BigEndian.PutUint16(tmp9[:], uint16(t.Len))
 	if n, err := w.Write(tmp9[:]); err != nil || n != 2 {
@@ -592,7 +634,7 @@ func (t *KeyShareInfo) Write(w io.Writer) (err error) {
 	return nil
 }
 func (t *KeyShareInfo) Encode() ([]byte, error) {
-	w := bytes.NewBuffer(make([]byte, 0, 2))
+	w := bytes.NewBuffer(make([]byte, 0, 3))
 	if err := t.Write(w); err != nil {
 		return nil, err
 	}
@@ -606,6 +648,12 @@ func (t *KeyShareInfo) MustEncode() []byte {
 	return buf
 }
 func (t *KeyShareInfo) Read(r io.Reader) (err error) {
+	tmpType := [1]byte{}
+	n_Type, err := io.ReadFull(r, tmpType[:])
+	if err != nil {
+		return fmt.Errorf("read Type: expect 1 byte but read %d bytes: %w", n_Type, err)
+	}
+	t.Type = KeyType(tmpType[0])
 	tmpLen := [2]byte{}
 	n_Len, err := io.ReadFull(r, tmpLen[:])
 	if err != nil {
@@ -636,6 +684,196 @@ func (t *KeyShareInfo) DecodeExact(d []byte) error {
 		return err
 	} else if n != len(d) {
 		return fmt.Errorf("decode KeyShareInfo: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
+func (t *WasmInstallInfo) SetMethod(v []uint8) bool {
+	if len(v) > int(^uint8(0)) {
+		return false
+	}
+	t.MethodLen = uint8(len(v))
+	t.Method = v
+	return true
+}
+func (t *WasmInstallInfo) SetPath(v []uint8) bool {
+	if len(v) > int(^uint16(0)) {
+		return false
+	}
+	t.PathLen = uint16(len(v))
+	t.Path = v
+	return true
+}
+func (t *WasmInstallInfo) Visit(v VisitorJJRQX) {
+	v.Visit(v, "Id", &t.Id)
+	v.Visit(v, "MethodLen", &t.MethodLen)
+	v.Visit(v, "Method", &t.Method)
+	v.Visit(v, "PathLen", &t.PathLen)
+	v.Visit(v, "Path", &t.Path)
+	v.Visit(v, "BinarySize", &t.BinarySize)
+}
+func (t *WasmInstallInfo) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJJRQXToMap(t))
+}
+func (t *WasmInstallInfo) Write(w io.Writer) (err error) {
+	tmp10 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp10[:], uint32(t.Id))
+	if n, err := w.Write(tmp10[:]); err != nil || n != 4 {
+		return fmt.Errorf("encode t.Id: %w", err)
+	}
+	if n, err := w.Write([]byte{byte(t.MethodLen)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.MethodLen: %w", err)
+	}
+	len_Method := int(t.MethodLen)
+	if len(t.Method) != len_Method {
+		return fmt.Errorf("encode Method: expect %d bytes but got %d bytes", len_Method, len(t.Method))
+	}
+	if n, err := w.Write(t.Method); err != nil || n != len(t.Method) {
+		return fmt.Errorf("encode Method: %w", err)
+	}
+	tmp11 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp11[:], uint16(t.PathLen))
+	if n, err := w.Write(tmp11[:]); err != nil || n != 2 {
+		return fmt.Errorf("encode t.PathLen: %w", err)
+	}
+	len_Path := int(t.PathLen)
+	if len(t.Path) != len_Path {
+		return fmt.Errorf("encode Path: expect %d bytes but got %d bytes", len_Path, len(t.Path))
+	}
+	if n, err := w.Write(t.Path); err != nil || n != len(t.Path) {
+		return fmt.Errorf("encode Path: %w", err)
+	}
+	tmp12 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp12[:], uint64(t.BinarySize))
+	if n, err := w.Write(tmp12[:]); err != nil || n != 8 {
+		return fmt.Errorf("encode t.BinarySize: %w", err)
+	}
+	return nil
+}
+func (t *WasmInstallInfo) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 5))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *WasmInstallInfo) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *WasmInstallInfo) Read(r io.Reader) (err error) {
+	tmpId := [4]byte{}
+	n_Id, err := io.ReadFull(r, tmpId[:])
+	if err != nil {
+		return fmt.Errorf("read Id: expect 4 bytes but read %d bytes: %w", n_Id, err)
+	}
+	t.Id = uint32(binary.BigEndian.Uint32(tmpId[:]))
+	tmpMethodLen := [1]byte{}
+	n_MethodLen, err := io.ReadFull(r, tmpMethodLen[:])
+	if err != nil {
+		return fmt.Errorf("read MethodLen: expect 1 byte but read %d bytes: %w", n_MethodLen, err)
+	}
+	t.MethodLen = uint8(tmpMethodLen[0])
+	len_Method := int(t.MethodLen)
+	if len_Method != 0 {
+		tmpMethod := make([]byte, len_Method)
+		n_Method, err := io.ReadFull(r, tmpMethod[:])
+		if err != nil {
+			return fmt.Errorf("read Method: expect %d bytes but read %d bytes: %w", len_Method, n_Method, err)
+		}
+		t.Method = tmpMethod[:]
+	} else {
+		t.Method = nil
+	}
+	tmpPathLen := [2]byte{}
+	n_PathLen, err := io.ReadFull(r, tmpPathLen[:])
+	if err != nil {
+		return fmt.Errorf("read PathLen: expect 2 bytes but read %d bytes: %w", n_PathLen, err)
+	}
+	t.PathLen = uint16(binary.BigEndian.Uint16(tmpPathLen[:]))
+	len_Path := int(t.PathLen)
+	if len_Path != 0 {
+		tmpPath := make([]byte, len_Path)
+		n_Path, err := io.ReadFull(r, tmpPath[:])
+		if err != nil {
+			return fmt.Errorf("read Path: expect %d bytes but read %d bytes: %w", len_Path, n_Path, err)
+		}
+		t.Path = tmpPath[:]
+	} else {
+		t.Path = nil
+	}
+	tmpBinarySize := [8]byte{}
+	n_BinarySize, err := io.ReadFull(r, tmpBinarySize[:])
+	if err != nil {
+		return fmt.Errorf("read BinarySize: expect 8 bytes but read %d bytes: %w", n_BinarySize, err)
+	}
+	t.BinarySize = uint64(binary.BigEndian.Uint64(tmpBinarySize[:]))
+	return nil
+}
+
+func (t *WasmInstallInfo) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *WasmInstallInfo) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode WasmInstallInfo: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
+func (t *WasmUninstallInfo) Visit(v VisitorJJRQX) {
+	v.Visit(v, "Id", &t.Id)
+}
+func (t *WasmUninstallInfo) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJJRQXToMap(t))
+}
+func (t *WasmUninstallInfo) Write(w io.Writer) (err error) {
+	tmp13 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp13[:], uint32(t.Id))
+	if n, err := w.Write(tmp13[:]); err != nil || n != 4 {
+		return fmt.Errorf("encode t.Id: %w", err)
+	}
+	return nil
+}
+func (t *WasmUninstallInfo) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 4))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *WasmUninstallInfo) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *WasmUninstallInfo) Read(r io.Reader) (err error) {
+	tmpId := [4]byte{}
+	n_Id, err := io.ReadFull(r, tmpId[:])
+	if err != nil {
+		return fmt.Errorf("read Id: expect 4 bytes but read %d bytes: %w", n_Id, err)
+	}
+	t.Id = uint32(binary.BigEndian.Uint32(tmpId[:]))
+	return nil
+}
+
+func (t *WasmUninstallInfo) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *WasmUninstallInfo) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode WasmUninstallInfo: expect %d bytes but got %d bytes", len(d), n)
 	}
 	return nil
 }
@@ -691,12 +929,12 @@ func (t *L4Lbl7Lbupdate) Read(r io.Reader) (err error) {
 	}
 	t.Len = uint8(tmpLen[0])
 	len_Info := int(t.Len)
-	for i_10 := 0; i_10 < len_Info; i_10++ {
-		var tmp11_ L7Lbinfo
-		if err := tmp11_.Read(r); err != nil {
+	for i_14 := 0; i_14 < len_Info; i_14++ {
+		var tmp15_ L7Lbinfo
+		if err := tmp15_.Read(r); err != nil {
 			return fmt.Errorf("read Info: %w", err)
 		}
-		t.Info = append(t.Info, tmp11_)
+		t.Info = append(t.Info, tmp15_)
 	}
 	return nil
 }
@@ -714,14 +952,16 @@ func (t *L4Lbl7Lbupdate) DecodeExact(d []byte) error {
 	}
 	return nil
 }
-func (t *union_14_t) isunion12_() {}
-func (t *union_15_t) isunion12_() {}
-func (t *union_16_t) isunion12_() {}
-func (t *union_17_t) isunion12_() {}
-func (t *union_18_t) isunion12_() {}
-func (t *union_19_t) isunion12_() {}
-func (t *union_20_t) isunion12_() {}
-func (t *union_21_t) isunion12_() {}
+func (t *union_18_t) isunion16_() {}
+func (t *union_19_t) isunion16_() {}
+func (t *union_20_t) isunion16_() {}
+func (t *union_21_t) isunion16_() {}
+func (t *union_22_t) isunion16_() {}
+func (t *union_23_t) isunion16_() {}
+func (t *union_24_t) isunion16_() {}
+func (t *union_25_t) isunion16_() {}
+func (t *union_26_t) isunion16_() {}
+func (t *union_27_t) isunion16_() {}
 func (t *ControlMessage) Data() *[]uint8 {
 	if t.Header.MessageType == ControlMessageType_Keepalive {
 		return nil
@@ -737,11 +977,15 @@ func (t *ControlMessage) Data() *[]uint8 {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		return nil
 	} else if true {
-		if _, ok := t.union12_.(*union_21_t); !ok {
+		if _, ok := t.union16_.(*union_27_t); !ok {
 			return nil // not set
 		}
-		tmp := []uint8(t.union12_.(*union_21_t).Data)
+		tmp := []uint8(t.union16_.(*union_27_t).Data)
 		return &tmp
 	}
 	return nil
@@ -761,31 +1005,35 @@ func (t *ControlMessage) SetData(v []uint8) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		return false
 	} else if true {
-		if _, ok := t.union12_.(*union_21_t); !ok {
-			t.union12_ = &union_21_t{}
+		if _, ok := t.union16_.(*union_27_t); !ok {
+			t.union16_ = &union_27_t{}
 		}
-		t.union12_.(*union_21_t).Data = []uint8(v)
+		t.union16_.(*union_27_t).Data = []uint8(v)
 		return true
 	}
 	return false
 }
 func (t *ControlMessage) KeepAlive() *KeepAliveInfo {
 	if t.Header.MessageType == ControlMessageType_Keepalive {
-		if _, ok := t.union12_.(*union_14_t); !ok {
+		if _, ok := t.union16_.(*union_18_t); !ok {
 			return nil // not set
 		}
-		tmp := KeepAliveInfo(t.union12_.(*union_14_t).KeepAlive)
+		tmp := KeepAliveInfo(t.union16_.(*union_18_t).KeepAlive)
 		return &tmp
 	}
 	return nil
 }
 func (t *ControlMessage) SetKeepAlive(v KeepAliveInfo) bool {
 	if t.Header.MessageType == ControlMessageType_Keepalive {
-		if _, ok := t.union12_.(*union_14_t); !ok {
-			t.union12_ = &union_14_t{}
+		if _, ok := t.union16_.(*union_18_t); !ok {
+			t.union16_ = &union_18_t{}
 		}
-		t.union12_.(*union_14_t).KeepAlive = KeepAliveInfo(v)
+		t.union16_.(*union_18_t).KeepAlive = KeepAliveInfo(v)
 		return true
 	}
 	return false
@@ -804,10 +1052,10 @@ func (t *ControlMessage) KeyShare() *KeyShareInfo {
 	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
-		if _, ok := t.union12_.(*union_20_t); !ok {
+		if _, ok := t.union16_.(*union_24_t); !ok {
 			return nil // not set
 		}
-		tmp := KeyShareInfo(t.union12_.(*union_20_t).KeyShare)
+		tmp := KeyShareInfo(t.union16_.(*union_24_t).KeyShare)
 		return &tmp
 	}
 	return nil
@@ -826,10 +1074,10 @@ func (t *ControlMessage) SetKeyShare(v KeyShareInfo) bool {
 	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
-		if _, ok := t.union12_.(*union_20_t); !ok {
-			t.union12_ = &union_20_t{}
+		if _, ok := t.union16_.(*union_24_t); !ok {
+			t.union16_ = &union_24_t{}
 		}
-		t.union12_.(*union_20_t).KeyShare = KeyShareInfo(v)
+		t.union16_.(*union_24_t).KeyShare = KeyShareInfo(v)
 		return true
 	}
 	return false
@@ -842,10 +1090,10 @@ func (t *ControlMessage) L4LbHello() *L4Lbinfo {
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
-		if _, ok := t.union12_.(*union_17_t); !ok {
+		if _, ok := t.union16_.(*union_21_t); !ok {
 			return nil // not set
 		}
-		tmp := L4Lbinfo(t.union12_.(*union_17_t).L4LbHello)
+		tmp := L4Lbinfo(t.union16_.(*union_21_t).L4LbHello)
 		return &tmp
 	}
 	return nil
@@ -858,10 +1106,10 @@ func (t *ControlMessage) SetL4LbHello(v L4Lbinfo) bool {
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
-		if _, ok := t.union12_.(*union_17_t); !ok {
-			t.union12_ = &union_17_t{}
+		if _, ok := t.union16_.(*union_21_t); !ok {
+			t.union16_ = &union_21_t{}
 		}
-		t.union12_.(*union_17_t).L4LbHello = L4Lbinfo(v)
+		t.union16_.(*union_21_t).L4LbHello = L4Lbinfo(v)
 		return true
 	}
 	return false
@@ -876,10 +1124,10 @@ func (t *ControlMessage) L4LbL7LbUpdate() *L4Lbl7Lbupdate {
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
-		if _, ok := t.union12_.(*union_18_t); !ok {
+		if _, ok := t.union16_.(*union_22_t); !ok {
 			return nil // not set
 		}
-		tmp := L4Lbl7Lbupdate(t.union12_.(*union_18_t).L4LbL7LbUpdate)
+		tmp := L4Lbl7Lbupdate(t.union16_.(*union_22_t).L4LbL7LbUpdate)
 		return &tmp
 	}
 	return nil
@@ -894,10 +1142,10 @@ func (t *ControlMessage) SetL4LbL7LbUpdate(v L4Lbl7Lbupdate) bool {
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
-		if _, ok := t.union12_.(*union_18_t); !ok {
-			t.union12_ = &union_18_t{}
+		if _, ok := t.union16_.(*union_22_t); !ok {
+			t.union16_ = &union_22_t{}
 		}
-		t.union12_.(*union_18_t).L4LbL7LbUpdate = L4Lbl7Lbupdate(v)
+		t.union16_.(*union_22_t).L4LbL7LbUpdate = L4Lbl7Lbupdate(v)
 		return true
 	}
 	return false
@@ -914,10 +1162,10 @@ func (t *ControlMessage) L4LbUpdate() *L4Lbupdate {
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
-		if _, ok := t.union12_.(*union_19_t); !ok {
+		if _, ok := t.union16_.(*union_23_t); !ok {
 			return nil // not set
 		}
-		tmp := L4Lbupdate(t.union12_.(*union_19_t).L4LbUpdate)
+		tmp := L4Lbupdate(t.union16_.(*union_23_t).L4LbUpdate)
 		return &tmp
 	}
 	return nil
@@ -934,10 +1182,10 @@ func (t *ControlMessage) SetL4LbUpdate(v L4Lbupdate) bool {
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
-		if _, ok := t.union12_.(*union_19_t); !ok {
-			t.union12_ = &union_19_t{}
+		if _, ok := t.union16_.(*union_23_t); !ok {
+			t.union16_ = &union_23_t{}
 		}
-		t.union12_.(*union_19_t).L4LbUpdate = L4Lbupdate(v)
+		t.union16_.(*union_23_t).L4LbUpdate = L4Lbupdate(v)
 		return true
 	}
 	return false
@@ -946,10 +1194,10 @@ func (t *ControlMessage) L7LbHello() *L7Lbinfo {
 	if t.Header.MessageType == ControlMessageType_Keepalive {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
-		if _, ok := t.union12_.(*union_15_t); !ok {
+		if _, ok := t.union16_.(*union_19_t); !ok {
 			return nil // not set
 		}
-		tmp := L7Lbinfo(t.union12_.(*union_15_t).L7LbHello)
+		tmp := L7Lbinfo(t.union16_.(*union_19_t).L7LbHello)
 		return &tmp
 	}
 	return nil
@@ -958,10 +1206,10 @@ func (t *ControlMessage) SetL7LbHello(v L7Lbinfo) bool {
 	if t.Header.MessageType == ControlMessageType_Keepalive {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
-		if _, ok := t.union12_.(*union_15_t); !ok {
-			t.union12_ = &union_15_t{}
+		if _, ok := t.union16_.(*union_19_t); !ok {
+			t.union16_ = &union_19_t{}
 		}
-		t.union12_.(*union_15_t).L7LbHello = L7Lbinfo(v)
+		t.union16_.(*union_19_t).L7LbHello = L7Lbinfo(v)
 		return true
 	}
 	return false
@@ -972,10 +1220,10 @@ func (t *ControlMessage) L7LbUpdate() *L7Lbupdate {
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
-		if _, ok := t.union12_.(*union_16_t); !ok {
+		if _, ok := t.union16_.(*union_20_t); !ok {
 			return nil // not set
 		}
-		tmp := L7Lbupdate(t.union12_.(*union_16_t).L7LbUpdate)
+		tmp := L7Lbupdate(t.union16_.(*union_20_t).L7LbUpdate)
 		return &tmp
 	}
 	return nil
@@ -986,10 +1234,110 @@ func (t *ControlMessage) SetL7LbUpdate(v L7Lbupdate) bool {
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
-		if _, ok := t.union12_.(*union_16_t); !ok {
-			t.union12_ = &union_16_t{}
+		if _, ok := t.union16_.(*union_20_t); !ok {
+			t.union16_ = &union_20_t{}
 		}
-		t.union12_.(*union_16_t).L7LbUpdate = L7Lbupdate(v)
+		t.union16_.(*union_20_t).L7LbUpdate = L7Lbupdate(v)
+		return true
+	}
+	return false
+}
+func (t *ControlMessage) WasmInstall() *WasmInstallInfo {
+	if t.Header.MessageType == ControlMessageType_Keepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		if _, ok := t.union16_.(*union_25_t); !ok {
+			return nil // not set
+		}
+		tmp := WasmInstallInfo(t.union16_.(*union_25_t).WasmInstall)
+		return &tmp
+	}
+	return nil
+}
+func (t *ControlMessage) SetWasmInstall(v WasmInstallInfo) bool {
+	if t.Header.MessageType == ControlMessageType_Keepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		if _, ok := t.union16_.(*union_25_t); !ok {
+			t.union16_ = &union_25_t{}
+		}
+		t.union16_.(*union_25_t).WasmInstall = WasmInstallInfo(v)
+		return true
+	}
+	return false
+}
+func (t *ControlMessage) WasmUninstall() *WasmUninstallInfo {
+	if t.Header.MessageType == ControlMessageType_Keepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		if _, ok := t.union16_.(*union_26_t); !ok {
+			return nil // not set
+		}
+		tmp := WasmUninstallInfo(t.union16_.(*union_26_t).WasmUninstall)
+		return &tmp
+	}
+	return nil
+}
+func (t *ControlMessage) SetWasmUninstall(v WasmUninstallInfo) bool {
+	if t.Header.MessageType == ControlMessageType_Keepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		if _, ok := t.union16_.(*union_26_t); !ok {
+			t.union16_ = &union_26_t{}
+		}
+		t.union16_.(*union_26_t).WasmUninstall = WasmUninstallInfo(v)
 		return true
 	}
 	return false
@@ -1004,6 +1352,8 @@ func (t *ControlMessage) Visit(v VisitorJJRQX) {
 	v.Visit(v, "L4LbUpdate", (t.L4LbUpdate()))
 	v.Visit(v, "L7LbHello", (t.L7LbHello()))
 	v.Visit(v, "L7LbUpdate", (t.L7LbUpdate()))
+	v.Visit(v, "WasmInstall", (t.WasmInstall()))
+	v.Visit(v, "WasmUninstall", (t.WasmUninstall()))
 }
 func (t *ControlMessage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
@@ -1014,140 +1364,176 @@ func (t *ControlMessage) Write(w io.Writer) (err error) {
 	}
 	switch {
 	case (t.Header.MessageType == ControlMessageType_Keepalive):
-		if _, ok := t.union12_.(*union_14_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_14_t")
-		}
-		new_buf_22 := bytes.NewBuffer(nil)
-		old_buf_22_w := w
-		w = new_buf_22
-		if err := t.union12_.(*union_14_t).KeepAlive.Write(w); err != nil {
-			return fmt.Errorf("encode KeepAlive: %w", err)
-		}
-		if new_buf_22.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode KeepAlive: expect %d bytes but got %d bytes", new_buf_22.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_22.WriteTo(old_buf_22_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_22_w
-	case (t.Header.MessageType == ControlMessageType_L7LbHello):
-		if _, ok := t.union12_.(*union_15_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_15_t")
-		}
-		new_buf_23 := bytes.NewBuffer(nil)
-		old_buf_23_w := w
-		w = new_buf_23
-		if err := t.union12_.(*union_15_t).L7LbHello.Write(w); err != nil {
-			return fmt.Errorf("encode L7LbHello: %w", err)
-		}
-		if new_buf_23.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L7LbHello: expect %d bytes but got %d bytes", new_buf_23.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_23.WriteTo(old_buf_23_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_23_w
-	case (t.Header.MessageType == ControlMessageType_L7LbUpdate):
-		if _, ok := t.union12_.(*union_16_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_16_t")
-		}
-		new_buf_24 := bytes.NewBuffer(nil)
-		old_buf_24_w := w
-		w = new_buf_24
-		if err := t.union12_.(*union_16_t).L7LbUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode L7LbUpdate: %w", err)
-		}
-		if new_buf_24.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L7LbUpdate: expect %d bytes but got %d bytes", new_buf_24.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_24.WriteTo(old_buf_24_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_24_w
-	case (t.Header.MessageType == ControlMessageType_L4LbHello):
-		if _, ok := t.union12_.(*union_17_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_17_t")
-		}
-		new_buf_25 := bytes.NewBuffer(nil)
-		old_buf_25_w := w
-		w = new_buf_25
-		if err := t.union12_.(*union_17_t).L4LbHello.Write(w); err != nil {
-			return fmt.Errorf("encode L4LbHello: %w", err)
-		}
-		if new_buf_25.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L4LbHello: expect %d bytes but got %d bytes", new_buf_25.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_25.WriteTo(old_buf_25_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_25_w
-	case (t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate):
-		if _, ok := t.union12_.(*union_18_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_18_t")
-		}
-		new_buf_26 := bytes.NewBuffer(nil)
-		old_buf_26_w := w
-		w = new_buf_26
-		if err := t.union12_.(*union_18_t).L4LbL7LbUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode L4LbL7LbUpdate: %w", err)
-		}
-		if new_buf_26.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L4LbL7LbUpdate: expect %d bytes but got %d bytes", new_buf_26.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_26.WriteTo(old_buf_26_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_26_w
-	case (t.Header.MessageType == ControlMessageType_L4LbUpdate):
-		if _, ok := t.union12_.(*union_19_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_19_t")
-		}
-		new_buf_27 := bytes.NewBuffer(nil)
-		old_buf_27_w := w
-		w = new_buf_27
-		if err := t.union12_.(*union_19_t).L4LbUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode L4LbUpdate: %w", err)
-		}
-		if new_buf_27.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L4LbUpdate: expect %d bytes but got %d bytes", new_buf_27.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_27.WriteTo(old_buf_27_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_27_w
-	case (t.Header.MessageType == ControlMessageType_KeyShare):
-		if _, ok := t.union12_.(*union_20_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_20_t")
+		if _, ok := t.union16_.(*union_18_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_18_t")
 		}
 		new_buf_28 := bytes.NewBuffer(nil)
 		old_buf_28_w := w
 		w = new_buf_28
-		if err := t.union12_.(*union_20_t).KeyShare.Write(w); err != nil {
-			return fmt.Errorf("encode KeyShare: %w", err)
+		if err := t.union16_.(*union_18_t).KeepAlive.Write(w); err != nil {
+			return fmt.Errorf("encode KeepAlive: %w", err)
 		}
 		if new_buf_28.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode KeyShare: expect %d bytes but got %d bytes", new_buf_28.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode KeepAlive: expect %d bytes but got %d bytes", new_buf_28.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_28.WriteTo(old_buf_28_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_28_w
+	case (t.Header.MessageType == ControlMessageType_L7LbHello):
+		if _, ok := t.union16_.(*union_19_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_19_t")
+		}
+		new_buf_29 := bytes.NewBuffer(nil)
+		old_buf_29_w := w
+		w = new_buf_29
+		if err := t.union16_.(*union_19_t).L7LbHello.Write(w); err != nil {
+			return fmt.Errorf("encode L7LbHello: %w", err)
+		}
+		if new_buf_29.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode L7LbHello: expect %d bytes but got %d bytes", new_buf_29.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_29.WriteTo(old_buf_29_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_29_w
+	case (t.Header.MessageType == ControlMessageType_L7LbUpdate):
+		if _, ok := t.union16_.(*union_20_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_20_t")
+		}
+		new_buf_30 := bytes.NewBuffer(nil)
+		old_buf_30_w := w
+		w = new_buf_30
+		if err := t.union16_.(*union_20_t).L7LbUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode L7LbUpdate: %w", err)
+		}
+		if new_buf_30.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode L7LbUpdate: expect %d bytes but got %d bytes", new_buf_30.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_30.WriteTo(old_buf_30_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_30_w
+	case (t.Header.MessageType == ControlMessageType_L4LbHello):
+		if _, ok := t.union16_.(*union_21_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_21_t")
+		}
+		new_buf_31 := bytes.NewBuffer(nil)
+		old_buf_31_w := w
+		w = new_buf_31
+		if err := t.union16_.(*union_21_t).L4LbHello.Write(w); err != nil {
+			return fmt.Errorf("encode L4LbHello: %w", err)
+		}
+		if new_buf_31.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode L4LbHello: expect %d bytes but got %d bytes", new_buf_31.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_31.WriteTo(old_buf_31_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_31_w
+	case (t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate):
+		if _, ok := t.union16_.(*union_22_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_22_t")
+		}
+		new_buf_32 := bytes.NewBuffer(nil)
+		old_buf_32_w := w
+		w = new_buf_32
+		if err := t.union16_.(*union_22_t).L4LbL7LbUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode L4LbL7LbUpdate: %w", err)
+		}
+		if new_buf_32.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode L4LbL7LbUpdate: expect %d bytes but got %d bytes", new_buf_32.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_32.WriteTo(old_buf_32_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_32_w
+	case (t.Header.MessageType == ControlMessageType_L4LbUpdate):
+		if _, ok := t.union16_.(*union_23_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_23_t")
+		}
+		new_buf_33 := bytes.NewBuffer(nil)
+		old_buf_33_w := w
+		w = new_buf_33
+		if err := t.union16_.(*union_23_t).L4LbUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode L4LbUpdate: %w", err)
+		}
+		if new_buf_33.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode L4LbUpdate: expect %d bytes but got %d bytes", new_buf_33.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_33.WriteTo(old_buf_33_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_33_w
+	case (t.Header.MessageType == ControlMessageType_KeyShare):
+		if _, ok := t.union16_.(*union_24_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_24_t")
+		}
+		new_buf_34 := bytes.NewBuffer(nil)
+		old_buf_34_w := w
+		w = new_buf_34
+		if err := t.union16_.(*union_24_t).KeyShare.Write(w); err != nil {
+			return fmt.Errorf("encode KeyShare: %w", err)
+		}
+		if new_buf_34.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode KeyShare: expect %d bytes but got %d bytes", new_buf_34.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_34.WriteTo(old_buf_34_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_34_w
+	case (t.Header.MessageType == ControlMessageType_WasmInstall):
+		if _, ok := t.union16_.(*union_25_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_25_t")
+		}
+		new_buf_35 := bytes.NewBuffer(nil)
+		old_buf_35_w := w
+		w = new_buf_35
+		if err := t.union16_.(*union_25_t).WasmInstall.Write(w); err != nil {
+			return fmt.Errorf("encode WasmInstall: %w", err)
+		}
+		if new_buf_35.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode WasmInstall: expect %d bytes but got %d bytes", new_buf_35.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_35.WriteTo(old_buf_35_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_35_w
+	case (t.Header.MessageType == ControlMessageType_WasmUninstall):
+		if _, ok := t.union16_.(*union_26_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_26_t")
+		}
+		new_buf_36 := bytes.NewBuffer(nil)
+		old_buf_36_w := w
+		w = new_buf_36
+		if err := t.union16_.(*union_26_t).WasmUninstall.Write(w); err != nil {
+			return fmt.Errorf("encode WasmUninstall: %w", err)
+		}
+		if new_buf_36.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode WasmUninstall: expect %d bytes but got %d bytes", new_buf_36.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_36.WriteTo(old_buf_36_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_36_w
 	default:
-		if _, ok := t.union12_.(*union_21_t); !ok {
-			return fmt.Errorf("encode t.union12_: union is not set to union_21_t")
+		if _, ok := t.union16_.(*union_27_t); !ok {
+			return fmt.Errorf("encode t.union16_: union is not set to union_27_t")
 		}
 		len_Data := int(t.Header.Len)
-		if len(t.union12_.(*union_21_t).Data) != len_Data {
-			return fmt.Errorf("encode Data: expect %d bytes but got %d bytes", len_Data, len(t.union12_.(*union_21_t).Data))
+		if len(t.union16_.(*union_27_t).Data) != len_Data {
+			return fmt.Errorf("encode Data: expect %d bytes but got %d bytes", len_Data, len(t.union16_.(*union_27_t).Data))
 		}
-		if n, err := w.Write(t.union12_.(*union_21_t).Data); err != nil || n != len(t.union12_.(*union_21_t).Data) {
+		if n, err := w.Write(t.union16_.(*union_27_t).Data); err != nil || n != len(t.union16_.(*union_27_t).Data) {
 			return fmt.Errorf("encode Data: %w", err)
 		}
 	}
@@ -1173,98 +1559,124 @@ func (t *ControlMessage) Read(r io.Reader) (err error) {
 	}
 	switch {
 	case (t.Header.MessageType == ControlMessageType_Keepalive):
-		t.union12_ = &union_14_t{}
+		t.union16_ = &union_18_t{}
 		sub_byte_len_KeepAlive := int64(t.Header.Len)
 		sub_byte_r_KeepAlive := io.LimitReader(r, int64(sub_byte_len_KeepAlive))
-		tmp_old_r_KeepAlive_29 := r
+		tmp_old_r_KeepAlive_37 := r
 		r = sub_byte_r_KeepAlive
-		if err := t.union12_.(*union_14_t).KeepAlive.Read(r); err != nil {
+		if err := t.union16_.(*union_18_t).KeepAlive.Read(r); err != nil {
 			return fmt.Errorf("read KeepAlive: %w", err)
 		}
 		if sub_byte_r_KeepAlive.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read KeepAlive: expect %d bytes but got %d bytes", sub_byte_len_KeepAlive, sub_byte_len_KeepAlive-sub_byte_r_KeepAlive.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_KeepAlive_29
+		r = tmp_old_r_KeepAlive_37
 	case (t.Header.MessageType == ControlMessageType_L7LbHello):
-		t.union12_ = &union_15_t{}
+		t.union16_ = &union_19_t{}
 		sub_byte_len_L7LbHello := int64(t.Header.Len)
 		sub_byte_r_L7LbHello := io.LimitReader(r, int64(sub_byte_len_L7LbHello))
-		tmp_old_r_L7LbHello_30 := r
+		tmp_old_r_L7LbHello_38 := r
 		r = sub_byte_r_L7LbHello
-		if err := t.union12_.(*union_15_t).L7LbHello.Read(r); err != nil {
+		if err := t.union16_.(*union_19_t).L7LbHello.Read(r); err != nil {
 			return fmt.Errorf("read L7LbHello: %w", err)
 		}
 		if sub_byte_r_L7LbHello.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L7LbHello: expect %d bytes but got %d bytes", sub_byte_len_L7LbHello, sub_byte_len_L7LbHello-sub_byte_r_L7LbHello.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L7LbHello_30
+		r = tmp_old_r_L7LbHello_38
 	case (t.Header.MessageType == ControlMessageType_L7LbUpdate):
-		t.union12_ = &union_16_t{}
+		t.union16_ = &union_20_t{}
 		sub_byte_len_L7LbUpdate := int64(t.Header.Len)
 		sub_byte_r_L7LbUpdate := io.LimitReader(r, int64(sub_byte_len_L7LbUpdate))
-		tmp_old_r_L7LbUpdate_31 := r
+		tmp_old_r_L7LbUpdate_39 := r
 		r = sub_byte_r_L7LbUpdate
-		if err := t.union12_.(*union_16_t).L7LbUpdate.Read(r); err != nil {
+		if err := t.union16_.(*union_20_t).L7LbUpdate.Read(r); err != nil {
 			return fmt.Errorf("read L7LbUpdate: %w", err)
 		}
 		if sub_byte_r_L7LbUpdate.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L7LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L7LbUpdate, sub_byte_len_L7LbUpdate-sub_byte_r_L7LbUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L7LbUpdate_31
+		r = tmp_old_r_L7LbUpdate_39
 	case (t.Header.MessageType == ControlMessageType_L4LbHello):
-		t.union12_ = &union_17_t{}
+		t.union16_ = &union_21_t{}
 		sub_byte_len_L4LbHello := int64(t.Header.Len)
 		sub_byte_r_L4LbHello := io.LimitReader(r, int64(sub_byte_len_L4LbHello))
-		tmp_old_r_L4LbHello_32 := r
+		tmp_old_r_L4LbHello_40 := r
 		r = sub_byte_r_L4LbHello
-		if err := t.union12_.(*union_17_t).L4LbHello.Read(r); err != nil {
+		if err := t.union16_.(*union_21_t).L4LbHello.Read(r); err != nil {
 			return fmt.Errorf("read L4LbHello: %w", err)
 		}
 		if sub_byte_r_L4LbHello.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L4LbHello: expect %d bytes but got %d bytes", sub_byte_len_L4LbHello, sub_byte_len_L4LbHello-sub_byte_r_L4LbHello.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L4LbHello_32
+		r = tmp_old_r_L4LbHello_40
 	case (t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate):
-		t.union12_ = &union_18_t{}
+		t.union16_ = &union_22_t{}
 		sub_byte_len_L4LbL7LbUpdate := int64(t.Header.Len)
 		sub_byte_r_L4LbL7LbUpdate := io.LimitReader(r, int64(sub_byte_len_L4LbL7LbUpdate))
-		tmp_old_r_L4LbL7LbUpdate_33 := r
+		tmp_old_r_L4LbL7LbUpdate_41 := r
 		r = sub_byte_r_L4LbL7LbUpdate
-		if err := t.union12_.(*union_18_t).L4LbL7LbUpdate.Read(r); err != nil {
+		if err := t.union16_.(*union_22_t).L4LbL7LbUpdate.Read(r); err != nil {
 			return fmt.Errorf("read L4LbL7LbUpdate: %w", err)
 		}
 		if sub_byte_r_L4LbL7LbUpdate.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L4LbL7LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L4LbL7LbUpdate, sub_byte_len_L4LbL7LbUpdate-sub_byte_r_L4LbL7LbUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L4LbL7LbUpdate_33
+		r = tmp_old_r_L4LbL7LbUpdate_41
 	case (t.Header.MessageType == ControlMessageType_L4LbUpdate):
-		t.union12_ = &union_19_t{}
+		t.union16_ = &union_23_t{}
 		sub_byte_len_L4LbUpdate := int64(t.Header.Len)
 		sub_byte_r_L4LbUpdate := io.LimitReader(r, int64(sub_byte_len_L4LbUpdate))
-		tmp_old_r_L4LbUpdate_34 := r
+		tmp_old_r_L4LbUpdate_42 := r
 		r = sub_byte_r_L4LbUpdate
-		if err := t.union12_.(*union_19_t).L4LbUpdate.Read(r); err != nil {
+		if err := t.union16_.(*union_23_t).L4LbUpdate.Read(r); err != nil {
 			return fmt.Errorf("read L4LbUpdate: %w", err)
 		}
 		if sub_byte_r_L4LbUpdate.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L4LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L4LbUpdate, sub_byte_len_L4LbUpdate-sub_byte_r_L4LbUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L4LbUpdate_34
+		r = tmp_old_r_L4LbUpdate_42
 	case (t.Header.MessageType == ControlMessageType_KeyShare):
-		t.union12_ = &union_20_t{}
+		t.union16_ = &union_24_t{}
 		sub_byte_len_KeyShare := int64(t.Header.Len)
 		sub_byte_r_KeyShare := io.LimitReader(r, int64(sub_byte_len_KeyShare))
-		tmp_old_r_KeyShare_35 := r
+		tmp_old_r_KeyShare_43 := r
 		r = sub_byte_r_KeyShare
-		if err := t.union12_.(*union_20_t).KeyShare.Read(r); err != nil {
+		if err := t.union16_.(*union_24_t).KeyShare.Read(r); err != nil {
 			return fmt.Errorf("read KeyShare: %w", err)
 		}
 		if sub_byte_r_KeyShare.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read KeyShare: expect %d bytes but got %d bytes", sub_byte_len_KeyShare, sub_byte_len_KeyShare-sub_byte_r_KeyShare.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_KeyShare_35
+		r = tmp_old_r_KeyShare_43
+	case (t.Header.MessageType == ControlMessageType_WasmInstall):
+		t.union16_ = &union_25_t{}
+		sub_byte_len_WasmInstall := int64(t.Header.Len)
+		sub_byte_r_WasmInstall := io.LimitReader(r, int64(sub_byte_len_WasmInstall))
+		tmp_old_r_WasmInstall_44 := r
+		r = sub_byte_r_WasmInstall
+		if err := t.union16_.(*union_25_t).WasmInstall.Read(r); err != nil {
+			return fmt.Errorf("read WasmInstall: %w", err)
+		}
+		if sub_byte_r_WasmInstall.(*io.LimitedReader).N != 0 {
+			return fmt.Errorf("read WasmInstall: expect %d bytes but got %d bytes", sub_byte_len_WasmInstall, sub_byte_len_WasmInstall-sub_byte_r_WasmInstall.(*io.LimitedReader).N)
+		}
+		r = tmp_old_r_WasmInstall_44
+	case (t.Header.MessageType == ControlMessageType_WasmUninstall):
+		t.union16_ = &union_26_t{}
+		sub_byte_len_WasmUninstall := int64(t.Header.Len)
+		sub_byte_r_WasmUninstall := io.LimitReader(r, int64(sub_byte_len_WasmUninstall))
+		tmp_old_r_WasmUninstall_45 := r
+		r = sub_byte_r_WasmUninstall
+		if err := t.union16_.(*union_26_t).WasmUninstall.Read(r); err != nil {
+			return fmt.Errorf("read WasmUninstall: %w", err)
+		}
+		if sub_byte_r_WasmUninstall.(*io.LimitedReader).N != 0 {
+			return fmt.Errorf("read WasmUninstall: expect %d bytes but got %d bytes", sub_byte_len_WasmUninstall, sub_byte_len_WasmUninstall-sub_byte_r_WasmUninstall.(*io.LimitedReader).N)
+		}
+		r = tmp_old_r_WasmUninstall_45
 	default:
-		t.union12_ = &union_21_t{}
+		t.union16_ = &union_27_t{}
 		len_Data := int(t.Header.Len)
 		if len_Data != 0 {
 			tmpData := make([]byte, len_Data)
@@ -1272,9 +1684,9 @@ func (t *ControlMessage) Read(r io.Reader) (err error) {
 			if err != nil {
 				return fmt.Errorf("read Data: expect %d bytes but read %d bytes: %w", len_Data, n_Data, err)
 			}
-			t.union12_.(*union_21_t).Data = tmpData[:]
+			t.union16_.(*union_27_t).Data = tmpData[:]
 		} else {
-			t.union12_.(*union_21_t).Data = nil
+			t.union16_.(*union_27_t).Data = nil
 		}
 	}
 	return nil

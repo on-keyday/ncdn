@@ -3,7 +3,7 @@ SCRIPT_DIR=$(dirname "$(realpath "$0")")
 echo "$SCRIPT_DIR"
 OUTPUT_DIR="$SCRIPT_DIR/../popcache/wasm"
 cd "$SCRIPT_DIR" || exit 1
-cargo build --release --target wasm32-wasip1
+cargo build --release --target wasm32-wasip1 
 if [ $? -ne 0 ]; then
     echo "Cargo build failed"
     exit 1

@@ -1,7 +1,5 @@
 
-
-mod api;
-
+use edge_api::api;
 // 1. ホストからデータを受け取るためのバッファを確保
 const BUF_SIZE: usize = 2048;
 
@@ -36,9 +34,10 @@ pub extern "C" fn on_request() {
     if req.path() == "/" {
         let redirect_url = format!("https://{}/index.html", req.host());
         api::ChangeSet::new()
-            .routing(api::Routing::deny) 
+            .request_routing(api::Routing::deny) 
             .status(308) // HTTP 308 Permanent Redirect
             .location(&redirect_url)
+            .response_body(b"Redirecting to index.html")
             .apply().expect("Failed to create redirect changes");
         log::info!("[Wasm] Redirecting to: {}", redirect_url);
         // anyway, we need to save the buffer

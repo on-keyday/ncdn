@@ -123,17 +123,18 @@ func L4LBUpdate(virtual_address [4]byte) *ControlMessage {
 	return msg
 }
 
-func KeyShare(key []byte) *ControlMessage {
+func KeyShare(typ KeyType, key []byte) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(2 + len(key)),
+			Len:         uint16(1 + 2 + len(key)),
 			MessageType: ControlMessageType_KeyShare,
 		},
 	}
 	msg.SetKeyShare(KeyShareInfo{
-		Len: uint16(len(key)),
-		Key: key,
+		Type: typ,
+		Len:  uint16(len(key)),
+		Key:  key,
 	})
 	return msg
 }
@@ -148,6 +149,39 @@ func KeepAlive(nextPeriod time.Duration) *ControlMessage {
 	}
 	msg.SetKeepAlive(KeepAliveInfo{
 		NextPeriod: uint64(nextPeriod),
+	})
+	return msg
+}
+
+func WasmInstall(id uint32, method string, path string, code_len uint64) *ControlMessage {
+	msg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         uint16(4 + 4 + len(method) + 4 + len(path) + 8),
+			MessageType: ControlMessageType_WasmInstall,
+		},
+	}
+	msg.SetWasmInstall(WasmInstallInfo{
+		Id:         id,
+		MethodLen:  uint8(len(method)),
+		Method:     []byte(method),
+		PathLen:    uint16(len(path)),
+		Path:       []byte(path),
+		BinarySize: uint64(code_len),
+	})
+	return msg
+}
+
+func WasmUninstall(id uint32) *ControlMessage {
+	msg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         4,
+			MessageType: ControlMessageType_WasmUninstall,
+		},
+	}
+	msg.SetWasmUninstall(WasmUninstallInfo{
+		Id: id,
 	})
 	return msg
 }

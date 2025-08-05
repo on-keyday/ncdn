@@ -161,12 +161,27 @@ func (t DiffKind) String() string {
 type Routing uint8
 
 const (
-	Routing_Deny  Routing = 0
-	Routing_Abort Routing = 1
+	Routing_Cont                     Routing = 0
+	Routing_SkipCache                Routing = 1
+	Routing_NoCache                  Routing = 2
+	Routing_ForceCache               Routing = 3
+	Routing_SkipResponseExecIfCached Routing = 4
+	Routing_Deny                     Routing = 5
+	Routing_Abort                    Routing = 6
 )
 
 func (t Routing) String() string {
 	switch t {
+	case Routing_Cont:
+		return "Cont"
+	case Routing_SkipCache:
+		return "SkipCache"
+	case Routing_NoCache:
+		return "NoCache"
+	case Routing_ForceCache:
+		return "ForceCache"
+	case Routing_SkipResponseExecIfCached:
+		return "SkipResponseExecIfCached"
 	case Routing_Deny:
 		return "Deny"
 	case Routing_Abort:

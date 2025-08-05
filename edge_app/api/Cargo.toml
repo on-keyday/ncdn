@@ -1,0 +1,15 @@
+# Cargo.toml
+
+[package]
+name = "edge_api"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+# デバッグ出力用
+log = "0.4"
+simplelog = "0.12"
+javy-plugin-api = "2.0.0"
+serde_json = "1.0.142"
+# wasm-logger = "0.2"

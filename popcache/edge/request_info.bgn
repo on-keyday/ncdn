@@ -105,6 +105,11 @@ enum DiffKind:
 
 enum Routing:
     :u8
+    cont # continue processing
+    skip_cache # continue but not using cache even if exists. response may be cached
+    no_cache # almost same as skip_cache but response would not be cached
+    force_cache # force cache the response even if response not specified to be cached
+    skip_response_exec_if_cached # skip on_response hook if response was cached
     deny # do not allowed to access origin, wasm function also can do redirect using this
     abort # disconnect connection, for DoS prevension
 

@@ -227,27 +227,36 @@ pub fn decode_response<'a>(buffer: &'a [u8]) -> Result<Response<'a>, Error> {
     }
 }
 
-pub fn get_request<'a>(buffer :&'a mut [u8]) -> Result<Request<'a>,Error> {
+pub fn get_request_buffer<'a>(buffer: &'a mut [u8]) -> Result<&'a [u8], Error> {
     let written_size = unsafe {
-        get_request_info(buffer.as_ptr() as *mut u8, buffer.len() as u32)
+        get_request_info(buffer.as_mut_ptr(), buffer.len() as u32)
     };
     if written_size == 0 {
         return Err(Error::NotEnoughBuffer);
     }
+    Ok(&buffer[..written_size as usize])
+}
 
-    decode_request(&buffer[..written_size as usize])
+pub fn get_request<'a>(buffer :&'a mut [u8]) -> Result<Request<'a>,Error> {
+    let buffer = get_request_buffer(buffer)?;
+    decode_request(&buffer)
+}
+
+pub fn get_response_buffer<'a>(buffer: &'a mut [u8]) -> Result<&'a [u8], Error> {
+    let written_size = unsafe {
+        get_response_info(buffer.as_mut_ptr(), buffer.len() as u32)
+    };
+    if written_size == 0 {
+        return Err(Error::NotEnoughBuffer);
+    }
+    Ok(&buffer[..written_size as usize])
 }
 
 pub fn get_response<'a>(buffer: &'a mut [u8]) -> Result<Response<'a>, Error> {
-    let written_size = unsafe {
-        get_response_info(buffer.as_ptr() as *mut u8, buffer.len() as u32)
-    };
-    if written_size == 0 {
-        return Err(Error::NotEnoughBuffer);
-    }
-
-    decode_response(&buffer[..written_size as usize])
+    let buffer = get_response_buffer(buffer)?;
+    decode_response(&buffer)
 }
+
 
 pub struct ChangeSet<'a> {
     request_changes: edge::ChangeSet<'a>,
@@ -291,11 +300,18 @@ impl<'a> ChangeSet<'a> {
         self
     }
 
-    pub fn routing(&mut self, routing: edge::Routing) -> &mut Self {
+    pub fn request_routing(&mut self, routing: edge::Routing) -> &mut Self {
        let mut r = edge::DiffData::default();
        r.diff_type = edge::DiffDataType::routing;
        r.set_routing(routing).unwrap();
        self.add_request_diff(r)
+    }
+
+    pub fn response_routing(&mut self, routing: edge::Routing) -> &mut Self {
+        let mut r = edge::DiffData::default();
+        r.diff_type = edge::DiffDataType::routing;
+        r.set_routing(routing).unwrap();
+        self.add_response_diff(r)
     }
 
     pub fn path_info(&mut self, path: edge::PathInfo<'a>) -> &mut Self {
