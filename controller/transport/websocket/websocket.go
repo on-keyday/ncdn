@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -20,7 +19,7 @@ var _ transport.Connection = (*WebSocketConn)(nil)
 // WebSocketConn is a connection that uses a WebSocket for communication.
 type WebSocketConn struct {
 	conn       *websocket.Conn
-	remoteAddr net.Addr
+	remoteAddr string
 	cancel     context.CancelFunc
 }
 
@@ -28,7 +27,7 @@ type WebSocketConn struct {
 func NewWebSocketConn(conn *websocket.Conn, cancel context.CancelFunc) *WebSocketConn {
 	return &WebSocketConn{
 		conn:       conn,
-		remoteAddr: conn.RemoteAddr(),
+		remoteAddr: conn.Request().RemoteAddr,
 		cancel:     cancel,
 	}
 }
@@ -84,7 +83,7 @@ func (c *WebSocketConn) Close() error {
 
 // RemoteAddr returns the remote network address.
 func (c *WebSocketConn) RemoteAddr() string {
-	return c.remoteAddr.String()
+	return c.remoteAddr
 }
 
 // WebSocketListener implements the control.Listener interface for WebSockets.

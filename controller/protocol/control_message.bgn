@@ -3,7 +3,8 @@ config.go.package = "protocol"
 
 enum ControlMessageType:
     :u8
-    keepalive # controller <- l4lb,l7lb
+    l4lb_keepalive # l4lb -> controller
+    l7lb_keepalive # l7lb -> controller
     l7lb_hello # l7lb -> controller
     l7lb_update # controller -> l7lb
     l4lb_l7lb_update # controller -> l4lb
@@ -24,7 +25,8 @@ format ControlMessageHeader:
 format ControlMessage:
     header :ControlMessageHeader
     match header.message_type:
-        ControlMessageType.keepalive => keep_alive :KeepAliveInfo(input =  input.subrange(header.len))
+        ControlMessageType.l4lb_keepalive => l4lb_keep_alive :L4LBKeepAlive(input =  input.subrange(header.len))
+        ControlMessageType.l7lb_keepalive => l7lb_keep_alive :L7LBKeepAlive(input =  input.subrange(header.len))
         ControlMessageType.l7lb_hello => l7lb_hello :L7LBInfo(input = input.subrange(header.len))
         ControlMessageType.l7lb_update => l7lb_update :L7LBUpdate(input = input.subrange(header.len))
         ControlMessageType.l4lb_hello => l4lb_hello :L4LBInfo(input = input.subrange(header.len))
@@ -52,6 +54,20 @@ format L4LBL7LBUpdate:
 
 format KeepAliveInfo:
     next_period :u64 # nano sec
+    cpu_len :u8
+    cpu_usage :[cpu_len]fl64
+    memory_usage :fl64
+    disk_usage :fl64
+
+format L7LBKeepAlive:
+    info :KeepAliveInfo
+    rps_len :u8
+    rps_per_port :[rps_len]u32
+
+format L4LBKeepAlive:
+    info :KeepAliveInfo
+    ebpf_len :u8
+    ebpf_data :[ebpf_len]u8 # struct stat_counters
 
 format L4LBInfo:
     server_id :u32

@@ -1,14 +1,17 @@
 package cache
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net/http"
-	"strings"
-	"sync"
+	"strconv"
 	"time"
 
-	"golang.org/x/net/http/httpguts"
+	"github.com/kota-yata/kyache/cache"
 )
 
+/*
 type CacheEntry struct {
 	StatusCode int
 	Header     http.Header
@@ -148,4 +151,75 @@ func ParseCacheControl(headers http.Header) *CacheControl {
 		}
 	}
 	return result
+}
+*/
+
+type Cache struct {
+	c *cache.CacheStore
+}
+
+func NewCache() *Cache {
+	return &Cache{
+		c: cache.NewCacheStore(),
+	}
+}
+
+func (c *Cache) GenerateCacheKey(req *http.Request) string {
+	reqHeaderStruct := cache.NewParsedHeaders(req.Header)
+	return cache.GenerateCacheKey(req.URL.String(), reqHeaderStruct)
+}
+
+func (c *Cache) HasCache(r *http.Request) (string, *http.Response, bool) {
+	reqHeaderStruct := cache.NewParsedHeaders(r.Header)
+	key := c.GenerateCacheKey(r)
+	if cached, found := c.c.Get(key); found {
+		respHeader := cache.NewParsedHeaders(cached.ResponseHeader)
+		originalReqHeaderStruct := cache.NewParsedHeaders(cached.RequestHeader)
+		if cache.IsFresh(cached) && cache.IsReqAllowedToUseCache(reqHeaderStruct, originalReqHeaderStruct, respHeader) {
+			header := cached.ResponseHeader.Clone()
+			header.Set("Age", strconv.Itoa(cache.GetCurrentAge(cached)))
+			resp := &http.Response{
+				StatusCode:    cached.StatusCode,
+				Header:        header,
+				Body:          io.NopCloser(bytes.NewReader(cached.Body)),
+				ContentLength: int64(len(cached.Body)),
+				Request:       r,
+				ProtoMajor:    1,
+				ProtoMinor:    1,
+				Proto:         "HTTP/1.1",
+			}
+			return key, resp, true
+		}
+	}
+	return key, nil, false
+}
+
+type CacheData interface {
+	GetValidatedAge() int
+}
+
+// currently not depdnent on c but for the future use
+func (c *Cache) IsCacheable(resp *http.Response) (CacheData, bool) {
+	respHeaderStruct := cache.NewParsedHeaders(resp.Header)
+	return respHeaderStruct, cache.IsCacheable(resp.Request.Method, respHeaderStruct)
+}
+
+func (c *Cache) SetCache(key string, req *http.Request, resp *http.Response, header CacheData) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+	resp.Body.Close()                               // Close the original body
+	resp.Body = io.NopCloser(bytes.NewReader(body)) // Create a new body reader
+	age := header.GetValidatedAge()
+	cached := &cache.CachedResponse{
+		StatusCode:     resp.StatusCode,
+		RequestHeader:  req.Header.Clone(),
+		ResponseHeader: resp.Header.Clone(),
+		Body:           body,
+		StoredAt:       time.Now(),
+		InitialAge:     age,
+	}
+	c.c.Set(key, cached)
+	return nil
 }

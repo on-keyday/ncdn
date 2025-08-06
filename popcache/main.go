@@ -14,7 +14,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	_ "embed"
@@ -32,6 +31,7 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+var controlPlaneAddr = flag.String("controlPlaneAddr", "localhost:8888", "Control plane address")
 var originURLStr = flag.String("originURL", "http://localhost:8888", "Origin server URL")
 var secureListenAddr = flag.String("listenAddr", ":8889", "Address to listen on")
 var httpListenAddr = flag.String("insecureListenAddr", ":8890", "HTTP server address to listen on")
@@ -267,20 +267,12 @@ func main() {
 			return
 		}
 		isCacheable := r.Method == http.MethodGet || r.Method == http.MethodHead
-		if isCacheable &&
-			!(routing == edge.Routing_NoCache ||
-				routing == edge.Routing_SkipCache) {
-			key := r.URL.String()
-			if cached, found := c.Get(key); found {
+		var cacheKey string
+		if isCacheable && !(routing == edge.Routing_NoCache ||
+			routing == edge.Routing_SkipCache) {
+			key, resp, found := c.HasCache(r)
+			if found {
 				log.Printf("Cache hit for %s", key)
-				for k, v := range cached.Header {
-					w.Header()[k] = v
-				}
-				resp := &http.Response{
-					StatusCode: cached.StatusCode,
-					Header:     w.Header(),
-					Body:       io.NopCloser(bytes.NewReader(cached.Body)),
-				}
 				if routing == edge.Routing_SkipResponseExecIfCached {
 					handleResponse(resp)
 				}
@@ -291,6 +283,7 @@ func main() {
 				}
 				return
 			}
+			cacheKey = key
 		}
 		// Handle GET and HEAD requests
 		reverseProxy := &httputil.ReverseProxy{
@@ -305,24 +298,13 @@ func main() {
 					doAbort()
 					return nil
 				}
-				cacheControl := resp.Header.Get("Cache-Control")
-				if routing != edge.Routing_NoCache &&
-					(routing == edge.Routing_ForceCache ||
-						(isCacheable && !strings.Contains(cacheControl, "no-store"))) {
-					body, err := io.ReadAll(resp.Body)
-					if err != nil {
-						log.Printf("Failed to read response body: %v", err)
-						return err
+				if routing != edge.Routing_NoCache {
+					if cacheData, ok := c.IsCacheable(resp); ok || routing == edge.Routing_ForceCache {
+						if cacheKey == "" {
+							cacheKey = c.GenerateCacheKey(resp.Request)
+						}
+						c.SetCache(cacheKey, r, resp, cacheData)
 					}
-					resp.Body.Close()                               // Close the original body
-					resp.Body = io.NopCloser(bytes.NewReader(body)) // Create a new body reader
-					// Cache the response
-					c.Set(r.URL.String(), &cache.CacheEntry{
-						StatusCode: resp.StatusCode,
-						Header:     resp.Header.Clone(),
-						Body:       body,
-						StoredAt:   time.Now(),
-					})
 				}
 				resp.Header.Set("X-NCDN-PoPCache-Hit", "false")
 				return nil
