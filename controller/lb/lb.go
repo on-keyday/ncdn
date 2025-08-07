@@ -43,24 +43,31 @@ func connectLB[T any, U any](conn transport.Connection,
 		if keepalive < 10*time.Second {
 			keepalive = 10 * time.Second
 		}
-		ticker := time.NewTicker(keepalive - 5*time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
+		doSendKeepAlive := func() bool {
 			m, err := stat.GetMachineStat()
 			if err != nil {
 				log.Printf("Failed to get machine stat: %v", err)
-				conn.Close()
-				return
+				return false
 			}
 			u, err := getAppStats()
 			if err != nil {
 				log.Printf("Failed to get app stats: %v", err)
-				conn.Close()
-				return
+				return false
 			}
 			if err := lb.keepAlive(keepalive, m, u); err != nil {
 				log.Printf("Failed to send keepalive: %v", err)
 				conn.Close()
+				return false
+			}
+			return true
+		}
+		if !doSendKeepAlive() {
+			return
+		}
+		ticker := time.NewTicker(keepalive - 5*time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if !doSendKeepAlive() {
 				return
 			}
 		}

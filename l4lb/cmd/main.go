@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var controlPlaneAddr = flag.String("controlPlaneAddr", "localhost:8080", "Control plane address for the load balancer")
 var lbBin = flag.String("lbBin", "c/lb.o", "Path to XDP lb binary")
 var cryptoBin = flag.String("cryptoBin", "c/init_crypto.o", "Path to XDP crypto binary")
 var xdpcapHookPath = flag.String("xdpcapHookPath", "/sys/fs/bpf/xdpcap_hook", "Path to XDPCap hook")

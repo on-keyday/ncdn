@@ -1,6 +1,8 @@
 package protocol
 
-import "time"
+import (
+	"time"
+)
 
 type DataWithStat[T interface {
 	Clone() T
@@ -19,6 +21,7 @@ func (d *DataWithStat[T, U]) Clone() *DataWithStat[T, U] {
 		MemoryTotal: d.MemoryTotal,
 		DiskTotal:   d.DiskTotal,
 	}
+	clone.Stat.Uptime = d.Stat.Uptime
 	clone.Stat.CPUUsages = make([]float64, len(d.Stat.CPUUsages))
 	copy(clone.Stat.CPUUsages, d.Stat.CPUUsages)
 	clone.Stat.MemoryUsage = d.Stat.MemoryUsage
@@ -30,6 +33,7 @@ func (d *DataWithStat[T, U]) Clone() *DataWithStat[T, U] {
 }
 
 func (d *DataWithStat[T, U]) Update(machine *MachineStat, lb U) {
+	d.Stat.Uptime = machine.Uptime
 	d.Stat.CPUUsages = make([]float64, len(machine.CPUUsages))
 	copy(d.Stat.CPUUsages, machine.CPUUsages)
 	d.Stat.MemoryUsage = machine.MemoryUsage
@@ -315,6 +319,7 @@ type MachineData struct {
 }
 
 type MachineStat struct {
+	Uptime        time.Duration
 	CPUUsages     []float64
 	MemoryUsage   uint64
 	DiskUsage     uint64
@@ -324,7 +329,7 @@ type MachineStat struct {
 }
 
 func calcKeepAliveInfoLen(stat *MachineStat) uint16 {
-	return uint16(8 + 1 + len(stat.CPUUsages)*8 + 8 + 8 + 8 + 8 + 8)
+	return uint16(8 + 8 + 1 + len(stat.CPUUsages)*8 + 8 + 8 + 8 + 8 + 8)
 }
 
 func L4LBKeepAlive(nextPeriod time.Duration, stat *MachineStat, ebpf_data *L4UpdateInfo) *ControlMessage {
@@ -338,6 +343,7 @@ func L4LBKeepAlive(nextPeriod time.Duration, stat *MachineStat, ebpf_data *L4Upd
 	msg.SetL4LbKeepAlive(L4LbkeepAlive{
 		Info: KeepAliveInfo{
 			NextPeriod:    uint64(nextPeriod),
+			Uptime:        uint64(stat.Uptime),
 			CpuLen:        uint8(len(stat.CPUUsages)),
 			CpuUsage:      stat.CPUUsages,
 			MemoryUsage:   stat.MemoryUsage,
@@ -402,13 +408,14 @@ func L7LBKeepAlive(nextPeriod time.Duration, stat *MachineStat, d *L7UpdateInfo)
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(calcKeepAliveInfoLen(stat) + 8*3 + 1 + calcPortStatLen(d.PortStats)),
+			Len:         uint16(calcKeepAliveInfoLen(stat) + 8*3 + calcPortStatLen(d.PortStats)),
 			MessageType: ControlMessageType_L7LbKeepalive,
 		},
 	}
 	msg.SetL7LbKeepAlive(L7LbkeepAlive{
 		Info: KeepAliveInfo{
 			NextPeriod:    uint64(nextPeriod),
+			Uptime:        uint64(stat.Uptime),
 			CpuLen:        uint8(len(stat.CPUUsages)),
 			CpuUsage:      stat.CPUUsages,
 			MemoryUsage:   stat.MemoryUsage,
@@ -457,4 +464,35 @@ func WasmUninstall(id uint32) *ControlMessage {
 		Id: id,
 	})
 	return msg
+}
+
+func UpdateL4WithKeepAlive(kl *L4LbkeepAlive, d *L4LBControlState) {
+	d.Update(&MachineStat{
+		Uptime:        time.Duration(kl.Info.Uptime),
+		CPUUsages:     kl.Info.CpuUsage,
+		MemoryUsage:   kl.Info.MemoryUsage,
+		DiskUsage:     kl.Info.DiskUsage,
+		IOUtilization: kl.Info.IoUtilization,
+		DiskSwap:      kl.Info.DiskSwap,
+		LoadAvg:       kl.Info.LoadAvg,
+	}, &L4UpdateInfo{
+		EbpfData: kl.EbpfData,
+	})
+}
+
+func UpdateL7WithKeepAlive(kl *L7LbkeepAlive, d *L7LBControlState) {
+	d.Update(&MachineStat{
+		Uptime:        time.Duration(kl.Info.Uptime),
+		CPUUsages:     kl.Info.CpuUsage,
+		MemoryUsage:   kl.Info.MemoryUsage,
+		DiskUsage:     kl.Info.DiskUsage,
+		IOUtilization: kl.Info.IoUtilization,
+		DiskSwap:      kl.Info.DiskSwap,
+		LoadAvg:       kl.Info.LoadAvg,
+	}, &L7UpdateInfo{
+		PacketTotal: kl.PacketTotal,
+		Throughput:  kl.Throughput,
+		DropCount:   kl.DropCount,
+		PortStats:   ConvertL7PortInfoToPortStat(kl.Ports),
+	})
 }

@@ -73,6 +73,7 @@ format L4LBL7LBUpdate:
 
 format KeepAliveInfo:
     next_period :u64 # nano sec
+    uptime :u64
     cpu_len :u8
     cpu_usage :[cpu_len]fl64
     memory_usage :u64

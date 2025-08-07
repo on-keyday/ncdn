@@ -31,8 +31,17 @@ func GetMachineData() (*protocol.MachineData, error) {
 	}, nil
 }
 
+var startTime time.Time
+
+func init() {
+	// 初期化時に現在の時刻を記録
+	startTime = time.Now()
+}
+
 func GetMachineStat() (*protocol.MachineStat, error) {
 	stats := &protocol.MachineStat{}
+
+	stats.Uptime = time.Since(startTime) / time.Second * time.Second // 秒単位でのアップタイム
 
 	// 1. CPUUsages
 	// CPUの使用率を1秒間隔で取得

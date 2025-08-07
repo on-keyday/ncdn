@@ -102,9 +102,10 @@ func initialModel() model {
 	})
 	connEntries := table.New()
 	connEntries.SetColumns([]table.Column{
-		{Title: "Server ID", Width: 20},
-		{Title: "Address", Width: 20},
-		{Title: "Type", Width: 20},
+		{Title: "Server ID", Width: 10},
+		{Title: "Address", Width: 10},
+		{Title: "Type", Width: 4},
+		{Title: "Uptime", Width: 10},
 	})
 
 	return model{
@@ -171,13 +172,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				fmt.Sprintf("%d", lb.Data.Data.ServerID),
 				netip.AddrFrom4(lb.Data.Data.Address).String(),
 				"L4",
+				time.Duration(lb.Stat.Uptime).String(),
 			})
 		}
 		for _, lb := range msg.stat.L7LBData {
 			rows = append(rows, table.Row{
 				fmt.Sprintf("%d", lb.Data.Data.ServerID),
 				netip.AddrFrom4(lb.Data.Data.Address).String(),
-				fmt.Sprintf("L7 (Ports: %v)", lb.Data.Data.Ports),
+				"L7",
+				time.Duration(lb.Stat.Uptime).String(),
 			})
 		}
 		m.connectionEntries.SetRows(rows)

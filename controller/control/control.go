@@ -292,7 +292,7 @@ func sendKeyShare[T any](lbConn *LBConn[T], key []byte, seqNum uint64) {
 	}
 }
 
-func sendL4L7LBUpdate[T any](lbConn *LBConn[T], data []*protocol.L7LBData, seqNum uint64) {
+func sendL4L7LBUpdate(lbConn *L4LB, data []*protocol.L7LBData, seqNum uint64) {
 	if err := lbConn.SendMessage(message{
 		seqNum: seqNum,
 		data:   protocol.L4L7LBUpdate(data),
@@ -365,8 +365,8 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 		var err error
 		var data []*protocol.L7LBData
 		var sharedKey sharedKey
+		var l4lbList *l4list
 		var l7generation uint64
-		var l4lb *l4list
 		c.withLock(func() {
 			for _, v := range c.l7lbList.list {
 				if v.data.data.Data.Data.ServerID == l7lb.data.data.Data.Data.ServerID {
@@ -382,7 +382,7 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 			for _, v := range c.l7lbList.list {
 				data = append(data, &v.data.data.Data.Data)
 			}
-			l4lb = c.l4lblist.Clone()
+			l4lbList = c.l4lblist.Clone()
 			l7generation = c.l7lbList.generation
 			sharedKey = c.sharedKey
 		})
@@ -391,8 +391,8 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 			return
 		}
 		sendKeyShare(l7lb, sharedKey.key, sharedKey.generation)
-		for _, v := range l4lb.list {
-			sendL4L7LBUpdate(v, data, l7generation)
+		for _, l4lb := range l4lbList.list {
+			sendL4L7LBUpdate(l4lb, data, l7generation)
 		}
 		c.handleL7LB(l7lb)
 	default:
@@ -456,18 +456,7 @@ func (c *controller) handleL7LB(l7lb *L7LB) {
 		kl := msg.L7LbKeepAlive()
 		if kl != nil {
 			l7lb.data.WithLock(func(data *protocol.L7LBControlState) {
-				data.Update(&protocol.MachineStat{
-					CPUUsages:   kl.Info.CpuUsage,
-					MemoryUsage: kl.Info.MemoryUsage,
-					DiskUsage:   kl.Info.DiskUsage,
-					DiskSwap:    kl.Info.DiskSwap,
-					LoadAvg:     kl.Info.LoadAvg,
-				}, &protocol.L7UpdateInfo{
-					Throughput:  kl.Throughput,
-					PacketTotal: kl.PacketTotal,
-					DropCount:   kl.DropCount,
-					PortStats:   protocol.ConvertL7PortInfoToPortStat(kl.Ports),
-				})
+				protocol.UpdateL7WithKeepAlive(kl, data)
 			})
 			return time.Duration(kl.Info.NextPeriod), nil
 		}
@@ -488,10 +477,7 @@ func (c *controller) handleL7LB(l7lb *L7LB) {
 		})
 		l7lb.logger.Info("L7LB disconnected")
 		for _, l4lb := range l4lblist.list {
-			l4lb.SendMessage(message{
-				seqNum: l7generation,
-				data:   protocol.L4L7LBUpdate(data),
-			})
+			sendL4L7LBUpdate(l4lb, data, l7generation)
 		}
 	})
 }
@@ -501,15 +487,7 @@ func (c *controller) handleL4LB(l4lb *L4LB) {
 		kl := msg.L4LbKeepAlive()
 		if kl != nil {
 			l4lb.data.WithLock(func(data *protocol.L4LBControlState) {
-				data.Update(&protocol.MachineStat{
-					CPUUsages:   kl.Info.CpuUsage,
-					MemoryUsage: kl.Info.MemoryUsage,
-					DiskUsage:   kl.Info.DiskUsage,
-					DiskSwap:    kl.Info.DiskSwap,
-					LoadAvg:     kl.Info.LoadAvg,
-				}, &protocol.L4UpdateInfo{
-					EbpfData: kl.EbpfData,
-				})
+				protocol.UpdateL4WithKeepAlive(kl, data)
 			})
 			return time.Duration(kl.Info.NextPeriod), nil
 		}
