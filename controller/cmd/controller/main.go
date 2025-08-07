@@ -4,14 +4,15 @@ package main
 // component library.
 
 import (
-	"context"
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	"log/slog"
+	"net/http"
 	"net/netip"
+	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -20,51 +21,73 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yzp0n/ncdn/controller/control"
-	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 )
 
-type lockedWriter struct {
-	l sync.Mutex
-	p *tea.Program
-}
-
-func (lw *lockedWriter) Write(p []byte) (n int, err error) {
-	lw.l.Lock()
-	defer lw.l.Unlock()
-	lw.p.Send(writerUpdate(string(p)))
-	return len(p), nil
-}
-
-var port = flag.String("port", ":8080", "Port to run the controller on")
+var controlPlane = flag.String("controlPlane", "http://localhost:8080", "Control plane URL for the controller")
 
 func main() {
 	flag.Parse()
-	lis, err := wstransport.NewWebSocketListener(*port)
+	url, err := url.Parse(*controlPlane)
 	if err != nil {
-		log.Fatalf("Failed to create WebSocket listener: %v", err)
+		log.Fatalf("Invalid control plane URL: %v", err)
 	}
-	defer lis.Close()
+	if url.Scheme != "http" && url.Scheme != "https" {
+		log.Fatalf("Control plane URL must use http or https scheme, got: %s", url.Scheme)
+	}
 	p := tea.NewProgram(initialModel())
-	lw := &lockedWriter{p: p}
-	h := slog.New(slog.NewTextHandler(lw, nil))
-	controller := control.NewController(h)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go func() {
-		lw.Write([]byte("Starting controller...\n"))
-		if err := controller.Run(ctx, lis); err != nil {
-			log.Fatalf("Controller run failed: %v", err)
+		p.Send(writerUpdate("Connecting to control plane..."))
+		for {
+			logStream, err := http.Get(url.String() + "/logs")
+			if err != nil {
+				p.Send(errMsg(fmt.Errorf("failed to connect to control plane: %w", err)))
+				return
+			}
+			defer logStream.Body.Close()
+			scanner := bufio.NewScanner(logStream.Body)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.HasPrefix(line, "data: ") {
+					p.Send(writerUpdate(line[6:])) // Remove "data: " prefix
+				} else {
+					p.Send(writerUpdate(line))
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				p.Send(errMsg(fmt.Errorf("error reading log stream: %w", err)))
+				return
+			}
+			time.Sleep(1 * time.Second) // wait before reconnecting
 		}
 	}()
 	go func() {
 		startTime := time.Now()
+		p.Send(tableUpdate{
+			stat:   &control.ControllerStatus{},
+			uptime: time.Since(startTime),
+		})
 		for {
-			status := controller.Status()
+			resp, err := http.Get(url.String() + "/status")
+			if err != nil {
+				p.Send(errMsg(fmt.Errorf("failed to connect to control plane: %w", err)))
+				return
+			}
+			if resp.StatusCode != http.StatusOK {
+				p.Send(errMsg(fmt.Errorf("control plane returned status: %s", resp.Status)))
+				return
+			}
+			var status control.ControllerStatus
+			if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+				p.Send(errMsg(fmt.Errorf("failed to decode control plane response: %w", err)))
+				return
+			}
+			resp.Body.Close()
+			uptime := time.Since(startTime)
 			p.Send(tableUpdate{
-				stat:   status,
-				uptime: time.Since(startTime),
+				stat:   &status,
+				uptime: uptime,
 			})
-			time.Sleep(1 * time.Second) // Update every 1 second
+			time.Sleep(1 * time.Second) // Poll every 1 second
 		}
 	}()
 	if _, err := p.Run(); err != nil {
@@ -122,7 +145,7 @@ func initialModel() model {
 }
 
 func (m model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -157,7 +180,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case writerUpdate:
-		m.buffer = append(m.buffer, string(msg))
+		if msg != "" {
+			m.buffer = append(m.buffer, string(msg)+"\n")
+			if len(m.buffer) > 100 {
+				m.buffer = m.buffer[len(m.buffer)-100:]
+			}
+			updateLog()
+		}
+	case errMsg:
+		m.buffer = append(m.buffer, fmt.Sprintf("Error: %v\n", msg))
 		if len(m.buffer) > 100 {
 			m.buffer = m.buffer[len(m.buffer)-100:]
 		}
@@ -194,9 +225,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logOutput.Width = msg.Width / 2    // ウィンドウの幅をセット
 		m.logOutput.Height = msg.Height - 10 // 必要なら他のUI分を引く
 		updateLog()
-	case errMsg:
-		m.err = msg
-		return m, nil
 	}
 
 	m.cmdline, cmd = m.cmdline.Update(msg)

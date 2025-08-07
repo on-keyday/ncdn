@@ -4,20 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/yzp0n/ncdn/controller/control"
 	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
-	"golang.org/x/net/websocket"
 )
 
 type subscriber struct {
-	conn   *websocket.Conn
+	conn   http.ResponseWriter
 	cancel context.CancelFunc
 }
 
@@ -50,25 +48,23 @@ func (lw *lockedWriter) removeSubscriber(conn *subscriber) {
 
 func (lw *lockedWriter) broadcast(text string) {
 	for _, sub := range lw.subscribers {
-		if err := websocket.Message.Send(sub.conn, text); err != nil {
-			log.Printf("Failed to send log to subscriber: %v", err)
-			sub.conn.Close()
-			sub.cancel()
+		_, err := sub.conn.Write([]byte("data: " + text + "\n"))
+		if err != nil {
+			sub.cancel() // Cancel the subscriber context if sending fails
 			lw.removeSubscriber(sub)
+			continue
 		}
+		http.NewResponseController(sub.conn).Flush()
 	}
 }
 
-func (lw *lockedWriter) SubscribeAndWait(conn *websocket.Conn) {
+func (lw *lockedWriter) SubscribeAndWait(ctx context.Context, conn http.ResponseWriter) {
 	lw.l.Lock()
-	currentText := strings.Join(lw.lines, "")
-	if err := websocket.Message.Send(conn, currentText); err != nil {
-		lw.l.Unlock()
-		log.Printf("Failed to send initial log: %v", err)
-		conn.Close()
-		return
+	for _, line := range lw.lines {
+		io.WriteString(conn, "data: "+line+"\n")
 	}
-	ctx, cancel := context.WithCancel(conn.Request().Context())
+	http.NewResponseController(conn).Flush()
+	ctx, cancel := context.WithCancel(ctx)
 	lw.subscribers = append(lw.subscribers, &subscriber{
 		conn:   conn,
 		cancel: cancel,
@@ -90,25 +86,23 @@ func main() {
 	controller := control.NewController(h)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	http.Handle("GET /log", websocket.Handler(func(c *websocket.Conn) {
-		defer c.Close()
-		lw.SubscribeAndWait(c)
-	}))
-	http.Handle("GET /status", websocket.Handler(func(c *websocket.Conn) {
-		for {
-			status := controller.Status()
-			data, err := json.Marshal(status)
-			if err != nil {
-				log.Printf("Failed to marshal status: %v", err)
-				return
-			}
-			if err := websocket.Message.Send(c, string(data)); err != nil {
-				log.Printf("Failed to send status: %v", err)
-				return
-			}
-			time.Sleep(5 * time.Second) // Send status every 5 seconds
+	http.HandleFunc("GET /logs", func(w http.ResponseWriter, r *http.Request) {
+		ctl := http.NewResponseController(w)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.WriteHeader(http.StatusOK)
+		ctl.Flush()
+		lw.SubscribeAndWait(ctx, w)
+	})
+	http.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
+		status := controller.Status()
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			http.Error(w, "Failed to encode status", http.StatusInternalServerError)
+			return
 		}
-	}))
+	})
 	if err := controller.Run(ctx, lis); err != nil {
 		log.Fatalf("Controller run failed: %v", err)
 	}
