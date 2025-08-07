@@ -27,24 +27,22 @@ type Controller interface {
 
 func (c *controller) Status() *ControllerStatus {
 	s := &ControllerStatus{}
-	var l7list []*protocol.L7LBControlState
-	var l4list []*protocol.L4LBControlState
+	var l7list *l7list
+	var l4list *l4list
 	c.withLock(func() {
-		l7list = make([]*protocol.L7LBControlState, len(c.l7lbList.list))
-		for i, v := range c.l7lbList.list {
-			v.data.WithLock(func(data *protocol.L7LBControlState) {
-				l7list[i] = data.Clone()
-			})
-		}
-		l4list = make([]*protocol.L4LBControlState, len(c.l4lblist.list))
-		for i, v := range c.l4lblist.list {
-			v.data.WithLock(func(data *protocol.L4LBControlState) {
-				l4list[i] = data.Clone()
-			})
-		}
+		l4list = c.l4lblist.Clone()
+		l7list = c.l7lbList.Clone()
 	})
-	s.L4LBData = l4list
-	s.L7LBData = l7list
+	for _, l4lb := range l4list.list {
+		l4lb.data.WithLock(func(data *protocol.L4LBControlState) {
+			s.L4LBData = append(s.L4LBData, data.Clone())
+		})
+	}
+	for _, l7lb := range l7list.list {
+		l7lb.data.WithLock(func(data *protocol.L7LBControlState) {
+			s.L7LBData = append(s.L7LBData, data.Clone())
+		})
+	}
 	return s
 }
 
@@ -132,6 +130,7 @@ type messageChannel struct {
 	messageChan       chan message
 	ctx               context.Context
 	cancel            context.CancelCauseFunc
+	cancelLock        sync.RWMutex
 	closed            sync.Once
 	latestSeqPerEvent map[protocol.ControlMessageType]uint64
 	senderWg          sync.WaitGroup
@@ -139,7 +138,9 @@ type messageChannel struct {
 
 func (c *messageChannel) CloseChannel(logger *slog.Logger) {
 	c.closed.Do(func() {
+		c.cancelLock.Lock()
 		c.cancel(ErrChannelClosed) // Cancel the context to stop the goroutine
+		c.cancelLock.Unlock()
 		c.senderWg.Wait()
 		close(c.messageChan) // Close the message channel after all senders are done
 		for r := range c.messageChan {
@@ -166,14 +167,15 @@ func (c *messageChannel) ReceiveMessage() (message, error) {
 }
 
 func (c *messageChannel) SendMessage(msg message) error {
-	c.senderWg.Add(1)
-	defer c.senderWg.Done()
+	c.cancelLock.RLock()
 	select {
 	case <-c.ctx.Done():
+		c.cancelLock.RUnlock()
 		return c.ctx.Err()
 	default:
 	}
 	c.senderWg.Add(1)
+	c.cancelLock.RUnlock()
 	go func() {
 		defer c.senderWg.Done()
 		select {
@@ -241,26 +243,28 @@ func (c *controller) withLock(fn func()) {
 func (c *controller) ShareKey(key []byte) {
 	var l4lblist *l4list
 	var l7lbList *l7list
+	var keyGeneration uint64
 	c.withLock(func() {
 		c.sharedKey.generation = c.msgSeqNum
 		c.sharedKey.key = key
+		keyGeneration = c.sharedKey.generation
 		c.msgSeqNum++
 		l4lblist = c.l4lblist.Clone()
 		l7lbList = c.l7lbList.Clone()
 	})
 	for _, l4lb := range l4lblist.list {
 		l4lb.SendMessage(message{
-			seqNum: c.sharedKey.generation,
-			data:   protocol.KeyShare(protocol.KeyType_Quiclb, c.sharedKey.key),
+			seqNum: keyGeneration,
+			data:   protocol.KeyShare(protocol.KeyType_Quiclb, key),
 		})
 	}
 	for _, l7lb := range l7lbList.list {
 		l7lb.SendMessage(message{
-			seqNum: c.sharedKey.generation,
-			data:   protocol.KeyShare(protocol.KeyType_Quiclb, c.sharedKey.key),
+			seqNum: keyGeneration,
+			data:   protocol.KeyShare(protocol.KeyType_Quiclb, key),
 		})
 	}
-	c.logger.Info("Shared key with L4LB and L7LBs", "key", c.sharedKey.key, "generation", c.sharedKey.generation)
+	c.logger.Info("Shared key with L4LB and L7LBs", "key", key, "generation", keyGeneration)
 }
 
 func (c *controller) Run(ctx context.Context, lis transport.Listener) error {
@@ -441,7 +445,7 @@ func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(
 			lbConn.logger.Error("Failed to decode message from LB", "error", err)
 			return
 		}
-		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType)
+		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType, "len", len(data))
 		if msg := msg.Message(); msg != nil {
 			msgStr := string(msg.Msg)
 			switch msg.Level {

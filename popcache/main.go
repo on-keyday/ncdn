@@ -9,6 +9,7 @@ import (
 	"flag"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -21,6 +22,10 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/tetratelabs/wazero"
+	"github.com/yzp0n/ncdn/controller/lbconn"
+	"github.com/yzp0n/ncdn/controller/protocol"
+	"github.com/yzp0n/ncdn/controller/transport"
+	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 	"github.com/yzp0n/ncdn/httprps"
 	"github.com/yzp0n/ncdn/popcache/cache"
 	lbconnid "github.com/yzp0n/ncdn/popcache/connid"
@@ -29,9 +34,10 @@ import (
 	"github.com/yzp0n/ncdn/types"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/websocket"
 )
 
-var controlPlaneAddr = flag.String("controlPlaneAddr", "localhost:8888", "Control plane address")
+var controlPlaneAddr = flag.String("controlPlane", "ws://localhost:8080", "Control plane address")
 var originURLStr = flag.String("originURL", "http://localhost:8888", "Origin server URL")
 var secureListenAddr = flag.String("listenAddr", ":8889", "Address to listen on")
 var httpListenAddr = flag.String("insecureListenAddr", ":8890", "HTTP server address to listen on")
@@ -96,6 +102,26 @@ func (l *ObservedListener) Addr() net.Addr {
 //go:embed wasm/edge_app.wasm
 var edgeApp []byte
 
+type appStat struct{}
+
+func (s *appStat) GetStat() (*protocol.L7UpdateInfo, error) {
+	return &protocol.L7UpdateInfo{}, nil
+}
+
+func getNonLoopbackIfaces() ([]net.Interface, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var nonLoopback []net.Interface
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback == 0 {
+			nonLoopback = append(nonLoopback, iface)
+		}
+	}
+	return nonLoopback, nil
+}
+
 func main() {
 	flag.Parse()
 	log.Printf("QUIC_GO_LOG_LEVEL=%s", os.Getenv("QUIC_GO_LOG_LEVEL"))
@@ -105,7 +131,62 @@ func main() {
 		log.Fatalf("Failed to parse origin URL %q: %v", *originURLStr, err)
 	}
 
+	ifaces, err := getNonLoopbackIfaces()
+	if err != nil {
+		log.Fatalf("Failed to get network interfaces: %v", err)
+	}
+
+	addrs, err := ifaces[0].Addrs()
+	if err != nil {
+		log.Fatalf("Failed to get addresses: %v", err)
+	}
+
+	controlPlaneURL, err := url.Parse(*controlPlaneAddr)
+	if err != nil {
+		log.Fatalf("Failed to parse control plane address %q: %v", *controlPlaneAddr, err)
+	}
+	if controlPlaneURL.Scheme != "ws" && controlPlaneURL.Scheme != "wss" {
+		log.Fatalf("Control plane address must use ws or wss scheme, got %s", controlPlaneURL.Scheme)
+	}
+	httpOrigin := *controlPlaneURL
+	httpOrigin.Scheme = "http"
+
 	start := time.Now()
+	conf := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
+	rt := wazero.NewRuntimeWithConfig(context.Background(), conf)
+	ec := edge.NewEdgeComputing(rt, 100*time.Millisecond)
+	err = ec.Register(context.Background(), "GET", "/index.html", edgeApp)
+	if err != nil {
+		log.Fatalf("Failed to register edge function: %v", err)
+	}
+	c := cache.NewCache()
+
+	appStat := &appStat{}
+
+	retryConn := lbconn.ConnectRetriableLB(slog.Default(), 5*time.Second, lbconn.ConnectL7LB,
+		&protocol.L7LBData{
+			ServerID:   uint32(*lbNodeId),
+			Address:    [4]byte(addrs[0].(*net.IPNet).IP.To4()),
+			MacAddress: [6]byte(ifaces[0].HardwareAddr),
+		}, 20*time.Second, func() (transport.Connection, error) {
+			return wstransport.Connect(context.Background(), &websocket.Config{
+				Location: controlPlaneURL,
+				Origin:   &httpOrigin,
+				Version:  websocket.ProtocolVersionHybi13,
+			})
+		}, appStat.GetStat)
+
+	go func() {
+		for {
+			msg, err := retryConn.Receive()
+			if err != nil {
+				log.Printf("Failed to receive connection: %v", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			log.Printf("Received message: %s", msg.Header.MessageType)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	rps := httprps.NewMiddleware(mux)
@@ -133,14 +214,7 @@ func main() {
 		// return 204
 		w.WriteHeader(http.StatusNoContent)
 	})
-	conf := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
-	rt := wazero.NewRuntimeWithConfig(context.Background(), conf)
-	ec := edge.NewEdgeComputing(rt, 100*time.Millisecond)
-	err = ec.Register(context.Background(), "GET", "/index.html", edgeApp)
-	if err != nil {
-		log.Fatalf("Failed to register edge function: %v", err)
-	}
-	c := cache.NewCache()
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		reqID, err := ec.StartRequest(r.Context(), r)
 		var handleRequest func(*http.Request)

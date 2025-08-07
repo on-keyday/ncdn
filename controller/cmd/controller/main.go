@@ -133,6 +133,7 @@ func initialModel() model {
 		{Title: "Address", Width: 20},
 		{Title: "Type", Width: 4},
 		{Title: "Uptime", Width: 10},
+		{Title: "Load", Width: 10},
 	})
 
 	return model{
@@ -208,6 +209,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				netip.AddrFrom4(lb.Data.Data.Address).String(),
 				"L4",
 				time.Duration(lb.Stat.Uptime).String(),
+				fmt.Sprintf("%.2f%%", lb.Stat.LoadAvg),
 			})
 		}
 		for _, lb := range msg.stat.L7LBData {
@@ -216,6 +218,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				netip.AddrFrom4(lb.Data.Data.Address).String(),
 				"L7",
 				time.Duration(lb.Stat.Uptime).String(),
+				fmt.Sprintf("%.2f%%", lb.Stat.LoadAvg),
 			})
 		}
 		m.connectionEntries.SetRows(rows)
