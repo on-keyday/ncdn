@@ -24,10 +24,10 @@ type WebSocketConn struct {
 }
 
 // NewWebSocketConn creates a new WebSocketConn.
-func NewWebSocketConn(conn *websocket.Conn, cancel context.CancelFunc) *WebSocketConn {
+func NewWebSocketConn(conn *websocket.Conn, remoteAddr string, cancel context.CancelFunc) *WebSocketConn {
 	return &WebSocketConn{
 		conn:       conn,
-		remoteAddr: conn.Request().RemoteAddr,
+		remoteAddr: remoteAddr,
 		cancel:     cancel,
 	}
 }
@@ -103,7 +103,7 @@ func NewWebSocketListener(addr string) (*WebSocketListener, error) {
 
 	handler := websocket.Handler(func(ws *websocket.Conn) {
 		ctx, cancel := context.WithCancel(ws.Request().Context())
-		listener.connChan <- NewWebSocketConn(ws, cancel)
+		listener.connChan <- NewWebSocketConn(ws, ws.Request().RemoteAddr, cancel)
 		<-ctx.Done() // Wait for the context to be done before closing the connection
 	})
 
@@ -144,5 +144,5 @@ func Connect(ctx context.Context, conf *websocket.Config) (transport.Connection,
 		return nil, err
 	}
 	cancel := func() {}
-	return NewWebSocketConn(ws, cancel), nil
+	return NewWebSocketConn(ws, conf.Location.String(), cancel), nil
 }

@@ -39,11 +39,15 @@ func main() {
 	if *isL7 {
 		clb, err = lb.ConnectL7LB(conn, &protocol.L7LBData{
 			ServerID: uint32(*id),
-		}, 20*time.Second)
+		}, 20*time.Second, func() (*protocol.L7UpdateInfo, error) {
+			return &protocol.L7UpdateInfo{}, nil
+		})
 	} else {
 		clb, err = lb.ConnectL4LB(conn, &protocol.L4LBData{
 			ServerID: uint32(*id),
-		}, 20*time.Second)
+		}, 20*time.Second, func() (*protocol.L4UpdateInfo, error) {
+			return &protocol.L4UpdateInfo{}, nil
+		})
 	}
 	if err != nil {
 		panic(err)

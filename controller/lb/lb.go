@@ -1,6 +1,7 @@
 package lb
 
 import (
+	"log"
 	"time"
 
 	"github.com/yzp0n/ncdn/controller/protocol"
@@ -9,7 +10,6 @@ import (
 )
 
 type LoadBalancer interface {
-	KeepAlive(t time.Duration) error
 	Receive() (*protocol.ControlMessage, error)
 	Close() error
 }
@@ -48,15 +48,18 @@ func connectLB[T any, U any](conn transport.Connection,
 		for range ticker.C {
 			m, err := stat.GetMachineStat()
 			if err != nil {
+				log.Printf("Failed to get machine stat: %v", err)
 				conn.Close()
 				return
 			}
 			u, err := getAppStats()
 			if err != nil {
+				log.Printf("Failed to get app stats: %v", err)
 				conn.Close()
 				return
 			}
 			if err := lb.keepAlive(keepalive, m, u); err != nil {
+				log.Printf("Failed to send keepalive: %v", err)
 				conn.Close()
 				return
 			}

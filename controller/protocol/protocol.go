@@ -324,7 +324,7 @@ type MachineStat struct {
 }
 
 func calcKeepAliveInfoLen(stat *MachineStat) uint16 {
-	return uint16(8 + 1 + len(stat.CPUUsages)*8 + 8 + 8)
+	return uint16(8 + 1 + len(stat.CPUUsages)*8 + 8 + 8 + 8 + 8 + 8)
 }
 
 func L4LBKeepAlive(nextPeriod time.Duration, stat *MachineStat, ebpf_data *L4UpdateInfo) *ControlMessage {

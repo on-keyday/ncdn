@@ -43,12 +43,16 @@ func (c *controller) Status() *ControllerStatus {
 			})
 		}
 	})
+	s.L4LBData = l4list
+	s.L7LBData = l7list
 	return s
 }
 
 func NewController(logger *slog.Logger) Controller {
 	c := &controller{
-		logger: logger,
+		logger:   logger,
+		l4lblist: &l4list{},
+		l7lbList: &l7list{},
 	}
 	return c
 }
@@ -339,6 +343,8 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 					return
 				}
 			}
+			c.l4lblist.Add(c.msgSeqNum, l4lb)
+			c.msgSeqNum++
 			for _, v := range c.l7lbList.list {
 				updateInfo = append(updateInfo, &v.data.data.Data.Data)
 			}
@@ -368,11 +374,10 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 					return
 				}
 			}
-			c.l7lbList.list = append(c.l7lbList.list, l7lb)
-			c.l7lbList.generation = c.msgSeqNum
+			c.l7lbList.Add(c.msgSeqNum, l7lb)
 			c.msgSeqNum++
-			slices.SortFunc(c.l7lbList.list, func(a, b *L7LB) int {
-				return int(a.data.data.Data.Data.ServerID) - int(b.data.data.Data.Data.ServerID) // Sort by ServerID
+			c.l7lbList.Sort(func(a, b *L7LB) int {
+				return int(a.data.data.Data.Data.ServerID) - int(b.data.data.Data.Data.ServerID)
 			})
 			for _, v := range c.l7lbList.list {
 				data = append(data, &v.data.data.Data.Data)
@@ -437,7 +442,7 @@ func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(
 			return
 		}
 		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType)
-		if nextPeriod, err := handleKeepAlive(msg); err != nil {
+		if nextPeriod, err := handleKeepAlive(msg); err == nil {
 			lbConn.conn.SetReadDeadline(time.Now().Add(time.Duration(nextPeriod)))
 		} else {
 			lbConn.logger.Error("Failed to handle keep alive", "error", err)

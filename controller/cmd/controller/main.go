@@ -168,16 +168,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rows := make([]table.Row, 0, len(msg.stat.L7LBData))
 		for _, lb := range msg.stat.L4LBData {
 			rows = append(rows, table.Row{
-				fmt.Sprintf("%d", lb.ServerID),
-				netip.AddrFrom4(lb.Address).String(),
+				fmt.Sprintf("%d", lb.Data.Data.ServerID),
+				netip.AddrFrom4(lb.Data.Data.Address).String(),
 				"L4",
 			})
 		}
 		for _, lb := range msg.stat.L7LBData {
 			rows = append(rows, table.Row{
-				fmt.Sprintf("%d", lb.ServerID),
-				netip.AddrFrom4(lb.Address).String(),
-				fmt.Sprintf("L7 (Ports: %v)", lb.Ports),
+				fmt.Sprintf("%d", lb.Data.Data.ServerID),
+				netip.AddrFrom4(lb.Data.Data.Address).String(),
+				fmt.Sprintf("L7 (Ports: %v)", lb.Data.Data.Ports),
 			})
 		}
 		m.connectionEntries.SetRows(rows)
