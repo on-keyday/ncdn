@@ -27,9 +27,9 @@ format ControlMessage:
     match header.message_type:
         ControlMessageType.l4lb_keepalive => l4lb_keep_alive :L4LBKeepAlive(input =  input.subrange(header.len))
         ControlMessageType.l7lb_keepalive => l7lb_keep_alive :L7LBKeepAlive(input =  input.subrange(header.len))
-        ControlMessageType.l7lb_hello => l7lb_hello :L7LBInfo(input = input.subrange(header.len))
+        ControlMessageType.l7lb_hello => l7lb_hello :L7LBHello(input = input.subrange(header.len))
         ControlMessageType.l7lb_update => l7lb_update :L7LBUpdate(input = input.subrange(header.len))
-        ControlMessageType.l4lb_hello => l4lb_hello :L4LBInfo(input = input.subrange(header.len))
+        ControlMessageType.l4lb_hello => l4lb_hello :L4LBHello(input = input.subrange(header.len))
         ControlMessageType.l4lb_l7lb_update => l4lb_l7lb_update :L4LBL7LBUpdate(input = input.subrange(header.len))
         ControlMessageType.l4lb_update => l4lb_update :L4LBUpdate(input = input.subrange(header.len))
         ControlMessageType.key_share => key_share :KeyShareInfo(input = input.subrange(header.len))
@@ -37,6 +37,14 @@ format ControlMessage:
         ControlMessageType.wasm_uninstall => wasm_uninstall :WasmUninstallInfo(input = input.subrange(header.len))
         .. => data :[header.len]u8
 
+format MachineInfo:
+    cpu_count :u8
+    memory_total :u64
+    disk_total :u64
+
+format L7LBHello:
+    machine :MachineInfo
+    info :L7LBInfo
 
 format L7LBInfo: # currently l4lb can interpret ipv4 only
     server_id :u32 # hashed value, for consistensy hash
@@ -44,6 +52,17 @@ format L7LBInfo: # currently l4lb can interpret ipv4 only
     mac_address :[6]u8
     port_len :u8
     port :[port_len]u16
+
+format L4LBHello:
+    machine :MachineInfo
+    info :L4LBInfo
+
+format L4LBInfo:
+    server_id :u32
+    virtual_address :[4]u8
+    address :[4]u8
+    mac_address :[6]u8
+
 
 format L7LBUpdate:
     server_id :u32
@@ -56,24 +75,35 @@ format KeepAliveInfo:
     next_period :u64 # nano sec
     cpu_len :u8
     cpu_usage :[cpu_len]fl64
-    memory_usage :fl64
-    disk_usage :fl64
+    memory_usage :u64
+    disk_usage :u64
+    io_utilization :fl64
+    load_avg :fl64
+    disk_swap :fl64
+
+
+format L7LBPortInfo:
+    handshake_failure :u64
+    rps :fl64
+    success :u64 # 2xx
+    client_failure :u64 # # 4xx
+    server_failure :u64 # 5xx
+    disconnect :u64 # disconnected by abort
+    origin_response_time :u64
 
 format L7LBKeepAlive:
     info :KeepAliveInfo
-    rps_len :u8
-    rps_per_port :[rps_len]u32
+    throughput :u64
+    drop_count :u64
+    packet_total :u64
+    port_len :u8
+    ports :[port_len]L7LBPortInfo
 
 format L4LBKeepAlive:
     info :KeepAliveInfo
     ebpf_len :u8
-    ebpf_data :[ebpf_len]u8 # struct stat_counters
+    ebpf_data :[ebpf_len]u8 # struct stat_counters, serialized by other system
 
-format L4LBInfo:
-    server_id :u32
-    virtual_address :[4]u8
-    address :[4]u8
-    mac_address :[6]u8
 
 format L4LBUpdate:
     virtual_address :[4]u8

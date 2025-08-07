@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -14,8 +15,8 @@ import (
 )
 
 type ControllerStatus struct {
-	L4LBData []*protocol.L4LBData
-	L7LBData []*protocol.L7LBData
+	L4LBData []*protocol.L4LBControlState
+	L7LBData []*protocol.L7LBControlState
 }
 
 type Controller interface {
@@ -26,17 +27,20 @@ type Controller interface {
 
 func (c *controller) Status() *ControllerStatus {
 	s := &ControllerStatus{}
+	var l7list []*protocol.L7LBControlState
+	var l4list []*protocol.L4LBControlState
 	c.withLock(func() {
-		if c.l4lb != nil {
-			cloned := *c.l4lb.data
-			s.L4LBData = append(s.L4LBData, &cloned)
+		l7list = make([]*protocol.L7LBControlState, len(c.l7lbList.list))
+		for i, v := range c.l7lbList.list {
+			v.data.WithLock(func(data *protocol.L7LBControlState) {
+				l7list[i] = data.Clone()
+			})
 		}
-		s.L7LBData = make([]*protocol.L7LBData, len(c.l7lbList.list))
-		for i, lb := range c.l7lbList.list {
-			cloned := *lb.data
-			cloned.Ports = make([]uint16, len(lb.data.Ports))
-			copy(cloned.Ports, lb.data.Ports)
-			s.L7LBData[i] = &cloned
+		l4list = make([]*protocol.L4LBControlState, len(c.l4lblist.list))
+		for i, v := range c.l4lblist.list {
+			v.data.WithLock(func(data *protocol.L4LBControlState) {
+				l4list[i] = data.Clone()
+			})
 		}
 	})
 	return s
@@ -73,15 +77,45 @@ func (m *message) Close(logger *slog.Logger) {
 	}
 }
 
-type l7List struct {
+type generationList[T comparable] struct {
 	generation uint64
-	list       []*L7LB
+	list       []T
 }
+
+func (l *generationList[T]) Clone() *generationList[T] {
+	clone := &generationList[T]{
+		generation: l.generation,
+		list:       make([]T, len(l.list)),
+	}
+	copy(clone.list, l.list)
+	return clone
+}
+
+func (l *generationList[T]) Sort(compare func(a, b T) int) {
+	slices.SortFunc(l.list, compare)
+}
+
+func (l *generationList[T]) Add(generation uint64, item T) {
+	l.generation = generation
+	l.list = append(l.list, item)
+}
+
+func (l *generationList[T]) Remove(item T) {
+	for i, v := range l.list {
+		if v == item {
+			l.list = append(l.list[:i], l.list[i+1:]...)
+			return
+		}
+	}
+}
+
+type l7list = generationList[*L7LB]
+type l4list = generationList[*L4LB]
 
 type controller struct {
 	lock      sync.Mutex
-	l4lb      *L4LB // currently only one L4LB is supported
-	l7lbList  l7List
+	l4lblist  *l4list
+	l7lbList  *l7list
 	logger    *slog.Logger
 	sharedKey sharedKey
 	msgSeqNum uint64
@@ -135,23 +169,44 @@ func (c *messageChannel) SendMessage(msg message) error {
 		return c.ctx.Err()
 	default:
 	}
-	select {
-	case c.messageChan <- msg:
-	case <-c.ctx.Done():
-		return c.ctx.Err()
-	}
+	c.senderWg.Add(1)
+	go func() {
+		defer c.senderWg.Done()
+		select {
+		case c.messageChan <- msg:
+		case <-c.ctx.Done():
+			return
+		}
+	}()
 	return nil
+}
+
+type WithLockedData[T any] struct {
+	data *T
+	lock sync.Mutex
+}
+
+func NewWithLockedData[T any](data *T) *WithLockedData[T] {
+	return &WithLockedData[T]{
+		data: data,
+	}
+}
+
+func (wd *WithLockedData[T]) WithLock(fn func(*T)) {
+	wd.lock.Lock()
+	defer wd.lock.Unlock()
+	fn(wd.data)
 }
 
 type LBConn[T any] struct {
 	conn transport.Connection
-	data *T
+	data *WithLockedData[T]
 	messageChannel
 	logger *slog.Logger
 }
 
-type L4LB = LBConn[protocol.L4LBData]
-type L7LB = LBConn[protocol.L7LBData]
+type L4LB = LBConn[protocol.L4LBControlState]
+type L7LB = LBConn[protocol.L7LBControlState]
 
 func (l *LBConn[T]) Close() error {
 	l.CloseChannel(l.logger)
@@ -162,7 +217,7 @@ func NewLBConn[T any](ctx context.Context, conn transport.Connection, data *T, l
 	ctx, cancel := context.WithCancelCause(ctx)
 	return &LBConn[T]{
 		conn: conn,
-		data: data,
+		data: NewWithLockedData(data),
 		messageChannel: messageChannel{
 			messageChan:       make(chan message, 100),
 			ctx:               ctx,
@@ -180,17 +235,16 @@ func (c *controller) withLock(fn func()) {
 }
 
 func (c *controller) ShareKey(key []byte) {
-	var l4lb *L4LB
-	var l7lbList l7List
+	var l4lblist *l4list
+	var l7lbList *l7list
 	c.withLock(func() {
 		c.sharedKey.generation = c.msgSeqNum
 		c.sharedKey.key = key
 		c.msgSeqNum++
-		l4lb = c.l4lb
-		l7lbList.list = append([]*L7LB{}, c.l7lbList.list...)
-		l7lbList.generation = c.l7lbList.generation
+		l4lblist = c.l4lblist.Clone()
+		l7lbList = c.l7lbList.Clone()
 	})
-	if l4lb != nil {
+	for _, l4lb := range l4lblist.list {
 		l4lb.SendMessage(message{
 			seqNum: c.sharedKey.generation,
 			data:   protocol.KeyShare(protocol.KeyType_Quiclb, c.sharedKey.key),
@@ -273,19 +327,20 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 	case protocol.ControlMessageType_L4LbHello:
 		l4lbInfo := msg.L4LbHello()
 		var err error
-		l4lb := NewLBConn(ctx, conn, protocol.L4LBInfoToData(l4lbInfo),
-			c.logger.With("server_id", l4lbInfo.ServerId, "remote_addr", conn.RemoteAddr()))
+		l4lb := NewLBConn(ctx, conn, protocol.L4LBHelloToControlState(l4lbInfo),
+			c.logger.With("server_id", l4lbInfo.Info.ServerId, "remote_addr", conn.RemoteAddr()))
 		var updateInfo []*protocol.L7LBData
 		var l7generation uint64
 		var sharedKey sharedKey
 		c.withLock(func() {
-			if c.l4lb != nil {
-				err = errors.New("L4LB already exists")
-				return
+			for _, v := range c.l4lblist.list {
+				if v.data.data.Data.Data.ServerID == l4lb.data.data.Data.Data.ServerID {
+					err = errors.New("L4LB with this ServerID already exists")
+					return
+				}
 			}
-			c.l4lb = l4lb
 			for _, v := range c.l7lbList.list {
-				updateInfo = append(updateInfo, v.data)
+				updateInfo = append(updateInfo, &v.data.data.Data.Data)
 			}
 			l7generation = c.l7lbList.generation
 			sharedKey = c.sharedKey
@@ -299,16 +354,16 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 		c.handleL4LB(l4lb)
 	case protocol.ControlMessageType_L7LbHello:
 		l7lbInfo := msg.L7LbHello()
-		l7lb := NewLBConn(ctx, conn, protocol.L7LBInfoToData(l7lbInfo),
-			c.logger.With("server_id", l7lbInfo.ServerId, "remote_addr", conn.RemoteAddr()))
+		l7lb := NewLBConn(ctx, conn, protocol.L7LBHelloToControlState(l7lbInfo),
+			c.logger.With("server_id", l7lbInfo.Info.ServerId, "remote_addr", conn.RemoteAddr()))
 		var err error
 		var data []*protocol.L7LBData
 		var sharedKey sharedKey
 		var l7generation uint64
-		var l4lb *L4LB
+		var l4lb *l4list
 		c.withLock(func() {
 			for _, v := range c.l7lbList.list {
-				if v.data.ServerID == l7lb.data.ServerID {
+				if v.data.data.Data.Data.ServerID == l7lb.data.data.Data.Data.ServerID {
 					err = errors.New("L7LB with this ServerID already exists")
 					return
 				}
@@ -317,12 +372,12 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 			c.l7lbList.generation = c.msgSeqNum
 			c.msgSeqNum++
 			slices.SortFunc(c.l7lbList.list, func(a, b *L7LB) int {
-				return int(a.data.ServerID) - int(b.data.ServerID)
+				return int(a.data.data.Data.Data.ServerID) - int(b.data.data.Data.Data.ServerID) // Sort by ServerID
 			})
 			for _, v := range c.l7lbList.list {
-				data = append(data, v.data)
+				data = append(data, &v.data.data.Data.Data)
 			}
-			l4lb = c.l4lb
+			l4lb = c.l4lblist.Clone()
 			l7generation = c.l7lbList.generation
 			sharedKey = c.sharedKey
 		})
@@ -331,8 +386,8 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 			return
 		}
 		sendKeyShare(l7lb, sharedKey.key, sharedKey.generation)
-		if l4lb != nil {
-			sendL4L7LBUpdate(l4lb, data, l7generation)
+		for _, v := range l4lb.list {
+			sendL4L7LBUpdate(v, data, l7generation)
 		}
 		c.handleL7LB(l7lb)
 	default:
@@ -341,7 +396,7 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 	}
 }
 
-func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], clean func()) {
+func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(msg *protocol.ControlMessage) (time.Duration, error), clean func()) {
 	lbConn.logger.Info("LB Connected", "data", lbConn.data, "type", lbType)
 	defer lbConn.Close()
 	defer clean()
@@ -382,37 +437,52 @@ func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], clean 
 			return
 		}
 		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType)
-		if kl := msg.KeepAlive(); kl != nil {
-			lbConn.conn.SetReadDeadline(time.Now().Add(time.Duration(kl.NextPeriod)))
+		if nextPeriod, err := handleKeepAlive(msg); err != nil {
+			lbConn.conn.SetReadDeadline(time.Now().Add(time.Duration(nextPeriod)))
 		} else {
-			lbConn.logger.Error("Unexpected message type from LB", "type", msg.Header.MessageType)
+			lbConn.logger.Error("Failed to handle keep alive", "error", err)
 			return
 		}
 	}
 }
 
 func (c *controller) handleL7LB(l7lb *L7LB) {
-	handleLBConn(c, "L7LB", l7lb, func() {
+	handleLBConn("L7LB", l7lb, func(msg *protocol.ControlMessage) (time.Duration, error) {
+		kl := msg.L7LbKeepAlive()
+		if kl != nil {
+			l7lb.data.WithLock(func(data *protocol.L7LBControlState) {
+				data.Update(&protocol.MachineStat{
+					CPUUsages:   kl.Info.CpuUsage,
+					MemoryUsage: kl.Info.MemoryUsage,
+					DiskUsage:   kl.Info.DiskUsage,
+					DiskSwap:    kl.Info.DiskSwap,
+					LoadAvg:     kl.Info.LoadAvg,
+				}, &protocol.L7UpdateInfo{
+					Throughput:  kl.Throughput,
+					PacketTotal: kl.PacketTotal,
+					DropCount:   kl.DropCount,
+					PortStats:   protocol.ConvertL7PortInfoToPortStat(kl.Ports),
+				})
+			})
+			return time.Duration(kl.Info.NextPeriod), nil
+		}
+		return 0, fmt.Errorf("unexpected message for L7LB: %v", msg.Header.MessageType)
+	}, func() {
 		var data []*protocol.L7LBData
-		var l4lb *L4LB
+		var l4lblist *l4list
 		var l7generation uint64
 		c.withLock(func() {
-			for i, v := range c.l7lbList.list {
-				if v == l7lb {
-					c.l7lbList.list = append(c.l7lbList.list[:i], c.l7lbList.list[i+1:]...)
-					break
-				}
-			}
+			c.l7lbList.Remove(l7lb)
 			for _, v := range c.l7lbList.list {
-				data = append(data, v.data)
+				data = append(data, &v.data.data.Data.Data)
 			}
 			c.l7lbList.generation = c.msgSeqNum
 			c.msgSeqNum++
 			l7generation = c.l7lbList.generation
-			l4lb = c.l4lb
+			l4lblist = c.l4lblist.Clone()
 		})
 		l7lb.logger.Info("L7LB disconnected")
-		if l4lb != nil {
+		for _, l4lb := range l4lblist.list {
 			l4lb.SendMessage(message{
 				seqNum: l7generation,
 				data:   protocol.L4L7LBUpdate(data),
@@ -422,9 +492,26 @@ func (c *controller) handleL7LB(l7lb *L7LB) {
 }
 
 func (c *controller) handleL4LB(l4lb *L4LB) {
-	handleLBConn(c, "L4LB", l4lb, func() {
+	handleLBConn("L4LB", l4lb, func(msg *protocol.ControlMessage) (time.Duration, error) {
+		kl := msg.L4LbKeepAlive()
+		if kl != nil {
+			l4lb.data.WithLock(func(data *protocol.L4LBControlState) {
+				data.Update(&protocol.MachineStat{
+					CPUUsages:   kl.Info.CpuUsage,
+					MemoryUsage: kl.Info.MemoryUsage,
+					DiskUsage:   kl.Info.DiskUsage,
+					DiskSwap:    kl.Info.DiskSwap,
+					LoadAvg:     kl.Info.LoadAvg,
+				}, &protocol.L4UpdateInfo{
+					EbpfData: kl.EbpfData,
+				})
+			})
+			return time.Duration(kl.Info.NextPeriod), nil
+		}
+		return 0, fmt.Errorf("unexpected message for L4LB: %v", msg.Header.MessageType)
+	}, func() {
 		c.withLock(func() {
-			c.l4lb = nil // Clear L4LB after handling
+			c.l4lblist.Remove(l4lb) // Remove the L4LB from the list
 		})
 		l4lb.logger.Info("L4LB disconnected", "remote_addr", l4lb.conn.RemoteAddr())
 	})

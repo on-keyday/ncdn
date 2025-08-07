@@ -2,6 +2,44 @@ package protocol
 
 import "time"
 
+type DataWithStat[T interface {
+	Clone() T
+	Update(U)
+}, U any] struct {
+	Data        T
+	Stat        *MachineStat
+	MemoryTotal uint64
+	DiskTotal   uint64
+}
+
+func (d *DataWithStat[T, U]) Clone() *DataWithStat[T, U] {
+	clone := &DataWithStat[T, U]{
+		Data:        d.Data.Clone(),
+		Stat:        &MachineStat{},
+		MemoryTotal: d.MemoryTotal,
+		DiskTotal:   d.DiskTotal,
+	}
+	clone.Stat.CPUUsages = make([]float64, len(d.Stat.CPUUsages))
+	copy(clone.Stat.CPUUsages, d.Stat.CPUUsages)
+	clone.Stat.MemoryUsage = d.Stat.MemoryUsage
+	clone.Stat.DiskUsage = d.Stat.DiskUsage
+	clone.Stat.IOUtilization = d.Stat.IOUtilization
+	clone.Stat.DiskSwap = d.Stat.DiskSwap
+	clone.Stat.LoadAvg = d.Stat.LoadAvg
+	return clone
+}
+
+func (d *DataWithStat[T, U]) Update(machine *MachineStat, lb U) {
+	d.Stat.CPUUsages = make([]float64, len(machine.CPUUsages))
+	copy(d.Stat.CPUUsages, machine.CPUUsages)
+	d.Stat.MemoryUsage = machine.MemoryUsage
+	d.Stat.DiskUsage = machine.DiskUsage
+	d.Stat.IOUtilization = machine.IOUtilization
+	d.Stat.DiskSwap = machine.DiskSwap
+	d.Stat.LoadAvg = machine.LoadAvg
+	d.Data.Update(lb)
+}
+
 type L7LBData struct {
 	ServerID   uint32
 	Address    [4]byte
@@ -9,38 +47,167 @@ type L7LBData struct {
 	Ports      []uint16
 }
 
-func L4LBInfoToData(info *L4Lbinfo) *L4LBData {
-	return &L4LBData{
-		ServerID:       info.ServerId,
-		VirtualAddress: info.VirtualAddress,
-		Address:        info.Address,
-		MacAddress:     info.MacAddress,
+type L7LBWithStat struct {
+	Data        L7LBData
+	Throughput  uint64
+	PacketTotal uint64
+	DropCount   uint64
+	PortStats   []*PortStat
+}
+
+func (l *L7LBWithStat) Clone() *L7LBWithStat {
+	clone := &L7LBWithStat{
+		Data: L7LBData{
+			ServerID:   l.Data.ServerID,
+			Address:    l.Data.Address,
+			MacAddress: l.Data.MacAddress,
+			Ports:      make([]uint16, len(l.Data.Ports)),
+		},
+		PortStats: make([]*PortStat, len(l.PortStats)),
+	}
+	clone.Throughput = l.Throughput
+	clone.PacketTotal = l.PacketTotal
+	clone.DropCount = l.DropCount
+	copy(clone.Data.Ports, l.Data.Ports)
+	for i, stat := range l.PortStats {
+		clone.PortStats[i] = &PortStat{
+			HandshakeFailure:   stat.HandshakeFailure,
+			RPS:                stat.RPS,
+			Success:            stat.Success,
+			ClientFailure:      stat.ClientFailure,
+			ServerFailure:      stat.ServerFailure,
+			Disconnect:         stat.Disconnect,
+			OriginResponseTime: stat.OriginResponseTime,
+		}
+	}
+	return clone
+}
+
+type L4LBData struct {
+	ServerID       uint32
+	VirtualAddress [4]byte
+	Address        [4]byte
+	MacAddress     [6]byte
+}
+
+type L4LBWithStat struct {
+	Data     L4LBData
+	EbpfData []byte
+}
+
+func (l *L4LBWithStat) Clone() *L4LBWithStat {
+	clone := &L4LBWithStat{
+		Data: L4LBData{
+			ServerID:       l.Data.ServerID,
+			VirtualAddress: l.Data.VirtualAddress,
+			Address:        l.Data.Address,
+			MacAddress:     l.Data.MacAddress,
+		},
+		EbpfData: make([]byte, len(l.EbpfData)),
+	}
+	copy(clone.EbpfData, l.EbpfData)
+	return clone
+}
+
+func (l *L4LBWithStat) Update(ebpfData *L4UpdateInfo) {
+	l.EbpfData = ebpfData.EbpfData
+}
+
+type L4UpdateInfo struct {
+	EbpfData []byte
+}
+
+type L4LBControlState = DataWithStat[*L4LBWithStat, *L4UpdateInfo]
+
+func L4LBHelloToControlState(hello *L4Lbhello) *L4LBControlState {
+	info := &hello.Info
+	machine := &hello.Machine
+	return &L4LBControlState{
+		Data: &L4LBWithStat{
+			Data: L4LBData{
+				ServerID:       info.ServerId,
+				VirtualAddress: info.VirtualAddress,
+				Address:        info.Address,
+				MacAddress:     info.MacAddress,
+			},
+			EbpfData: make([]byte, 0), // Placeholder, actual data should be filled
+		},
+		Stat: &MachineStat{
+			CPUUsages:     make([]float64, machine.CpuCount),
+			MemoryUsage:   0,
+			DiskUsage:     0,
+			IOUtilization: 0, // Placeholder, actual value should be calculated
+			DiskSwap:      0, // Placeholder, actual value should be calculated
+			LoadAvg:       0, // Placeholder, actual value should be calculated
+		},
+		MemoryTotal: machine.MemoryTotal,
+		DiskTotal:   machine.DiskTotal,
 	}
 }
 
-func L7LBInfoToData(info *L7Lbinfo) *L7LBData {
-	return &L7LBData{
-		ServerID:   info.ServerId,
-		Address:    info.Address,
-		MacAddress: info.MacAddress,
-		Ports:      info.Port,
+type L7UpdateInfo struct {
+	Throughput  uint64
+	PacketTotal uint64
+	DropCount   uint64
+	PortStats   []*PortStat
+}
+
+type L7LBControlState = DataWithStat[*L7LBWithStat, *L7UpdateInfo]
+
+func (l *L7LBWithStat) Update(stat *L7UpdateInfo) {
+	l.PacketTotal = stat.PacketTotal
+	l.Throughput = stat.Throughput
+	l.DropCount = stat.DropCount
+	l.PortStats = stat.PortStats
+}
+
+func L7LBHelloToControlState(hello *L7Lbhello) *L7LBControlState {
+	info := &hello.Info
+	machine := &hello.Machine
+	return &L7LBControlState{
+		Data: &L7LBWithStat{
+			Data: L7LBData{
+				ServerID:   info.ServerId,
+				Address:    info.Address,
+				MacAddress: info.MacAddress,
+				Ports:      info.Port,
+			},
+			PortStats: make([]*PortStat, info.PortLen),
+		},
+		Stat: &MachineStat{
+			CPUUsages:     make([]float64, machine.CpuCount),
+			MemoryUsage:   0,
+			DiskUsage:     0,
+			IOUtilization: 0, // Placeholder, actual value should be calculated
+			DiskSwap:      0, // Placeholder, actual value should be calculated
+			LoadAvg:       0, // Placeholder, actual value should be calculated
+		},
+		MemoryTotal: machine.MemoryTotal,
+		DiskTotal:   machine.DiskTotal,
 	}
 }
 
-func L7LBHello(lb *L7LBData) *ControlMessage {
+func L7LBHello(lb *L7LBData, machine *MachineData) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(4 + 4 + 6 + 1 + len(lb.Ports)*2),
+			Len:         machineInfoLen + uint16(4+4+6+1+len(lb.Ports)*2),
 			MessageType: ControlMessageType_L7LbHello,
 		},
 	}
-	msg.SetL7LbHello(L7Lbinfo{
-		Address:    lb.Address,
-		MacAddress: lb.MacAddress,
-		PortLen:    uint8(len(lb.Ports)),
-		Port:       lb.Ports,
-		ServerId:   lb.ServerID,
+	msg.SetL7LbHello(L7Lbhello{
+		Machine: MachineInfo{
+			CpuCount:    machine.CPUCount,
+			MemoryTotal: machine.MemoryTotal,
+			DiskTotal:   machine.DiskTotal,
+		},
+		Info: L7Lbinfo{
+			Address:    lb.Address,
+			MacAddress: lb.MacAddress,
+			PortLen:    uint8(len(lb.Ports)),
+			Port:       lb.Ports,
+			ServerId:   lb.ServerID,
+		},
 	})
 	return msg
 }
@@ -85,26 +252,28 @@ func L4L7LBUpdate(info []*L7LBData) *ControlMessage {
 	return msg
 }
 
-type L4LBData struct {
-	ServerID       uint32
-	VirtualAddress [4]byte
-	Address        [4]byte
-	MacAddress     [6]byte
-}
+const machineInfoLen = 1 + 8 + 8
 
-func L4LBHello(data *L4LBData) *ControlMessage {
+func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(4 + 4 + 4 + 6),
+			Len:         machineInfoLen + uint16(4+4+4+6),
 			MessageType: ControlMessageType_L4LbHello,
 		},
 	}
-	msg.SetL4LbHello(L4Lbinfo{
-		ServerId:       data.ServerID,
-		VirtualAddress: data.VirtualAddress,
-		Address:        data.Address,
-		MacAddress:     data.MacAddress,
+	msg.SetL4LbHello(L4Lbhello{
+		Info: L4Lbinfo{
+			ServerId:       data.ServerID,
+			VirtualAddress: data.VirtualAddress,
+			Address:        data.Address,
+			MacAddress:     data.MacAddress,
+		},
+		Machine: MachineInfo{
+			CpuCount:    machine.CPUCount,
+			MemoryTotal: machine.MemoryTotal,
+			DiskTotal:   machine.DiskTotal,
+		},
 	})
 	return msg
 }
@@ -139,16 +308,120 @@ func KeyShare(typ KeyType, key []byte) *ControlMessage {
 	return msg
 }
 
-func KeepAlive(nextPeriod time.Duration) *ControlMessage {
+type MachineData struct {
+	CPUCount    uint8
+	MemoryTotal uint64
+	DiskTotal   uint64
+}
+
+type MachineStat struct {
+	CPUUsages     []float64
+	MemoryUsage   uint64
+	DiskUsage     uint64
+	IOUtilization float64
+	DiskSwap      float64
+	LoadAvg       float64
+}
+
+func calcKeepAliveInfoLen(stat *MachineStat) uint16 {
+	return uint16(8 + 1 + len(stat.CPUUsages)*8 + 8 + 8)
+}
+
+func L4LBKeepAlive(nextPeriod time.Duration, stat *MachineStat, ebpf_data *L4UpdateInfo) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         8,
-			MessageType: ControlMessageType_Keepalive,
+			Len:         uint16(calcKeepAliveInfoLen(stat) + 1 + uint16(len(ebpf_data.EbpfData))),
+			MessageType: ControlMessageType_L4LbKeepalive,
 		},
 	}
-	msg.SetKeepAlive(KeepAliveInfo{
-		NextPeriod: uint64(nextPeriod),
+	msg.SetL4LbKeepAlive(L4LbkeepAlive{
+		Info: KeepAliveInfo{
+			NextPeriod:    uint64(nextPeriod),
+			CpuLen:        uint8(len(stat.CPUUsages)),
+			CpuUsage:      stat.CPUUsages,
+			MemoryUsage:   stat.MemoryUsage,
+			DiskUsage:     stat.DiskUsage,
+			IoUtilization: stat.IOUtilization,
+			DiskSwap:      stat.DiskSwap,
+			LoadAvg:       stat.LoadAvg,
+		},
+		EbpfLen:  uint8(len(ebpf_data.EbpfData)),
+		EbpfData: ebpf_data.EbpfData,
+	})
+	return msg
+}
+
+type PortStat struct {
+	HandshakeFailure   uint64
+	RPS                float64
+	Success            uint64
+	ClientFailure      uint64
+	ServerFailure      uint64
+	Disconnect         uint64
+	OriginResponseTime uint64
+}
+
+func calcPortStatLen(portStats []*PortStat) uint16 {
+	return uint16(1 + len(portStats)*56)
+}
+
+func convertPortStatsToL7LBPortInfo(portStats []*PortStat) []L7LbportInfo {
+	l7PortInfos := make([]L7LbportInfo, len(portStats))
+	for i, stat := range portStats {
+		l7PortInfos[i] = L7LbportInfo{
+			HandshakeFailure:   stat.HandshakeFailure,
+			Rps:                stat.RPS,
+			Success:            stat.Success,
+			ClientFailure:      stat.ClientFailure,
+			ServerFailure:      stat.ServerFailure,
+			Disconnect:         stat.Disconnect,
+			OriginResponseTime: stat.OriginResponseTime,
+		}
+	}
+	return l7PortInfos
+}
+
+func ConvertL7PortInfoToPortStat(l7PortInfos []L7LbportInfo) []*PortStat {
+	portStats := make([]*PortStat, len(l7PortInfos))
+	for i, info := range l7PortInfos {
+		portStats[i] = &PortStat{
+			HandshakeFailure:   info.HandshakeFailure,
+			RPS:                info.Rps,
+			Success:            info.Success,
+			ClientFailure:      info.ClientFailure,
+			ServerFailure:      info.ServerFailure,
+			Disconnect:         info.Disconnect,
+			OriginResponseTime: info.OriginResponseTime,
+		}
+	}
+	return portStats
+}
+
+func L7LBKeepAlive(nextPeriod time.Duration, stat *MachineStat, d *L7UpdateInfo) *ControlMessage {
+	msg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         uint16(calcKeepAliveInfoLen(stat) + 8*3 + 1 + calcPortStatLen(d.PortStats)),
+			MessageType: ControlMessageType_L7LbKeepalive,
+		},
+	}
+	msg.SetL7LbKeepAlive(L7LbkeepAlive{
+		Info: KeepAliveInfo{
+			NextPeriod:    uint64(nextPeriod),
+			CpuLen:        uint8(len(stat.CPUUsages)),
+			CpuUsage:      stat.CPUUsages,
+			MemoryUsage:   stat.MemoryUsage,
+			DiskUsage:     stat.DiskUsage,
+			IoUtilization: stat.IOUtilization,
+			DiskSwap:      stat.DiskSwap,
+			LoadAvg:       stat.LoadAvg,
+		},
+		PacketTotal: d.PacketTotal,
+		Throughput:  d.Throughput,
+		DropCount:   d.DropCount,
+		PortLen:     uint8(len(d.PortStats)),
+		Ports:       convertPortStatsToL7LBPortInfo(d.PortStats),
 	})
 	return msg
 }
