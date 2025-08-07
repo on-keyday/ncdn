@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -34,8 +35,11 @@ func (lw *lockedWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+var port = flag.String("port", ":8080", "Port to run the controller on")
+
 func main() {
-	lis, err := wstransport.NewWebSocketListener(":8080")
+	flag.Parse()
+	lis, err := wstransport.NewWebSocketListener(*port)
 	if err != nil {
 		log.Fatalf("Failed to create WebSocket listener: %v", err)
 	}
@@ -103,7 +107,7 @@ func initialModel() model {
 	connEntries := table.New()
 	connEntries.SetColumns([]table.Column{
 		{Title: "Server ID", Width: 10},
-		{Title: "Address", Width: 10},
+		{Title: "Address", Width: 20},
 		{Title: "Type", Width: 4},
 		{Title: "Uptime", Width: 10},
 	})

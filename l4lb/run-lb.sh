@@ -26,5 +26,8 @@ done
 
 echo ${dests}
 
+# TODO: move address
+controlPlaneAddr="ws://192.168.88.30:8080"
+
 sudo ip -n LB tunn del ipip0 || echo "no ipip0. good" # in case it exists from a `nolb.sh` run
-sudo ip netns exec LB bash -c "mkdir -p /sys/fs/bpf && mount -t bpf bpf /sys/fs/bpf && ${BIN_DIR}/l4lb -xdpcapHookPath=\"\" -dests=\"${dests}\""
+sudo ip netns exec LB bash -c "mkdir -p /sys/fs/bpf && mount -t bpf bpf /sys/fs/bpf && ${BIN_DIR}/l4lb -xdpcapHookPath=\"\" -dests=\"${dests}\" -controlPlane ${controlPlaneAddr}" 

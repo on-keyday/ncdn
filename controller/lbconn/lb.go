@@ -1,8 +1,9 @@
 package lbconn
 
 import (
-	"log"
+	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/yzp0n/ncdn/controller/protocol"
@@ -11,13 +12,20 @@ import (
 )
 
 type LoadBalancer interface {
+	Send(msg *Msg) error
 	Receive() (*protocol.ControlMessage, error)
 	Close() error
+}
+
+type Msg struct {
+	Level   protocol.LogLevel
+	Message string
 }
 
 type LBState[T any, U any] struct {
 	Data          T
 	Conn          transport.Connection
+	Messages      chan *Msg
 	makeKeepAlive func(t time.Duration, m *protocol.MachineStat, data U) (*protocol.ControlMessage, error)
 }
 
@@ -39,7 +47,12 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 	if err != nil {
 		return nil, err
 	}
-	lb := &LBState[T, U]{Data: data, Conn: conn, makeKeepAlive: makeKeepAlive}
+	lb := &LBState[T, U]{
+		Data:          data,
+		Conn:          conn,
+		makeKeepAlive: makeKeepAlive,
+		Messages:      make(chan *Msg, 1),
+	}
 	go func() {
 		if keepalive < 10*time.Second {
 			keepalive = 10 * time.Second
@@ -47,19 +60,30 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 		doSendKeepAlive := func() bool {
 			m, err := stat.GetMachineStat()
 			if err != nil {
-				logger.Info("Failed to get machine stat", "error", err)
+				logger.Error("Failed to get machine stat", "error", err)
 				conn.Close()
 				return false
 			}
 			u, err := getAppStats()
 			if err != nil {
-				logger.Info("Failed to get app stats", "error", err)
+				logger.Error("Failed to get app stats", "error", err)
 				conn.Close()
 				return false
 			}
-			if err := lb.keepAlive(keepalive, m, u); err != nil {
-				log.Printf("Failed to send keepalive: %v", err)
+			msg, err := lb.makeKeepAlive(keepalive, m, u)
+			if err != nil {
+				logger.Error("Failed to make keepalive message", "error", err)
 				conn.Close()
+				return false
+			}
+			enc, err := msg.Encode()
+			if err != nil {
+				logger.Error("Failed to encode keepalive message", "error", err)
+				conn.Close()
+				return false
+			}
+			if err := conn.Send(enc); err != nil {
+				logger.Error("Failed to send keepalive message", "error", err)
 				return false
 			}
 			return true
@@ -69,9 +93,21 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 		}
 		ticker := time.NewTicker(keepalive - 5*time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
-			if !doSendKeepAlive() {
-				return
+		for {
+			select {
+			case <-ticker.C:
+				if !doSendKeepAlive() {
+					return
+				}
+			case msg := <-lb.Messages:
+				if msg != nil {
+					msg := protocol.LogMessage(msg.Level, msg.Message)
+					if enc, err := msg.Encode(); err != nil {
+						logger.Error("Failed to encode error report", "error", err)
+					} else if err := conn.Send(enc); err != nil {
+						logger.Error("Failed to send error report", "error", err)
+					}
+				}
 			}
 		}
 	}()
@@ -96,18 +132,6 @@ func ConnectL7LB(logger *slog.Logger, conn transport.Connection, data *protocol.
 
 type LBConnConnector[T any, U any] func(logger *slog.Logger, conn transport.Connection, data T, keepalive time.Duration, appStat func() (U, error)) (*LBState[T, U], error)
 
-func (lb *LBState[T, U]) keepAlive(t time.Duration, m *protocol.MachineStat, u U) error {
-	msg, err := lb.makeKeepAlive(t, m, u)
-	if err != nil {
-		return err
-	}
-	enc, err := msg.Encode()
-	if err != nil {
-		return err
-	}
-	return lb.Conn.Send(enc)
-}
-
 func (lb *LBState[T, U]) Receive() (*protocol.ControlMessage, error) {
 	enc, err := lb.Conn.Receive()
 	if err != nil {
@@ -130,8 +154,21 @@ func (lb *LBState[T, U]) Close() error {
 	return err
 }
 
+func (lb *LBState[T, U]) Send(msg *Msg) error {
+	if lb.Conn == nil {
+		return errors.New("connection is nil")
+	}
+	select {
+	case lb.Messages <- msg:
+	default:
+		return errors.New("message channel is full")
+	}
+	return nil
+}
+
 type RetriableLBConn[T any, U any] struct {
 	connect    LBConnConnector[T, U]
+	connLock   sync.Mutex // Ensure thread-safe access to conn
 	conn       *LBState[T, U]
 	createConn func() (transport.Connection, error)
 	appStat    func() (U, error)
@@ -148,28 +185,38 @@ func ConnectRetriableLB[T any, U any](logger *slog.Logger, retryWait time.Durati
 
 func (r *RetriableLBConn[T, U]) Receive() (*protocol.ControlMessage, error) {
 	for {
+		r.connLock.Lock()
 		if r.conn == nil {
+			r.connLock.Unlock()
 			conn, err := r.createConn()
 			if err != nil {
 				r.logger.Error("Failed to create connection", "error", err)
 				time.Sleep(r.retryWait)
 				continue
 			}
-			r.conn, err = r.connect(r.logger, conn, r.data, r.keepalive, r.appStat)
+			newConn, err := r.connect(r.logger, conn, r.data, r.keepalive, r.appStat)
 			if err != nil {
 				r.logger.Error("Failed to connect to load balancer", "error", err)
 				conn.Close()
 				time.Sleep(r.retryWait)
 				continue
 			}
+			r.connLock.Lock() // Re-lock to set the new connection
+			if r.conn != nil {
+				r.conn.Close() // Close the old connection if it exists
+			}
+			r.conn = newConn
+			r.connLock.Unlock() // Unlock after setting the new connection
 			continue
 		}
-		recved, err := r.conn.Receive()
+		conn := r.conn
+		r.connLock.Unlock()
+		recved, err := conn.Receive()
 		if err != nil {
-			if r.conn.Conn != nil {
-				r.conn.Close()
-			}
+			r.connLock.Lock()
+			r.conn.Close()
 			r.conn = nil // Reset connection to allow retry
+			r.connLock.Unlock()
 			r.logger.Error("Failed to receive message from load balancer", "error", err)
 			time.Sleep(r.retryWait)
 			continue
@@ -179,10 +226,14 @@ func (r *RetriableLBConn[T, U]) Receive() (*protocol.ControlMessage, error) {
 }
 
 func (r *RetriableLBConn[T, U]) Close() error {
+	return r.conn.Close()
+}
+
+func (r *RetriableLBConn[T, U]) Send(msg *Msg) error {
+	r.connLock.Lock()
+	defer r.connLock.Unlock()
 	if r.conn == nil {
-		return nil
+		return errors.New("connection is nil")
 	}
-	err := r.conn.Close()
-	r.conn = nil // Prevent double close
-	return err
+	return r.conn.Send(msg)
 }

@@ -29,7 +29,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var controlPlaneAddr = flag.String("controlPlaneAddr", "localhost:8080", "Control plane address for the load balancer")
+var controlPlaneAddr = flag.String("controlPlane", "ws://localhost:8080", "Control plane url for the load balancer")
 var lbBin = flag.String("lbBin", "c/lb.o", "Path to XDP lb binary")
 var cryptoBin = flag.String("cryptoBin", "c/init_crypto.o", "Path to XDP crypto binary")
 var xdpcapHookPath = flag.String("xdpcapHookPath", "/sys/fs/bpf/xdpcap_hook", "Path to XDPCap hook")
@@ -173,6 +173,17 @@ func main() {
 		log.Panicf("Failed to generate random bytes: %v", err)
 	}
 
+	controlPlaneURL, err := url.Parse(*controlPlaneAddr)
+	if err != nil {
+		log.Panicf("Failed to parse control plane address %q: %v", *controlPlaneAddr, err)
+	}
+	if controlPlaneURL.Scheme != "ws" && controlPlaneURL.Scheme != "wss" {
+		log.Panicf("Control plane address must use ws or wss scheme, got %s", controlPlaneURL.Scheme)
+	}
+	httpOrigin := *controlPlaneURL
+	httpOrigin.Scheme = "http"
+	log.Printf("Connecting to control plane at %s with origin %s", controlPlaneURL.String(), httpOrigin.String())
+
 	cfg := &l4lbdrv.Config{
 		BinPath:        *lbBin,
 		CryptoBin:      *cryptoBin,
@@ -195,21 +206,18 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
 
-	mustParseURL := func(rawurl string) *url.URL {
-		u, err := url.Parse(rawurl)
-		if err != nil {
-			log.Panicf("Failed to parse URL %q: %v", rawurl, err)
-		}
-		return u
-	}
-
 	counters := &l4lbStatCounters{}
 
 	retryConn := lbconn.ConnectRetriableLB(slog.Default(), 5*time.Second, lbconn.ConnectL4LB,
-		&protocol.L4LBData{}, 20*time.Second, func() (transport.Connection, error) {
+		&protocol.L4LBData{
+			ServerID:       uint32(1), // TODO: Make this configurable
+			VirtualAddress: netip.MustParseAddr(*vip).As4(),
+			Address:        dests[0].IPAddr.As4(),
+			MacAddress:     [6]byte(dests[0].HardwareAddr),
+		}, 20*time.Second, func() (transport.Connection, error) {
 			return wstransport.Connect(context.Background(), &websocket.Config{
-				Location: mustParseURL("ws://" + *controlPlaneAddr),
-				Origin:   mustParseURL("http://" + *controlPlaneAddr),
+				Location: controlPlaneURL,
+				Origin:   &httpOrigin,
 				Version:  websocket.ProtocolVersionHybi13,
 			})
 		}, counters.GetStat)
@@ -243,9 +251,30 @@ func main() {
 			continue
 		case update := <-updateChan:
 			slog.Info("Received L7 load balancer update", slog.Any("update", update.Info))
-			//lb.Sync()
+			var destEntries []l4lbdrv.DestinationEntry
+			destEntries = append(destEntries, dests[0]) // first is self address
+			for _, dest := range update.Info {
+				destEntries = append(destEntries, l4lbdrv.DestinationEntry{
+					IPAddr:       netip.AddrFrom4(dest.Address),
+					HardwareAddr: net.HardwareAddr(dest.MacAddress[:]),
+					ServerID:     dest.ServerId,
+				})
+			}
+			if err := lb.UpdateConfig(destEntries); err != nil {
+				retryConn.Send(&lbconn.Msg{
+					Level:   protocol.LogLevel_Error,
+					Message: fmt.Sprintf("Failed to update load balancer configuration: %v", err),
+				})
+				slog.Error("Failed to update load balancer configuration", slog.Any("error", err))
+			} else {
+				retryConn.Send(&lbconn.Msg{
+					Level:   protocol.LogLevel_Info,
+					Message: "Load balancer configuration updated successfully",
+				})
+				slog.Info("Load balancer configuration updated successfully")
+			}
+			continue
 		case <-done:
-			break
 		}
 		break
 	}

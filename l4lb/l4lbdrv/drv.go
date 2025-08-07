@@ -115,6 +115,21 @@ func IPToUint32(ip netip.Addr) (uint32, error) {
 	return hostOrder.Uint32(ip4[:]), nil
 }
 
+func (lb *L4LB) UpdateConfig(newDestIPs DestinationEntries) error {
+	if len(newDestIPs) == 0 {
+		slog.Warn("No destinations provided, skipping update.")
+		return nil
+	}
+
+	lb.cfg.Dests = newDestIPs
+
+	if err := lb.Sync(); err != nil {
+		slog.Error("Failed to sync load balancer configuration", slog.Any("error", err))
+		return err
+	}
+	return nil
+}
+
 func (lb *L4LB) Sync() error {
 	vip4, err := IPToUint32(lb.cfg.VIP)
 	if err != nil {

@@ -442,6 +442,24 @@ func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(
 			return
 		}
 		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType)
+		if msg := msg.Message(); msg != nil {
+			msgStr := string(msg.Msg)
+			switch msg.Level {
+			case protocol.LogLevel_Trace:
+				lbConn.logger.Debug("Received message from LB", "message", msgStr)
+			case protocol.LogLevel_Debug:
+				lbConn.logger.Debug("Received message from LB", "message", msgStr)
+			case protocol.LogLevel_Info:
+				lbConn.logger.Info("Received message from LB", "message", msgStr)
+			case protocol.LogLevel_Warn:
+				lbConn.logger.Warn("Received message from LB", "message", msgStr)
+			case protocol.LogLevel_Error:
+				lbConn.logger.Error("Received message from LB", "message", msgStr)
+			default:
+				lbConn.logger.Error("Received message from LB with unknown log level", "message", msgStr, "level", msg.Level)
+			}
+			continue
+		}
 		if nextPeriod, err := handleKeepAlive(msg); err == nil {
 			lbConn.conn.SetReadDeadline(time.Now().Add(time.Duration(nextPeriod)))
 		} else {

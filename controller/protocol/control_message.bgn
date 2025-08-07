@@ -13,6 +13,7 @@ enum ControlMessageType:
     key_share # controller -> l4lb,l7lb
     wasm_install # controller -> l7lb
     wasm_uninstall # controller -> l7lb
+    message # l4lb,l7lb -> controller
 
 
 format ControlMessageHeader:
@@ -35,6 +36,7 @@ format ControlMessage:
         ControlMessageType.key_share => key_share :KeyShareInfo(input = input.subrange(header.len))
         ControlMessageType.wasm_install => wasm_install :WasmInstallInfo(input = input.subrange(header.len))
         ControlMessageType.wasm_uninstall => wasm_uninstall :WasmUninstallInfo(input = input.subrange(header.len))
+        ControlMessageType.message => message :Message
         .. => data :[header.len]u8
 
 format MachineInfo:
@@ -128,3 +130,16 @@ format WasmInstallInfo:
 
 format WasmUninstallInfo:
     id :u32
+
+enum LogLevel:
+    :u8
+    TRACE = "TRACE"
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARN = "WARN"
+    ERROR = "ERROR"
+
+format Message:
+    level :LogLevel
+    msg_len :u16
+    msg :[msg_len]u8

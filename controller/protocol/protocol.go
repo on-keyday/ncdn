@@ -496,3 +496,25 @@ func UpdateL7WithKeepAlive(kl *L7LbkeepAlive, d *L7LBControlState) {
 		PortStats:   ConvertL7PortInfoToPortStat(kl.Ports),
 	})
 }
+
+func LogMessage(level LogLevel, msg string) *ControlMessage {
+	msgBytes := []byte(msg)
+	if len(msgBytes) > 65535 {
+		msgBytes = msgBytes[:65535] // Limit to 65535 bytes
+	}
+	msgLen := uint16(len(msgBytes))
+
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         msgLen + 2 + 1, // 2 bytes for msg_len
+			MessageType: ControlMessageType_Message,
+		},
+	}
+	controlMsg.SetMessage(Message{
+		Level:  level,
+		MsgLen: msgLen,
+		Msg:    msgBytes,
+	})
+	return controlMsg
+}
