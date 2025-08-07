@@ -148,15 +148,8 @@ func (lb *L4LB) Close() error {
 	return lb.bindings.Close()
 }
 
-func (lb *L4LB) DumpCounters() error {
-	cnt, err := lb.bindings.ReadStatCountersAggregate()
-	if err != nil {
-		return err
-	}
-
-	slog.Info(cnt.String())
-
-	return nil
+func (lb *L4LB) GetCounters() (*StatCounters, error) {
+	return lb.bindings.ReadStatCountersAggregate()
 }
 
 // `PrepSystemForXDP` configures RLIMIT_MEMLOCK to ensure enough room to

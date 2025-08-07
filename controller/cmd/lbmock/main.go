@@ -4,10 +4,11 @@ import (
 	"context"
 	"flag"
 	"log"
+	"log/slog"
 	"net/url"
 	"time"
 
-	"github.com/yzp0n/ncdn/controller/lb"
+	"github.com/yzp0n/ncdn/controller/lbconn"
 	"github.com/yzp0n/ncdn/controller/protocol"
 	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 	"golang.org/x/net/websocket"
@@ -35,15 +36,15 @@ func main() {
 		panic(err)
 	}
 	defer conn.Close()
-	var clb lb.LoadBalancer
+	var clb lbconn.LoadBalancer
 	if *isL7 {
-		clb, err = lb.ConnectL7LB(conn, &protocol.L7LBData{
+		clb, err = lbconn.ConnectL7LB(slog.Default(), conn, &protocol.L7LBData{
 			ServerID: uint32(*id),
 		}, 20*time.Second, func() (*protocol.L7UpdateInfo, error) {
 			return &protocol.L7UpdateInfo{}, nil
 		})
 	} else {
-		clb, err = lb.ConnectL4LB(conn, &protocol.L4LBData{
+		clb, err = lbconn.ConnectL4LB(slog.Default(), conn, &protocol.L4LBData{
 			ServerID: uint32(*id),
 		}, 20*time.Second, func() (*protocol.L4UpdateInfo, error) {
 			return &protocol.L4UpdateInfo{}, nil

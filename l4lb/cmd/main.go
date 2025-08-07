@@ -1,22 +1,31 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
 	"log/slog"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
 
+	"github.com/yzp0n/ncdn/controller/lbconn"
+	"github.com/yzp0n/ncdn/controller/protocol"
+	"github.com/yzp0n/ncdn/controller/transport"
+	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 	"github.com/yzp0n/ncdn/l4lb/l4lbdrv"
 	"github.com/yzp0n/ncdn/tool/util"
+	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 )
 
@@ -76,6 +85,33 @@ func FSType(path string) (int64, error) {
 		fsType = int64(uint32(statfs.Type))
 	}
 	return fsType, nil
+}
+
+type l4lbStatCounters struct {
+	lock     sync.Mutex
+	ebpfData *l4lbdrv.StatCounters
+}
+
+func (s *l4lbStatCounters) Set(data *l4lbdrv.StatCounters) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.ebpfData = data
+}
+
+func (s *l4lbStatCounters) GetStat() (*protocol.L4UpdateInfo, error) {
+	s.lock.Lock()
+	counter := s.ebpfData
+	s.lock.Unlock()
+	if counter == nil {
+		return &protocol.L4UpdateInfo{}, nil
+	}
+	marshalled, err := binary.Append(nil, binary.BigEndian, counter)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.L4UpdateInfo{
+		EbpfData: marshalled,
+	}, nil
 }
 
 func main() {
@@ -159,15 +195,55 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
 
+	mustParseURL := func(rawurl string) *url.URL {
+		u, err := url.Parse(rawurl)
+		if err != nil {
+			log.Panicf("Failed to parse URL %q: %v", rawurl, err)
+		}
+		return u
+	}
+
+	counters := &l4lbStatCounters{}
+
+	retryConn := lbconn.ConnectRetriableLB(slog.Default(), 5*time.Second, lbconn.ConnectL4LB,
+		&protocol.L4LBData{}, 20*time.Second, func() (transport.Connection, error) {
+			return wstransport.Connect(context.Background(), &websocket.Config{
+				Location: mustParseURL("ws://" + *controlPlaneAddr),
+				Origin:   mustParseURL("http://" + *controlPlaneAddr),
+				Version:  websocket.ProtocolVersionHybi13,
+			})
+		}, counters.GetStat)
+
+	updateChan := make(chan *protocol.L4Lbl7Lbupdate, 1)
+
+	go func() {
+		for {
+			msg, err := retryConn.Receive()
+			if err != nil {
+				slog.Error("Failed to receive connection", slog.String("error", err.Error()))
+				return // this is fatal, we cannot continue without a connection
+			}
+			if l7lbUpdate := msg.L4LbL7LbUpdate(); l7lbUpdate != nil {
+				updateChan <- l7lbUpdate
+			}
+		}
+	}()
+
 	ticker := time.NewTicker(time.Second)
 	for {
 		select {
 		case <-ticker.C:
-			if err := lb.DumpCounters(); err != nil {
+			if counter, err := lb.GetCounters(); err != nil {
 				slog.Error("Failed to dump counters", slog.String("err", err.Error()))
+				continue
+			} else {
+				slog.Info(counter.String())
+				counters.Set(counter)
 			}
 			continue
-
+		case update := <-updateChan:
+			slog.Info("Received L7 load balancer update", slog.Any("update", update.Info))
+			//lb.Sync()
 		case <-done:
 			break
 		}
