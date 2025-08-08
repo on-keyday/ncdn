@@ -19,7 +19,17 @@ type ControllerStatus struct {
 	L7LBData []*protocol.L7LBControlState
 }
 
+type LBType string
+
+const (
+	LBTypeL4 LBType = "L4LB"
+	LBTypeL7 LBType = "L7LB"
+)
+
 type Controller interface {
+	FileTransfer(typ LBType, serverID uint32, path string, permission uint16, file ReaderAtCloser) error
+	WasmInstall(id uint32, method, path string, file ReaderAtCloser) error
+	WasmUninstall(id uint32) error
 	ShareKey([]byte)
 	Run(context.Context, transport.Listener) error
 	Status() *ControllerStatus
@@ -63,6 +73,8 @@ type sharedKey struct {
 type ReaderAtCloser interface {
 	io.ReaderAt
 	io.Closer
+	Size() int64
+	AddRef()
 }
 type message struct {
 	seqNum uint64
@@ -134,36 +146,30 @@ type messageChannel struct {
 	closed            sync.Once
 	latestSeqPerEvent map[protocol.ControlMessageType]uint64
 	senderWg          sync.WaitGroup
+	logger            *slog.Logger
 }
 
-func (c *messageChannel) CloseChannel(logger *slog.Logger) {
+func (c *messageChannel) CloseChannel() {
 	c.closed.Do(func() {
 		c.cancelLock.Lock()
 		c.cancel(ErrChannelClosed) // Cancel the context to stop the goroutine
 		c.cancelLock.Unlock()
 		c.senderWg.Wait()
 		close(c.messageChan) // Close the message channel after all senders are done
-		for r := range c.messageChan {
-			r.Close(logger)
-		}
 	})
 }
 
 var ErrChannelClosed = errors.New("message channel closed")
 
 func (c *messageChannel) ReceiveMessage() (message, error) {
-	for {
-		select {
-		case msg := <-c.messageChan:
-			if latest, ok := c.latestSeqPerEvent[msg.data.Header.MessageType]; ok && msg.seqNum <= latest {
-				continue // Skip messages with sequence number less than or equal to the latest
-			}
-			c.latestSeqPerEvent[msg.data.Header.MessageType] = msg.seqNum
-			return msg, nil
-		case <-c.ctx.Done():
-			return message{}, ErrChannelClosed
+	for msg := range c.messageChan {
+		if latest, ok := c.latestSeqPerEvent[msg.data.Header.MessageType]; ok && msg.seqNum <= latest {
+			continue // Skip messages with sequence number less than or equal to the latest
 		}
+		c.latestSeqPerEvent[msg.data.Header.MessageType] = msg.seqNum
+		return msg, nil
 	}
+	return message{}, ErrChannelClosed // Return error if the channel is closed
 }
 
 func (c *messageChannel) SendMessage(msg message) error {
@@ -171,6 +177,7 @@ func (c *messageChannel) SendMessage(msg message) error {
 	select {
 	case <-c.ctx.Done():
 		c.cancelLock.RUnlock()
+		msg.Close(c.logger) // Clean up the message if the context is done
 		return c.ctx.Err()
 	default:
 	}
@@ -181,6 +188,7 @@ func (c *messageChannel) SendMessage(msg message) error {
 		select {
 		case c.messageChan <- msg:
 		case <-c.ctx.Done():
+			msg.Close(c.logger) // Clean up the message if the context is done
 			return
 		}
 	}()
@@ -208,14 +216,13 @@ type LBConn[T any] struct {
 	conn transport.Connection
 	data *WithLockedData[T]
 	messageChannel
-	logger *slog.Logger
 }
 
 type L4LB = LBConn[protocol.L4LBControlState]
 type L7LB = LBConn[protocol.L7LBControlState]
 
 func (l *LBConn[T]) Close() error {
-	l.CloseChannel(l.logger)
+	l.CloseChannel()
 	return l.conn.Close()
 }
 
@@ -229,8 +236,8 @@ func NewLBConn[T any](ctx context.Context, conn transport.Connection, data *T, l
 			ctx:               ctx,
 			cancel:            cancel,
 			latestSeqPerEvent: make(map[protocol.ControlMessageType]uint64),
+			logger:            logger,
 		},
-		logger: logger,
 	}
 }
 
@@ -238,33 +245,6 @@ func (c *controller) withLock(fn func()) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	fn()
-}
-
-func (c *controller) ShareKey(key []byte) {
-	var l4lblist *l4list
-	var l7lbList *l7list
-	var keyGeneration uint64
-	c.withLock(func() {
-		c.sharedKey.generation = c.msgSeqNum
-		c.sharedKey.key = key
-		keyGeneration = c.sharedKey.generation
-		c.msgSeqNum++
-		l4lblist = c.l4lblist.Clone()
-		l7lbList = c.l7lbList.Clone()
-	})
-	for _, l4lb := range l4lblist.list {
-		l4lb.SendMessage(message{
-			seqNum: keyGeneration,
-			data:   protocol.KeyShare(protocol.KeyType_Quiclb, key),
-		})
-	}
-	for _, l7lb := range l7lbList.list {
-		l7lb.SendMessage(message{
-			seqNum: keyGeneration,
-			data:   protocol.KeyShare(protocol.KeyType_Quiclb, key),
-		})
-	}
-	c.logger.Info("Shared key with L4LB and L7LBs", "key", key, "generation", keyGeneration)
 }
 
 func (c *controller) Run(ctx context.Context, lis transport.Listener) error {
@@ -305,6 +285,18 @@ func sendL4L7LBUpdate(lbConn *L4LB, data []*protocol.L7LBData, seqNum uint64) {
 	}
 }
 
+func readControlMessage(conn transport.Connection) (*protocol.ControlMessage, int, error) {
+	data, err := conn.Receive()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to receive data: %w", err)
+	}
+	msg := &protocol.ControlMessage{}
+	if err := msg.DecodeExact(data); err != nil {
+		return nil, 0, fmt.Errorf("failed to decode control message: %w", err)
+	}
+	return msg, len(data), nil
+}
+
 func (c *controller) handleConnection(ctx context.Context, conn transport.Connection) {
 	defer conn.Close()
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -320,15 +312,9 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 		c.logger.Error("Failed to set deadline", "error", err)
 		return
 	}
-	data, err := conn.Receive()
+	msg, _, err := readControlMessage(conn)
 	if err != nil {
-		c.logger.Error("Failed to receive data", "error", err)
-		return
-	}
-	msg := &protocol.ControlMessage{}
-	err = msg.DecodeExact(data)
-	if err != nil {
-		c.logger.Error("Failed to decode message", "error", err)
+		c.logger.Error("Failed to read control message", "error", err)
 		return
 	}
 	switch msg.Header.MessageType {
@@ -421,31 +407,39 @@ func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(
 				}
 				return
 			}
-			enc, err := msg.data.Encode()
-			if err != nil {
-				lbConn.logger.Error("Failed to encode message from controller", "error", err)
-				return
+			handle := func() bool {
+				defer msg.Close(lbConn.logger) // Ensure the reader is closed after sending
+				enc, err := msg.data.Encode()
+				if err != nil {
+					lbConn.logger.Error("Failed to encode message from controller", "error", err)
+					return false
+				}
+				if msg.reader != nil {
+					if err := lbConn.conn.SendReader(enc, int(msg.reader.Size()), msg.reader); err != nil {
+						lbConn.logger.Error("Failed to send message with reader to LB", "error", err)
+						return false
+					}
+				} else {
+					if err := lbConn.conn.Send(enc); err != nil {
+						lbConn.logger.Error("Failed to send message to LB", "error", err)
+						return false
+					}
+				}
+				return true
 			}
-			if err := lbConn.conn.Send(enc); err != nil {
-				lbConn.logger.Error("Failed to send message to LB", "error", err)
+			if !handle() {
 				return
 			}
 			lbConn.logger.Info("Sent message to LB", "message_type", msg.data.Header.MessageType, "seq_num", msg.seqNum)
 		}
 	}()
 	for {
-		data, err := lbConn.conn.Receive()
+		msg, len, err := readControlMessage(lbConn.conn)
 		if err != nil {
-			lbConn.logger.Error("Failed to receive data from LB", "error", err)
+			lbConn.logger.Error("Failed to read message from LB", "error", err)
 			return
 		}
-		msg := &protocol.ControlMessage{}
-		err = msg.DecodeExact(data)
-		if err != nil {
-			lbConn.logger.Error("Failed to decode message from LB", "error", err)
-			return
-		}
-		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType, "len", len(data))
+		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType, "len", len)
 		if msg := msg.Message(); msg != nil {
 			msgStr := string(msg.Msg)
 			switch msg.Level {

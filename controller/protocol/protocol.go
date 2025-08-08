@@ -518,3 +518,79 @@ func LogMessage(level LogLevel, msg string) *ControlMessage {
 	})
 	return controlMsg
 }
+
+func CommandLineIn(seq uint32, input string) *ControlMessage {
+	cmdlineBytes := []byte(input)
+	if len(cmdlineBytes) > 65535 {
+		cmdlineBytes = cmdlineBytes[:65535] // Limit to 65535 bytes
+	}
+	cmdlineLen := uint16(len(cmdlineBytes))
+
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         cmdlineLen + 6, // 4 bytes for seq + 2 bytes for cmdline_len
+			MessageType: ControlMessageType_CmdlineIn,
+		},
+	}
+	controlMsg.SetCmdlineIn(CmdlineIn{
+		Seq:     seq,
+		Cmdline: cmdlineBytes,
+		Len:     cmdlineLen,
+	})
+	return controlMsg
+}
+
+func CommandLineOutput(seq uint32, outputType OutputType, outputLen uint64) *ControlMessage {
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         4 + 1 + 8,
+			MessageType: ControlMessageType_CmdlineOut,
+		},
+	}
+	controlMsg.SetCmdlineOut(CmdlineOut{
+		Seq:        seq,
+		OutputType: outputType,
+		Len:        outputLen,
+	})
+	return controlMsg
+}
+
+func CommandLineExit(seq uint32, exitCode uint32) *ControlMessage {
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         4 + 4, // 4 bytes for seq + 4 bytes for exit_code
+			MessageType: ControlMessageType_CmdlineExit,
+		},
+	}
+	controlMsg.SetCmdlineExit(CommandExit{
+		Seq:      seq,
+		ExitCode: exitCode,
+	})
+	return controlMsg
+}
+
+func TransferFile(path string, permission uint16, fileLen uint64) *ControlMessage {
+	pathBytes := []byte(path)
+	if len(pathBytes) > 65535 {
+		pathBytes = pathBytes[:65535] // Limit to 65535 bytes
+	}
+	pathLen := uint16(len(pathBytes))
+
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         2 + pathLen + 2 + 8, // 2 bytes for path_len + path_len + 2 bytes for permission + 8 bytes for file_len
+			MessageType: ControlMessageType_FileTransfer,
+		},
+	}
+	controlMsg.SetFileTransfer(FileTransfer{
+		PathLen:    pathLen,
+		Path:       pathBytes,
+		Permission: permission,
+		FileLen:    fileLen,
+	})
+	return controlMsg
+}

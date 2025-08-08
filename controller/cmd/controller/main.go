@@ -129,9 +129,9 @@ func initialModel() model {
 	})
 	connEntries := table.New()
 	connEntries.SetColumns([]table.Column{
+		{Title: "Type", Width: 4},
 		{Title: "Server ID", Width: 10},
 		{Title: "Address", Width: 20},
-		{Title: "Type", Width: 4},
 		{Title: "Uptime", Width: 10},
 		{Title: "Load", Width: 10},
 	})
@@ -205,20 +205,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rows := make([]table.Row, 0, len(msg.stat.L7LBData))
 		for _, lb := range msg.stat.L4LBData {
 			rows = append(rows, table.Row{
+				"L4",
 				fmt.Sprintf("%d", lb.Data.Data.ServerID),
 				netip.AddrFrom4(lb.Data.Data.Address).String(),
-				"L4",
 				time.Duration(lb.Stat.Uptime).String(),
-				fmt.Sprintf("%.2f%%", lb.Stat.LoadAvg),
+				fmt.Sprintf("%.2f", lb.Stat.LoadAvg),
 			})
 		}
 		for _, lb := range msg.stat.L7LBData {
 			rows = append(rows, table.Row{
+				"L7",
 				fmt.Sprintf("%d", lb.Data.Data.ServerID),
 				netip.AddrFrom4(lb.Data.Data.Address).String(),
-				"L7",
 				time.Duration(lb.Stat.Uptime).String(),
-				fmt.Sprintf("%.2f%%", lb.Stat.LoadAvg),
+				fmt.Sprintf("%.2f", lb.Stat.LoadAvg),
 			})
 		}
 		m.connectionEntries.SetRows(rows)

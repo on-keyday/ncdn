@@ -1,8 +1,15 @@
 
+# NOTE: The security model of this protocol is dependent on the underlying transport
+#       should use mTLS for LB-Controller connection for production environment
+
 config.go.package = "protocol"
 
 enum ControlMessageType:
     :u8
+    cmdline_in # controller -> l4lb,l7lb
+    cmdline_out # l4lb,l7lb -> controller
+    cmdline_exit # l4lb,l7lb -> controller
+    file_transfer # controller -> l4lb,l7lb
     l4lb_keepalive # l4lb -> controller
     l7lb_keepalive # l7lb -> controller
     l7lb_hello # l7lb -> controller
@@ -36,7 +43,11 @@ format ControlMessage:
         ControlMessageType.key_share => key_share :KeyShareInfo(input = input.subrange(header.len))
         ControlMessageType.wasm_install => wasm_install :WasmInstallInfo(input = input.subrange(header.len))
         ControlMessageType.wasm_uninstall => wasm_uninstall :WasmUninstallInfo(input = input.subrange(header.len))
-        ControlMessageType.message => message :Message
+        ControlMessageType.message => message :Message(input = input.subrange(header.len))
+        ControlMessageType.cmdline_in => cmdline_in :CmdlineIn(input = input.subrange(header.len))
+        ControlMessageType.cmdline_out => cmdline_out :CmdlineOut(input = input.subrange(header.len))
+        ControlMessageType.cmdline_exit => cmdline_exit :CommandExit(input = input.subrange(header.len))
+        ControlMessageType.file_transfer => file_transfer :FileTransfer(input = input.subrange(header.len))
         .. => data :[header.len]u8
 
 format MachineInfo:
@@ -143,3 +154,29 @@ format Message:
     level :LogLevel
     msg_len :u16
     msg :[msg_len]u8
+
+format CmdlineIn: # initial CmdlineIn message will be command line, later ones will be stdin
+    seq :u32
+    len :u16
+    cmdline :[len]u8
+
+enum OutputType:
+    :u8
+    stdout
+    stderr
+
+format CmdlineOut:
+    seq :u32
+    output_type :OutputType
+    len :u64 # followed by data websocket frame(s) contains commandline output
+
+format CommandExit:
+    seq :u32
+    exit_code :u32
+
+format FileTransfer:
+    path_len :u16
+    path :[path_len]u8
+    permission :u16
+    file_len :u64 # followed by data websocket frame(s) contains file content
+
