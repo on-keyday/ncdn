@@ -519,7 +519,7 @@ func LogMessage(level LogLevel, msg string) *ControlMessage {
 	return controlMsg
 }
 
-func CommandLineIn(seq uint32, input string) *ControlMessage {
+func CommandLineIn(cmdlineID uint32, input string) *ControlMessage {
 	cmdlineBytes := []byte(input)
 	if len(cmdlineBytes) > 65535 {
 		cmdlineBytes = cmdlineBytes[:65535] // Limit to 65535 bytes
@@ -529,19 +529,19 @@ func CommandLineIn(seq uint32, input string) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         cmdlineLen + 6, // 4 bytes for seq + 2 bytes for cmdline_len
+			Len:         cmdlineLen + 6, // 4 bytes for cmdlineID + 2 bytes for cmdline_len
 			MessageType: ControlMessageType_CmdlineIn,
 		},
 	}
 	controlMsg.SetCmdlineIn(CmdlineIn{
-		Seq:     seq,
-		Cmdline: cmdlineBytes,
-		Len:     cmdlineLen,
+		CmdlineId: cmdlineID,
+		Cmdline:   cmdlineBytes,
+		Len:       cmdlineLen,
 	})
 	return controlMsg
 }
 
-func CommandLineOutput(seq uint32, outputType OutputType, outputLen uint64) *ControlMessage {
+func CommandLineOutput(cmdlineID uint32, outputType OutputType, outputLen uint64) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
@@ -550,24 +550,24 @@ func CommandLineOutput(seq uint32, outputType OutputType, outputLen uint64) *Con
 		},
 	}
 	controlMsg.SetCmdlineOut(CmdlineOut{
-		Seq:        seq,
+		CmdlineId:  cmdlineID,
 		OutputType: outputType,
 		Len:        outputLen,
 	})
 	return controlMsg
 }
 
-func CommandLineExit(seq uint32, exitCode uint32) *ControlMessage {
+func CommandLineExit(cmdlineID uint32, exitCode uint32) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         4 + 4, // 4 bytes for seq + 4 bytes for exit_code
+			Len:         4 + 4, // 4 bytes for cmdlineID + 4 bytes for exit_code
 			MessageType: ControlMessageType_CmdlineExit,
 		},
 	}
 	controlMsg.SetCmdlineExit(CommandExit{
-		Seq:      seq,
-		ExitCode: exitCode,
+		CmdlineId: cmdlineID,
+		ExitCode:  exitCode,
 	})
 	return controlMsg
 }
@@ -591,6 +591,21 @@ func TransferFile(path string, permission uint16, fileLen uint64) *ControlMessag
 		Path:       pathBytes,
 		Permission: permission,
 		FileLen:    fileLen,
+	})
+	return controlMsg
+}
+
+func CommandLineInstruction(cmdlineID uint32, instruction CmdInstructionType) *ControlMessage {
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         1 + 4, // 4 bytes for cmdlineID + 1 byte for instruction
+			MessageType: ControlMessageType_CmdlineInstr,
+		},
+	}
+	controlMsg.SetCmdlineInstr(CmdlineInstruction{
+		CmdlineId: cmdlineID,
+		Instr:     instruction,
 	})
 	return controlMsg
 }

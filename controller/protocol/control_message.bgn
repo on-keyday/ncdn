@@ -9,6 +9,7 @@ enum ControlMessageType:
     cmdline_in # controller -> l4lb,l7lb
     cmdline_out # l4lb,l7lb -> controller
     cmdline_exit # l4lb,l7lb -> controller
+    cmdline_instr # controller -> l4lb,l7lb
     file_transfer # controller -> l4lb,l7lb
     l4lb_keepalive # l4lb -> controller
     l7lb_keepalive # l7lb -> controller
@@ -48,6 +49,7 @@ format ControlMessage:
         ControlMessageType.cmdline_out => cmdline_out :CmdlineOut(input = input.subrange(header.len))
         ControlMessageType.cmdline_exit => cmdline_exit :CommandExit(input = input.subrange(header.len))
         ControlMessageType.file_transfer => file_transfer :FileTransfer(input = input.subrange(header.len))
+        ControlMessageType.cmdline_instr => cmdline_instr :CmdlineInstruction(input = input.subrange(header.len))
         .. => data :[header.len]u8
 
 format MachineInfo:
@@ -155,8 +157,19 @@ format Message:
     msg_len :u16
     msg :[msg_len]u8
 
+
+enum CmdInstructionType:
+    :u8
+    close_stdin
+    kill
+
+
+format CmdlineInstruction:
+    cmdline_id :u32
+    instr :CmdInstructionType
+
 format CmdlineIn: # initial CmdlineIn message will be command line, later ones will be stdin
-    seq :u32
+    cmdline_id :u32
     len :u16
     cmdline :[len]u8
 
@@ -166,12 +179,12 @@ enum OutputType:
     stderr
 
 format CmdlineOut:
-    seq :u32
+    cmdline_id :u32
     output_type :OutputType
     len :u64 # followed by data websocket frame(s) contains commandline output
 
 format CommandExit:
-    seq :u32
+    cmdline_id :u32
     exit_code :u32
 
 format FileTransfer:
