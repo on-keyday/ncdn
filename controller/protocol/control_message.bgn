@@ -10,6 +10,7 @@ enum ControlMessageType:
     cmdline_out # l4lb,l7lb -> controller
     cmdline_exit # l4lb,l7lb -> controller
     cmdline_instr # controller -> l4lb,l7lb
+    cmdline_resize # controller -> l4lb,l7lb
     file_transfer # controller -> l4lb,l7lb
     l4lb_keepalive # l4lb -> controller
     l7lb_keepalive # l7lb -> controller
@@ -48,6 +49,7 @@ format ControlMessage:
         ControlMessageType.cmdline_in => cmdline_in :CmdlineIn(input = input.subrange(header.len))
         ControlMessageType.cmdline_out => cmdline_out :CmdlineOut(input = input.subrange(header.len))
         ControlMessageType.cmdline_exit => cmdline_exit :CommandExit(input = input.subrange(header.len))
+        ControlMessageType.cmdline_resize => cmdline_resize :CmdlineResize(input = input.subrange(header.len))
         ControlMessageType.file_transfer => file_transfer :FileTransfer(input = input.subrange(header.len))
         ControlMessageType.cmdline_instr => cmdline_instr :CmdlineInstruction(input = input.subrange(header.len))
         .. => data :[header.len]u8
@@ -160,8 +162,10 @@ format Message:
 
 enum CmdInstructionType:
     :u8
+    use_pty # enable pty. should send before first CmdlineIn. stderr will be merged into stdout
     close_stdin
     kill
+    kill_all # ignore cmdline_id and kill all managed process (for resetting)
 
 
 format CmdlineInstruction:
@@ -172,6 +176,11 @@ format CmdlineIn: # initial CmdlineIn message will be command line, later ones w
     cmdline_id :u32
     len :u16
     cmdline :[len]u8
+
+format CmdlineResize:
+    cmdline_id :u32
+    col :u16
+    row :u16
 
 enum OutputType:
     :u8

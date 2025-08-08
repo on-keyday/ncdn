@@ -609,3 +609,19 @@ func CommandLineInstruction(cmdlineID uint32, instruction CmdInstructionType) *C
 	})
 	return controlMsg
 }
+
+func CommandLineResize(cmdlineID uint32, col, row uint16) *ControlMessage {
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         4 + 2 + 2, // 4 bytes for cmdlineID + 2 bytes for x + 2 bytes for y
+			MessageType: ControlMessageType_CmdlineResize,
+		},
+	}
+	controlMsg.SetCmdlineResize(CmdlineResize{
+		CmdlineId: cmdlineID,
+		Col:       col,
+		Row:       row,
+	})
+	return controlMsg
+}

@@ -36,6 +36,8 @@ github.com/coredns/coredns v1.11.3 h1:8RjnpZc42db5th84/QJKH2i137ecJdzZK1HJwhetSP
 github.com/coredns/coredns v1.11.3/go.mod h1:lqFkDsHjEUdY7LJ75Nib3lwqJGip6ewWOqNIf8OavIQ=
 github.com/coredns/coredns v1.12.2 h1:G4oDfi340zlVsriZ8nYiUemiQIew7nqOO+QPvPxIA4Y=
 github.com/coredns/coredns v1.12.2/go.mod h1:GFz31oVOfCyMArFoypfu1SoaFoNkbdh6lDxtF1B6vfU=
+github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
+github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=

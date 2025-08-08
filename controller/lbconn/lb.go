@@ -1,23 +1,25 @@
 package lbconn
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/yzp0n/ncdn/controller/cmdline"
 	"github.com/yzp0n/ncdn/controller/protocol"
 	"github.com/yzp0n/ncdn/controller/stat"
 	"github.com/yzp0n/ncdn/controller/transport"
 )
 
 type LoadBalancer interface {
-	Send(msg *Msg) error
+	Send(msg *LogMsg) error
 	Receive() (*protocol.ControlMessage, error)
 	Close() error
 }
 
-type Msg struct {
+type LogMsg struct {
 	Level   protocol.LogLevel
 	Message string
 }
@@ -25,7 +27,8 @@ type Msg struct {
 type LBState[T any, U any] struct {
 	Data          T
 	Conn          transport.Connection
-	Messages      chan *Msg
+	Messages      chan *LogMsg
+	CmdlineMsg    chan cmdline.OutputCommand
 	makeKeepAlive func(t time.Duration, m *protocol.MachineStat, data U) (*protocol.ControlMessage, error)
 }
 
@@ -51,7 +54,8 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 		Data:          data,
 		Conn:          conn,
 		makeKeepAlive: makeKeepAlive,
-		Messages:      make(chan *Msg, 1),
+		Messages:      make(chan *LogMsg, 1),
+		CmdlineMsg:    make(chan cmdline.OutputCommand, 1),
 	}
 	go func() {
 		if keepalive < 10*time.Second {
@@ -108,6 +112,12 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 						logger.Error("Failed to send error report", "error", err)
 					}
 				}
+			case c := <-lb.CmdlineMsg:
+				if enc, err := c.Msg.Encode(); err != nil {
+					logger.Error("Failed to encode command line message", "error", err)
+				} else if err := conn.SendReader(enc, len(c.Data), bytes.NewReader(c.Data)); err != nil {
+					logger.Error("Failed to send command line message", "error", err)
+				}
 			}
 		}
 	}()
@@ -154,7 +164,7 @@ func (lb *LBState[T, U]) Close() error {
 	return err
 }
 
-func (lb *LBState[T, U]) Send(msg *Msg) error {
+func (lb *LBState[T, U]) Send(msg *LogMsg) error {
 	if lb.Conn == nil {
 		return errors.New("connection is nil")
 	}
@@ -162,6 +172,18 @@ func (lb *LBState[T, U]) Send(msg *Msg) error {
 	case lb.Messages <- msg:
 	default:
 		return errors.New("message channel is full")
+	}
+	return nil
+}
+
+func (lb *LBState[T, U]) SendCommandline(msg cmdline.OutputCommand) error {
+	if lb.Conn == nil {
+		return errors.New("connection is nil")
+	}
+	select {
+	case lb.CmdlineMsg <- msg:
+	default:
+		return errors.New("command line message channel is full")
 	}
 	return nil
 }
@@ -229,11 +251,20 @@ func (r *RetriableLBConn[T, U]) Close() error {
 	return r.conn.Close()
 }
 
-func (r *RetriableLBConn[T, U]) Send(msg *Msg) error {
+func (r *RetriableLBConn[T, U]) Send(msg *LogMsg) error {
 	r.connLock.Lock()
 	defer r.connLock.Unlock()
 	if r.conn == nil {
 		return errors.New("connection is nil")
 	}
 	return r.conn.Send(msg)
+}
+
+func (r *RetriableLBConn[T, U]) SendCommandline(msg cmdline.OutputCommand) error {
+	r.connLock.Lock()
+	defer r.connLock.Unlock()
+	if r.conn == nil {
+		return errors.New("connection is nil")
+	}
+	return r.conn.SendCommandline(msg)
 }

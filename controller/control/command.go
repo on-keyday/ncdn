@@ -2,6 +2,10 @@ package control
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"sync"
 
 	"github.com/yzp0n/ncdn/controller/protocol"
 )
@@ -120,4 +124,194 @@ func (c *controller) WasmUninstall(id uint32) error {
 		})
 	}
 	return nil
+}
+
+type CommandLine interface {
+	Stdin() io.WriteCloser
+	Stderr() <-chan []byte
+	Stdout() <-chan []byte
+	ResizeWindow(x, y int) error
+}
+
+type lbSender interface {
+	GetSeqNum() uint64
+	SendMessageBlocking(msg message) error
+}
+
+type commandLine struct {
+	c      *controller
+	lb     lbSender
+	id     uint32
+	outbuf chan []byte
+	errbuf chan []byte
+}
+
+type stdinWriter struct {
+	id uint32
+	s  lbSender
+}
+
+func (s *stdinWriter) Write(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil // No data to write
+	}
+	const inputLimit = 65535 - 6 // 6 bytes for command ID and length
+	for len(p) > inputLimit {
+		chunk := p[:inputLimit]
+		p = p[inputLimit:]
+		if err := s.s.SendMessageBlocking(message{
+			seqNum: s.s.GetSeqNum(),
+			data:   protocol.CommandLineIn(s.id, string(chunk)),
+		}); err != nil {
+			return 0, err
+		}
+	}
+	if len(p) > 0 {
+		if err := s.s.SendMessageBlocking(message{
+			seqNum: s.s.GetSeqNum(),
+			data:   protocol.CommandLineIn(s.id, string(p)),
+		}); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
+func (c *stdinWriter) Close() error {
+	if err := c.s.SendMessageBlocking(message{
+		seqNum: c.s.GetSeqNum(),
+		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_CloseStdin),
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *commandLine) Stdout() <-chan []byte {
+	return c.outbuf
+}
+func (c *commandLine) Stderr() <-chan []byte {
+	return c.errbuf
+}
+
+func (c *commandLine) Stdin() io.WriteCloser {
+	return &stdinWriter{s: c.lb}
+}
+
+func (c *commandLine) ResizeWindow(col, row int) error {
+	if col <= 0 || row <= 0 {
+		return fmt.Errorf("invalid window size: %dx%d", col, row)
+	}
+	if col > 65535 || row > 65535 {
+		return fmt.Errorf("window size exceeds maximum: %dx%d", col, row)
+	}
+	if err := c.lb.SendMessageBlocking(message{
+		seqNum: c.lb.GetSeqNum(),
+		data:   protocol.CommandLineResize(c.id, uint16(col), uint16(row)),
+	}); err != nil {
+		return fmt.Errorf("failed to send resize command: %w", err)
+	}
+	return nil
+}
+
+type commandLineManager struct {
+	mu       sync.Mutex
+	cmdlines map[uint32]*commandLine
+	seqNum   uint32
+}
+
+func (c *commandLineManager) HandleOutput(logger *slog.Logger, id uint32, outType protocol.OutputType, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cmd, ok := c.cmdlines[id]; ok {
+		switch outType {
+		case protocol.OutputType_Stdout:
+			cmd.outbuf <- data
+		case protocol.OutputType_Stderr:
+			cmd.errbuf <- data
+		default:
+			return fmt.Errorf("unknown output type: %v", outType)
+		}
+		return nil
+	}
+	logger.Warn("Command line not found", "id", id, "output_type", outType)
+	return nil // not found is not error (for resetting)
+}
+
+func (c *commandLineManager) HandleExit(logger *slog.Logger, id uint32, exitCode int) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cmd, ok := c.cmdlines[id]; ok {
+		close(cmd.outbuf)
+		close(cmd.errbuf)
+		delete(c.cmdlines, id)
+		logger.Info("Command line exited", "id", id, "exit_code", exitCode)
+		return nil
+	}
+	logger.Warn("Command line not found for exit", "id", id, "exit_code", exitCode)
+	return nil // not found is not error (for resetting)
+}
+
+func (c *commandLineManager) command(ctl *controller, lb lbSender, cmdline string, enablePty bool) (CommandLine, error) {
+	c.mu.Lock()
+	cmd := &commandLine{
+		c:      ctl,
+		lb:     lb,
+		id:     c.seqNum,
+		outbuf: make(chan []byte),
+		errbuf: make(chan []byte),
+	}
+	c.cmdlines[c.seqNum] = cmd
+	c.seqNum++
+	c.mu.Unlock()
+	if enablePty {
+		if err := lb.SendMessageBlocking(message{
+			seqNum: lb.GetSeqNum(),
+			data:   protocol.CommandLineInstruction(cmd.id, protocol.CmdInstructionType_UsePty),
+		}); err != nil {
+			return nil, fmt.Errorf("failed to send use pty command: %w", err)
+		}
+	}
+	lb.SendMessageBlocking(message{
+		seqNum: lb.GetSeqNum(),
+		data:   protocol.CommandLineIn(cmd.id, cmdline),
+	})
+	return cmd, nil
+}
+
+func (c *controller) Command(typ LBType, serverID uint32, cmdline string, enablePty bool) (CommandLine, error) {
+	var lb lbSender
+	switch typ {
+	case LBTypeL7:
+		var l7lb *L7LB
+		c.withLock(func() {
+			for _, l7lbConn := range c.l7lbList.list {
+				if l7lbConn.data.data.Data.Data.ServerID == serverID {
+					l7lb = l7lbConn
+					break
+				}
+			}
+		})
+		if l7lb == nil {
+			return nil, fmt.Errorf("L7 Load Balancer with server ID %d not found", serverID)
+		}
+		lb = l7lb
+	case LBTypeL4:
+		var l4lb *L4LB
+		c.withLock(func() {
+			for _, l4lbConn := range c.l4lblist.list {
+				if l4lbConn.data.data.Data.Data.ServerID == serverID {
+					l4lb = l4lbConn
+					break
+				}
+			}
+		})
+		if l4lb == nil {
+			return nil, fmt.Errorf("L4 Load Balancer with server ID %d not found", serverID)
+		}
+		lb = l4lb
+	default:
+		return nil, fmt.Errorf("unknown Load Balancer type: %v", typ)
+	}
+	return c.commandManager.command(c, lb, cmdline, enablePty)
 }

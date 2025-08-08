@@ -22,6 +22,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/tetratelabs/wazero"
+	"github.com/yzp0n/ncdn/controller/cmdline"
 	"github.com/yzp0n/ncdn/controller/lbconn"
 	"github.com/yzp0n/ncdn/controller/protocol"
 	"github.com/yzp0n/ncdn/controller/transport"
@@ -176,6 +177,8 @@ func main() {
 			})
 		}, appStat.GetStat)
 
+	cmdMgr := cmdline.NewManager()
+
 	go func() {
 		for {
 			msg, err := retryConn.Receive()
@@ -185,6 +188,18 @@ func main() {
 				continue
 			}
 			log.Printf("Received message: %s", msg.Header.MessageType)
+			if err := cmdline.DispatchMessage(cmdMgr, msg); err != nil {
+				log.Printf("Failed to dispatch message: %v", err)
+				continue
+			}
+		}
+	}()
+
+	go func() {
+		for cmd := range cmdMgr.Output() {
+			if err := retryConn.SendCommandline(cmd); err != nil {
+				slog.Error("Failed to send command line message", slog.String("error", err.Error()))
+			}
 		}
 	}()
 

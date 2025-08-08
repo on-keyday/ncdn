@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
 
+	"github.com/creack/pty"
 	"github.com/yzp0n/ncdn/controller/protocol"
 )
 
@@ -16,6 +18,7 @@ type stdIO struct {
 	stdinPipe io.WriteCloser
 	id        uint32
 	Cmd       *exec.Cmd
+	usePty    bool
 }
 
 type OutputCommand struct {
@@ -62,6 +65,8 @@ func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType) er
 			}
 			s.Cmd = nil // Reset Cmd after killing
 		}
+	case protocol.CmdInstructionType_UsePty:
+		s.usePty = true
 	default:
 		return errors.New("unsupported command instruction type")
 	}
@@ -74,28 +79,51 @@ func (s *stdIO) Input(ctx context.Context, input []byte, output chan OutputComma
 	if s.Cmd == nil {
 		// this is the first input, so we need to create the command
 		args := strings.Split(string(input), " ")
-		s.Cmd = exec.CommandContext(ctx, args[0], args[1:]...)
-		var err error
-		stdin, err := s.Cmd.StdinPipe()
-		if err != nil {
-			return err
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+		isPty := s.usePty
+		var ptyFile *os.File
+		if s.usePty {
+			startWithPty, err := pty.StartWithSize(cmd, nil)
+			if err != nil {
+				return err
+			}
+			s.stdinPipe = startWithPty
+			ptyFile = startWithPty
+		} else {
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				return err
+			}
+			s.stdinPipe = stdin
+			cmd.Stdout = &commandSender{
+				id:         s.id,
+				outType:    protocol.OutputType_Stdout,
+				outputChan: output,
+			}
+			cmd.Stderr = &commandSender{
+				id:         s.id,
+				outType:    protocol.OutputType_Stderr,
+				outputChan: output,
+			}
+			if err := cmd.Start(); err != nil {
+				return err
+			}
 		}
-		s.stdinPipe = stdin
-		s.Cmd.Stdout = &commandSender{
-			id:         s.id,
-			outType:    protocol.OutputType_Stdout,
-			outputChan: output,
-		}
-		s.Cmd.Stderr = &commandSender{
-			id:         s.id,
-			outType:    protocol.OutputType_Stderr,
-			outputChan: output,
-		}
-		if err := s.Cmd.Start(); err != nil {
-			return err
-		}
+		s.Cmd = cmd
 		go func() {
-			if err := s.Cmd.Wait(); err != nil {
+			if isPty {
+				_, err := io.Copy(&commandSender{
+					id:         s.id,
+					outType:    protocol.OutputType_Stdout,
+					outputChan: output,
+				}, ptyFile)
+				if err != nil {
+					output <- OutputCommand{
+						Msg: protocol.LogMessage(protocol.LogLevel_Error, "Failed to read from pty: "+err.Error()),
+					}
+				}
+			}
+			if err := cmd.Wait(); err != nil {
 				if exitErr, ok := err.(*exec.ExitError); ok {
 					// Command exited with an error
 					exitCode := exitErr.ExitCode()
@@ -125,10 +153,20 @@ func (s *stdIO) Input(ctx context.Context, input []byte, output chan OutputComma
 	return err
 }
 
+func (s *stdIO) ResizeWindow(x, y int) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+	if s.Cmd == nil {
+		return errors.New("command not running")
+	}
+	return nil
+}
+
 type Manager interface {
 	Input(ctx context.Context, id uint32, input []byte) error
 	Control(ctx context.Context, id uint32, cmd protocol.CmdInstructionType) error
 	Output() <-chan OutputCommand
+	ResizeWindow(id uint32, x, y int) error
 }
 
 func NewManager() Manager {
@@ -156,12 +194,37 @@ func (m *manager) Input(ctx context.Context, id uint32, input []byte) error {
 	return stdio.Input(ctx, input, m.output)
 }
 
-func (m *manager) Control(ctx context.Context, id uint32, cmd protocol.CmdInstructionType) error {
+func (m *manager) ResizeWindow(id uint32, x, y int) error {
 	m.m.Lock()
+	defer m.m.Unlock()
 	stdio, ok := m.ioMap[id]
 	if !ok {
-		m.m.Unlock()
 		return errors.New("command not found")
+	}
+	if stdio.Cmd == nil {
+		return errors.New("command not running")
+	}
+	return nil
+}
+
+func (m *manager) Control(ctx context.Context, id uint32, cmd protocol.CmdInstructionType) error {
+	m.m.Lock()
+	if cmd == protocol.CmdInstructionType_KillAll {
+		var errs []error
+		// Kill all commands
+		for _, stdio := range m.ioMap {
+			if err := stdio.Control(ctx, protocol.CmdInstructionType_Kill); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		clear(m.ioMap) // Clear the map after killing all commands
+		m.m.Unlock()
+		return errors.Join(errs...)
+	}
+	stdio, ok := m.ioMap[id]
+	if !ok {
+		stdio = &stdIO{id: id} // Create a new stdIO if not found
+		m.ioMap[id] = stdio
 	}
 	m.m.Unlock()
 	return stdio.Control(ctx, cmd)
@@ -174,4 +237,17 @@ func (m *manager) Output() <-chan OutputCommand {
 		m.output = make(chan OutputCommand, 100) // Buffered channel to avoid blocking
 	}
 	return m.output
+}
+
+func DispatchMessage(m Manager, msg *protocol.ControlMessage) error {
+	if msg := msg.CmdlineIn(); msg != nil {
+		return m.Input(context.Background(), msg.CmdlineId, []byte(msg.Cmdline))
+	}
+	if msg := msg.CmdlineInstr(); msg != nil {
+		return m.Control(context.Background(), msg.CmdlineId, msg.Instr)
+	}
+	if msg := msg.CmdlineResize(); msg != nil {
+		return m.ResizeWindow(msg.CmdlineId, int(msg.Col), int(msg.Row))
+	}
+	return nil
 }

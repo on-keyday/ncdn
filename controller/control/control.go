@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/yzp0n/ncdn/controller/protocol"
@@ -33,6 +34,7 @@ type Controller interface {
 	ShareKey([]byte)
 	Run(context.Context, transport.Listener) error
 	Status() *ControllerStatus
+	Command(typ LBType, serverID uint32, cmdline string, enablePty bool) (CommandLine, error)
 }
 
 func (c *controller) Status() *ControllerStatus {
@@ -76,6 +78,10 @@ type ReaderAtCloser interface {
 	Size() int64
 	AddRef()
 }
+
+// seqNum has two types:
+// 1. entire LBs, used for shared key and L4/L7 LB updates
+// 2. per LB connection, used for command line sequence numbers
 type message struct {
 	seqNum uint64
 	data   *protocol.ControlMessage
@@ -133,6 +139,8 @@ type controller struct {
 	logger    *slog.Logger
 	sharedKey sharedKey
 	msgSeqNum uint64
+
+	commandManager commandLineManager
 }
 
 // multi producer, single consumer message channel
@@ -195,6 +203,27 @@ func (c *messageChannel) SendMessage(msg message) error {
 	return nil
 }
 
+func (c *messageChannel) SendMessageBlocking(msg message) error {
+	c.cancelLock.RLock()
+	defer c.cancelLock.RUnlock()
+	select {
+	case <-c.ctx.Done():
+		msg.Close(c.logger) // Clean up the message if the context is done
+		return c.ctx.Err()
+	default:
+	}
+	c.senderWg.Add(1)
+	c.cancelLock.RUnlock()
+	defer c.senderWg.Done()
+	select {
+	case c.messageChan <- msg:
+	case <-c.ctx.Done():
+		msg.Close(c.logger) // Clean up the message if the context is done
+		return c.ctx.Err()
+	}
+	return nil
+}
+
 type WithLockedData[T any] struct {
 	data *T
 	lock sync.Mutex
@@ -216,6 +245,12 @@ type LBConn[T any] struct {
 	conn transport.Connection
 	data *WithLockedData[T]
 	messageChannel
+	seq atomic.Uint64 // for command line sequence numbers
+}
+
+// sequence number per lbconnection
+func (lb *LBConn[T]) GetSeqNum() uint64 {
+	return lb.seq.Add(1) // Increment and return the sequence number
 }
 
 type L4LB = LBConn[protocol.L4LBControlState]
@@ -273,6 +308,15 @@ func sendKeyShare[T any](lbConn *LBConn[T], key []byte, seqNum uint64) {
 		data:   protocol.KeyShare(protocol.KeyType_Quiclb, key),
 	}); err != nil {
 		lbConn.logger.Error("Failed to send KeyShare message", "error", err)
+	}
+}
+
+func sendCommandLineReset[T any](lbConn *LBConn[T]) {
+	if err := lbConn.SendMessage(message{
+		seqNum: lbConn.GetSeqNum(),
+		data:   protocol.CommandLineInstruction(0, protocol.CmdInstructionType_KillAll),
+	}); err != nil {
+		lbConn.logger.Error("Failed to send CommandLineKill message", "error", err)
 	}
 }
 
@@ -345,6 +389,7 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 			l4lb.logger.Error("Failed to set L4LB", "error", err)
 			return
 		}
+		sendCommandLineReset(l4lb) // Reset command line state
 		sendKeyShare(l4lb, sharedKey.key, sharedKey.generation)
 		sendL4L7LBUpdate(l4lb, updateInfo, l7generation)
 		c.handleL4LB(l4lb)
@@ -380,6 +425,7 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 			l7lb.logger.Error("Failed to set L7LB", "error", err)
 			return
 		}
+		sendCommandLineReset(l7lb) // Reset command line state
 		sendKeyShare(l7lb, sharedKey.key, sharedKey.generation)
 		for _, l4lb := range l4lbList.list {
 			sendL4L7LBUpdate(l4lb, data, l7generation)
@@ -391,7 +437,7 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 	}
 }
 
-func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(msg *protocol.ControlMessage) (time.Duration, error), clean func()) {
+func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], handleKeepAlive func(msg *protocol.ControlMessage) (time.Duration, error), clean func()) {
 	lbConn.logger.Info("LB Connected", "data", lbConn.data, "type", lbType)
 	defer lbConn.Close()
 	defer clean()
@@ -458,6 +504,33 @@ func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(
 			}
 			continue
 		}
+		if msg := msg.CmdlineOut(); msg != nil {
+			r, err := lbConn.conn.ReceiveReader(int(msg.Len))
+			if err != nil {
+				lbConn.logger.Error("Failed to receive command line output from LB", "error", err)
+				return
+			}
+			// TODO: use streaming?
+			data := make([]byte, msg.Len)
+			if _, err := io.ReadFull(r, data); err != nil {
+				lbConn.logger.Error("Failed to read command line output from LB", "error", err)
+				return
+			}
+			err = c.commandManager.HandleOutput(lbConn.logger, msg.CmdlineId, msg.OutputType, data)
+			if err != nil {
+				lbConn.logger.Error("Failed to handle command line output", "error", err, "cmdline_id", msg.CmdlineId, "output_type", msg.OutputType)
+				return
+			}
+			continue
+		}
+		if msg := msg.CmdlineExit(); msg != nil {
+			err := c.commandManager.HandleExit(lbConn.logger, msg.CmdlineId, int(msg.ExitCode))
+			if err != nil {
+				lbConn.logger.Error("Failed to handle command line exit", "error", err, "cmdline_id", msg.CmdlineId, "exit_code", msg.ExitCode)
+				return
+			}
+			continue
+		}
 		if nextPeriod, err := handleKeepAlive(msg); err == nil {
 			lbConn.conn.SetReadDeadline(time.Now().Add(time.Duration(nextPeriod)))
 		} else {
@@ -468,7 +541,7 @@ func handleLBConn[T any](lbType string, lbConn *LBConn[T], handleKeepAlive func(
 }
 
 func (c *controller) handleL7LB(l7lb *L7LB) {
-	handleLBConn("L7LB", l7lb, func(msg *protocol.ControlMessage) (time.Duration, error) {
+	handleLBConn(c, "L7LB", l7lb, func(msg *protocol.ControlMessage) (time.Duration, error) {
 		kl := msg.L7LbKeepAlive()
 		if kl != nil {
 			l7lb.data.WithLock(func(data *protocol.L7LBControlState) {
@@ -499,7 +572,7 @@ func (c *controller) handleL7LB(l7lb *L7LB) {
 }
 
 func (c *controller) handleL4LB(l4lb *L4LB) {
-	handleLBConn("L4LB", l4lb, func(msg *protocol.ControlMessage) (time.Duration, error) {
+	handleLBConn(c, "L4LB", l4lb, func(msg *protocol.ControlMessage) (time.Duration, error) {
 		kl := msg.L4LbKeepAlive()
 		if kl != nil {
 			l4lb.data.WithLock(func(data *protocol.L4LBControlState) {

@@ -19,6 +19,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/yzp0n/ncdn/controller/cmdline"
 	"github.com/yzp0n/ncdn/controller/lbconn"
 	"github.com/yzp0n/ncdn/controller/protocol"
 	"github.com/yzp0n/ncdn/controller/transport"
@@ -224,6 +225,8 @@ func main() {
 
 	updateChan := make(chan *protocol.L4Lbl7Lbupdate, 1)
 
+	cmdMgr := cmdline.NewManager()
+
 	go func() {
 		for {
 			msg, err := retryConn.Receive()
@@ -233,6 +236,12 @@ func main() {
 			}
 			if l7lbUpdate := msg.L4LbL7LbUpdate(); l7lbUpdate != nil {
 				updateChan <- l7lbUpdate
+			}
+			if err := cmdline.DispatchMessage(cmdMgr, msg); err != nil {
+				retryConn.Send(&lbconn.LogMsg{
+					Level:   protocol.LogLevel_Error,
+					Message: fmt.Sprintf("Failed to dispatch command line message: %v", err),
+				})
 			}
 		}
 	}()
@@ -261,19 +270,23 @@ func main() {
 				})
 			}
 			if err := lb.UpdateConfig(destEntries); err != nil {
-				retryConn.Send(&lbconn.Msg{
+				retryConn.Send(&lbconn.LogMsg{
 					Level:   protocol.LogLevel_Error,
 					Message: fmt.Sprintf("Failed to update load balancer configuration: %v", err),
 				})
 				slog.Error("Failed to update load balancer configuration", slog.Any("error", err))
 			} else {
-				retryConn.Send(&lbconn.Msg{
+				retryConn.Send(&lbconn.LogMsg{
 					Level:   protocol.LogLevel_Info,
 					Message: "Load balancer configuration updated successfully",
 				})
 				slog.Info("Load balancer configuration updated successfully")
 			}
 			continue
+		case cmd := <-cmdMgr.Output():
+			if err := retryConn.SendCommandline(cmd); err != nil {
+				slog.Error("Failed to send command line message", slog.String("error", err.Error()))
+			}
 		case <-done:
 		}
 		break
