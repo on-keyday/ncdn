@@ -2,13 +2,17 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"io"
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 
@@ -77,10 +81,37 @@ func (lw *lockedWriter) SubscribeAndWait(ctx context.Context, conn http.Response
 }
 
 var port = flag.String("port", ":8080", "Port to run the controller on")
+var serverKey = flag.String("serverKey", "", "Path to the server TLS key file")
+var serverCert = flag.String("serverCert", "", "Path to the server TLS certificate file")
+var enableTLS = flag.Bool("enableTLS", false, "Enable TLS for the controller")
+var clientCertRoot = flag.String("clientCertRoot", "", "Path to the client certificate root CA file")
 
 func main() {
 	flag.Parse()
-	lis, err := wstransport.NewWebSocketListener(*port)
+	var tlsConfig *tls.Config
+	if *enableTLS {
+		var err error
+		cert, err := tls.LoadX509KeyPair(*serverCert, *serverKey)
+		if err != nil {
+			log.Fatalf("Failed to load TLS config: %v", err)
+		}
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		}
+		if *clientCertRoot != "" {
+			caCert, err := os.ReadFile(*clientCertRoot)
+			if err != nil {
+				log.Fatalf("Failed to read client certificate root CA file: %v", err)
+			}
+			certPool := x509.NewCertPool()
+			if !certPool.AppendCertsFromPEM(caCert) {
+				log.Fatalf("Failed to append client certificate root CA")
+			}
+			tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven
+			tlsConfig.ClientCAs = certPool
+		}
+	}
+	lis, err := wstransport.NewWebSocketListener(*port, tlsConfig)
 	if err != nil {
 		log.Fatalf("Failed to create WebSocket listener: %v", err)
 	}
@@ -147,6 +178,105 @@ func main() {
 			c.Write([]byte(out))
 		}
 	}))
+	http.HandleFunc("POST /file", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		lbType := query.Get("lbType")
+		if lbType == "" {
+			http.Error(w, "lbType query parameter is required", http.StatusBadRequest)
+			return
+		}
+		serverID := query.Get("serverID")
+		if serverID == "" {
+			http.Error(w, "serverID query parameter is required", http.StatusBadRequest)
+			return
+		}
+		path := query.Get("path")
+		if path == "" {
+			http.Error(w, "path query parameter is required", http.StatusBadRequest)
+			return
+		}
+		permission := query.Get("permission")
+		if permission == "" {
+			http.Error(w, "permission query parameter is required", http.StatusBadRequest)
+			return
+		}
+		parsedPermission, err := strconv.ParseUint(permission, 8, 16)
+		if err != nil {
+			http.Error(w, "permission must be an octal number", http.StatusBadRequest)
+			return
+		}
+		parsedServerID, err := strconv.Atoi(serverID)
+		if err != nil {
+			http.Error(w, "serverID must be an integer", http.StatusBadRequest)
+			return
+		}
+		binaryData, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read file data: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		r.Body.Close() // Close the body to prevent resource leaks
+		err = controller.FileTransfer(control.LBType(lbType), uint32(parsedServerID), path, uint16(parsedPermission), control.NewSectionReader(io.NewSectionReader(bytes.NewReader(binaryData), 0, int64(len(binaryData)))))
+		if err != nil {
+			http.Error(w, "Failed to transfer file: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+	http.HandleFunc("POST /wasm", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		id := query.Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		method := query.Get("method")
+		if method == "" {
+			http.Error(w, "method query parameter is required", http.StatusBadRequest)
+			return
+		}
+		path := query.Get("path")
+		if path == "" {
+			http.Error(w, "path query parameter is required", http.StatusBadRequest)
+			return
+		}
+		parsedID, err := strconv.Atoi(id)
+		if err != nil {
+			http.Error(w, "id must be an integer", http.StatusBadRequest)
+			return
+		}
+		binaryData, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		r.Body.Close()
+		err = controller.WasmInstall(uint32(parsedID), method, path, control.NewSectionReader(io.NewSectionReader(bytes.NewReader(binaryData), 0, int64(len(binaryData)))))
+		if err != nil {
+			http.Error(w, "Failed to install WASM: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+	http.HandleFunc("DELETE /wasm", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		id := query.Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		parsedID, err := strconv.Atoi(id)
+		if err != nil {
+			http.Error(w, "id must be an integer", http.StatusBadRequest)
+			return
+		}
+		err = controller.WasmUninstall(uint32(parsedID))
+		if err != nil {
+			http.Error(w, "Failed to uninstall WASM: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
 	if err := controller.Run(ctx, lis); err != nil {
 		log.Fatalf("Controller run failed: %v", err)
 	}

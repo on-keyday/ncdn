@@ -2,6 +2,7 @@ package wstransport
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -22,15 +23,21 @@ type WebSocketConn struct {
 	conn       *websocket.Conn
 	remoteAddr string
 	cancel     context.CancelFunc
+	hasMTLS    bool // Indicates if the connection is secured with mutual TLS
 }
 
 // NewWebSocketConn creates a new WebSocketConn.
-func NewWebSocketConn(conn *websocket.Conn, remoteAddr string, cancel context.CancelFunc) *WebSocketConn {
+func NewWebSocketConn(conn *websocket.Conn, remoteAddr string, cancel context.CancelFunc, hasMTLS bool) *WebSocketConn {
 	return &WebSocketConn{
 		conn:       conn,
 		remoteAddr: remoteAddr,
 		cancel:     cancel,
+		hasMTLS:    hasMTLS,
 	}
+}
+
+func (c *WebSocketConn) MutualSecured() bool {
+	return c.hasMTLS
 }
 
 // Send writes a message to the WebSocket connection.
@@ -102,16 +109,30 @@ type WebSocketListener struct {
 var _ transport.Listener = (*WebSocketListener)(nil)
 
 // NewWebSocketListener creates and starts a new WebSocketListener.
-func NewWebSocketListener(addr string) (*WebSocketListener, error) {
+func NewWebSocketListener(addr string, tlsConf *tls.Config) (*WebSocketListener, error) {
 	listener := &WebSocketListener{
 		connChan: make(chan transport.Connection),
 	}
 
-	handler := websocket.Handler(func(ws *websocket.Conn) {
-		ctx, cancel := context.WithCancel(ws.Request().Context())
-		listener.connChan <- NewWebSocketConn(ws, ws.Request().RemoteAddr, cancel)
-		<-ctx.Done() // Wait for the context to be done before closing the connection
-	})
+	handler := &websocket.Server{
+		Config: websocket.Config{
+			TlsConfig: tlsConf,
+		},
+		Handshake: func(c *websocket.Config, r *http.Request) error {
+			var err error
+			c.Origin, err = websocket.Origin(c, r)
+			if err == nil && c.Origin == nil {
+				return fmt.Errorf("null origin")
+			}
+			return err
+		},
+		Handler: func(ws *websocket.Conn) {
+			ctx, cancel := context.WithCancel(ws.Request().Context())
+			hasMTLS := len(ws.Request().TLS.PeerCertificates) > 0
+			listener.connChan <- NewWebSocketConn(ws, ws.Request().RemoteAddr, cancel, hasMTLS)
+			<-ctx.Done() // Wait for the context to be done before closing the connection
+		},
+	}
 
 	listener.httpServer = &http.Server{Addr: addr}
 	http.Handle("/", handler)
@@ -150,5 +171,6 @@ func Connect(ctx context.Context, conf *websocket.Config) (transport.Connection,
 		return nil, err
 	}
 	cancel := func() {}
-	return NewWebSocketConn(ws, conf.Location.String(), cancel), nil
+
+	return NewWebSocketConn(ws, conf.Location.String(), cancel, false), nil
 }

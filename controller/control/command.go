@@ -39,12 +39,16 @@ func (c *controller) ShareKey(key []byte) {
 
 const chunkingThreshold = 65535 - 8 // 8 bytes for header
 
-type secttionReader struct {
+func NewSectionReader(s *io.SectionReader) *SecttionReader {
+	return &SecttionReader{SectionReader: s}
+}
+
+type SecttionReader struct {
 	*io.SectionReader
 }
 
-func (*secttionReader) Close() error { return nil }
-func (*secttionReader) AddRef()      {}
+func (*SecttionReader) Close() error { return nil }
+func (*SecttionReader) AddRef()      {}
 
 // file should have reference before calling this function
 func sendWithChunk(lb lbSender, makeMsg func(protocol.ChunkInfo) *protocol.ControlMessage, file ReaderAtCloser) error {
@@ -86,7 +90,7 @@ func sendWithChunk(lb lbSender, makeMsg func(protocol.ChunkInfo) *protocol.Contr
 		if err := lb.SendMessageBlocking(message{
 			seqNum: lb.GetSeqNum(),
 			data:   protocol.LargeChunk(chunkID, uint32(len(buf)), eof),
-			reader: &secttionReader{SectionReader: io.NewSectionReader(file, offset, int64(len(buf)))},
+			reader: &SecttionReader{SectionReader: io.NewSectionReader(file, offset, int64(len(buf)))},
 		}); err != nil {
 			return fmt.Errorf("failed to send chunk at offset %d: %w", offset, err)
 		}
