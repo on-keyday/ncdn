@@ -1,4 +1,4 @@
-package cmdline
+package remoteshell
 
 import (
 	"context"
@@ -275,15 +275,15 @@ func (m *manager) Output() <-chan OutputCommand {
 	return m.output
 }
 
-func DispatchMessage(m Manager, msg *protocol.ControlMessage) error {
+func DispatchMessage(m Manager, msg *protocol.ControlMessage) (bool, error) {
 	if msg := msg.CmdlineIn(); msg != nil {
-		return m.Input(context.Background(), msg.CmdlineId, msg.Cmdline)
+		return true, m.Input(context.Background(), msg.CmdlineId, msg.Cmdline)
 	}
 	if msg := msg.CmdlineInstr(); msg != nil {
-		return m.Control(context.Background(), msg.CmdlineId, msg.Instr, msg.Arg)
+		return true, m.Control(context.Background(), msg.CmdlineId, msg.Instr, msg.Arg)
 	}
 	if msg := msg.CmdlineResize(); msg != nil {
-		return m.ResizeWindow(msg.CmdlineId, int(msg.Col), int(msg.Row))
+		return true, m.ResizeWindow(msg.CmdlineId, int(msg.Col), int(msg.Row))
 	}
-	return nil
+	return false, nil
 }

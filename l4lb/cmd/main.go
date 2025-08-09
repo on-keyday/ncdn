@@ -19,9 +19,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/yzp0n/ncdn/controller/cmdline"
+	"github.com/yzp0n/ncdn/controller/chunk"
 	"github.com/yzp0n/ncdn/controller/lbconn"
 	"github.com/yzp0n/ncdn/controller/protocol"
+	"github.com/yzp0n/ncdn/controller/remoteshell"
 	"github.com/yzp0n/ncdn/controller/transport"
 	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 	"github.com/yzp0n/ncdn/l4lb/l4lbdrv"
@@ -209,7 +210,7 @@ func main() {
 
 	counters := &l4lbStatCounters{}
 
-	retryConn := lbconn.ConnectRetriableLB(slog.Default(), 5*time.Second, lbconn.ConnectL4LB,
+	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectL4LB,
 		&protocol.L4LBData{
 			ServerID:       uint32(1), // TODO: Make this configurable
 			VirtualAddress: netip.MustParseAddr(*vip).As4(),
@@ -225,7 +226,9 @@ func main() {
 
 	updateChan := make(chan *protocol.L4Lbl7Lbupdate, 1)
 
-	cmdMgr := cmdline.NewManager()
+	cmdMgr := remoteshell.NewManager()
+
+	chunkedMap := chunk.NewChunkMap()
 
 	go func() {
 		for {
@@ -236,12 +239,38 @@ func main() {
 			}
 			if l7lbUpdate := msg.L4LbL7LbUpdate(); l7lbUpdate != nil {
 				updateChan <- l7lbUpdate
+				continue
 			}
-			if err := cmdline.DispatchMessage(cmdMgr, msg); err != nil {
+			if handled, err := remoteshell.DispatchMessage(cmdMgr, msg); err != nil {
 				retryConn.Send(&lbconn.LogMsg{
 					Level:   protocol.LogLevel_Error,
 					Message: fmt.Sprintf("Failed to dispatch command line message: %v", err),
 				})
+			} else if handled {
+				continue // Handled by cmdline, no need to process further
+			}
+			chunked, err := chunkedMap.ReadChunked(retryConn, msg)
+			if err != nil {
+				retryConn.Send(&lbconn.LogMsg{
+					Level:   protocol.LogLevel_Error,
+					Message: fmt.Sprintf("Failed to read chunked data: %v", err),
+				})
+				continue
+			}
+			if chunked != nil {
+				if file := chunked.Msg.FileTransfer(); file != nil {
+					err := os.WriteFile(string(file.Path), chunked.Data, os.FileMode(file.Permission))
+					if err != nil {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Error,
+							Message: fmt.Sprintf("Failed to write file %q: %v", file.Path, err),
+						})
+					}
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Info,
+						Message: fmt.Sprintf("File %q written successfully", file.Path),
+					})
+				}
 			}
 		}
 	}()

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -22,9 +23,10 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/tetratelabs/wazero"
-	"github.com/yzp0n/ncdn/controller/cmdline"
+	"github.com/yzp0n/ncdn/controller/chunk"
 	"github.com/yzp0n/ncdn/controller/lbconn"
 	"github.com/yzp0n/ncdn/controller/protocol"
+	"github.com/yzp0n/ncdn/controller/remoteshell"
 	"github.com/yzp0n/ncdn/controller/transport"
 	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 	"github.com/yzp0n/ncdn/httprps"
@@ -164,7 +166,7 @@ func main() {
 
 	appStat := &appStat{}
 
-	retryConn := lbconn.ConnectRetriableLB(slog.Default(), 5*time.Second, lbconn.ConnectL7LB,
+	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectL7LB,
 		&protocol.L7LBData{
 			ServerID:   uint32(*lbNodeId),
 			Address:    [4]byte(addrs[0].(*net.IPNet).IP.To4()),
@@ -177,7 +179,8 @@ func main() {
 			})
 		}, appStat.GetStat)
 
-	cmdMgr := cmdline.NewManager()
+	cmdMgr := remoteshell.NewManager()
+	chunkedMap := chunk.NewChunkMap()
 
 	go func() {
 		for {
@@ -188,9 +191,46 @@ func main() {
 				continue
 			}
 			log.Printf("Received message: %s", msg.Header.MessageType)
-			if err := cmdline.DispatchMessage(cmdMgr, msg); err != nil {
+			if handled, err := remoteshell.DispatchMessage(cmdMgr, msg); err != nil {
 				log.Printf("Failed to dispatch message: %v", err)
 				continue
+			} else if handled {
+				continue
+			}
+			chunked, err := chunkedMap.ReadChunked(retryConn, msg)
+			if err != nil {
+				log.Printf("Failed to read chunked data: %v", err)
+				continue
+			}
+			if chunked != nil {
+				if file := chunked.Msg.FileTransfer(); file != nil {
+					err := os.WriteFile(string(file.Path), chunked.Data, os.FileMode(file.Permission))
+					if err != nil {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Error,
+							Message: fmt.Sprintf("Failed to write file %q: %v", file.Path, err),
+						})
+					} else {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Info,
+							Message: fmt.Sprintf("File %q written successfully", file.Path),
+						})
+					}
+				}
+				if wasm := chunked.Msg.WasmInstall(); wasm != nil {
+					err := ec.Register(context.Background(), string(wasm.Method), string(wasm.Path), chunked.Data)
+					if err != nil {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Error,
+							Message: fmt.Sprintf("Failed to register WASM module %q: %v", wasm.Path, err),
+						})
+					} else {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Info,
+							Message: fmt.Sprintf("WASM module %d:%s %s registered successfully", wasm.Id, wasm.Method, wasm.Path),
+						})
+					}
+				}
 			}
 		}
 	}()

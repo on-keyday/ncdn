@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yzp0n/ncdn/controller/cmdline"
 	"github.com/yzp0n/ncdn/controller/protocol"
+	"github.com/yzp0n/ncdn/controller/remoteshell"
 	"github.com/yzp0n/ncdn/controller/stat"
 	"github.com/yzp0n/ncdn/controller/transport"
 )
@@ -27,7 +27,7 @@ type LogMsg struct {
 type LBState[T any, U any] struct {
 	Data          T
 	Conn          transport.Connection
-	CmdlineMsg    chan cmdline.OutputCommand
+	CmdlineMsg    chan remoteshell.OutputCommand
 	makeKeepAlive func(t time.Duration, m *protocol.MachineStat, data U) (*protocol.ControlMessage, error)
 }
 
@@ -53,7 +53,7 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 		Data:          data,
 		Conn:          conn,
 		makeKeepAlive: makeKeepAlive,
-		CmdlineMsg:    make(chan cmdline.OutputCommand, 100),
+		CmdlineMsg:    make(chan remoteshell.OutputCommand, 100),
 	}
 	go func() {
 		if keepalive < 10*time.Second {
@@ -139,17 +139,31 @@ func ConnectL7LB(logger *slog.Logger, conn transport.Connection, data *protocol.
 
 type LBConnConnector[T any, U any] func(logger *slog.Logger, conn transport.Connection, data T, keepalive time.Duration, appStat func() (U, error)) (*LBState[T, U], error)
 
+func (lb *LBState[T, U]) ReceiveBytes() ([]byte, error) {
+	return lb.Conn.Receive()
+}
+
 func (lb *LBState[T, U]) Receive() (*protocol.ControlMessage, error) {
-	enc, err := lb.Conn.Receive()
+	data, err := lb.ReceiveBytes()
 	if err != nil {
 		return nil, err
 	}
 	msg := &protocol.ControlMessage{}
-	err = msg.DecodeExact(enc)
-	if err != nil {
+	if err := msg.DecodeExact(data); err != nil {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func (lb *LBState[T, U]) ReceiveSize(size int) ([]byte, error) {
+	data, err := lb.Conn.ReceiveSize(size)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) != size {
+		return nil, errors.New("received data size does not match expected size")
+	}
+	return data, nil
 }
 
 func (lb *LBState[T, U]) Close() error {
@@ -165,13 +179,13 @@ func (lb *LBState[T, U]) Send(msg *LogMsg) error {
 	if lb.Conn == nil {
 		return errors.New("connection is nil")
 	}
-	lb.CmdlineMsg <- cmdline.OutputCommand{
+	lb.CmdlineMsg <- remoteshell.OutputCommand{
 		Msg: protocol.LogMessage(msg.Level, msg.Message),
 	}
 	return nil
 }
 
-func (lb *LBState[T, U]) SendCommandline(msg cmdline.OutputCommand) error {
+func (lb *LBState[T, U]) SendCommandline(msg remoteshell.OutputCommand) error {
 	if lb.Conn == nil {
 		return errors.New("connection is nil")
 	}
@@ -191,12 +205,12 @@ type RetriableLBConn[T any, U any] struct {
 	data       T
 }
 
-func ConnectRetriableLB[T any, U any](logger *slog.Logger, retryWait time.Duration, connect LBConnConnector[T, U], data T, keepalive time.Duration, createConn func() (transport.Connection, error), appStat func() (U, error)) *RetriableLBConn[T, U] {
+func ConnectRetriable[T any, U any](logger *slog.Logger, retryWait time.Duration, connect LBConnConnector[T, U], data T, keepalive time.Duration, createConn func() (transport.Connection, error), appStat func() (U, error)) *RetriableLBConn[T, U] {
 	// lazy initialization of conn
 	return &RetriableLBConn[T, U]{connect: connect, conn: nil, createConn: createConn, appStat: appStat, keepalive: keepalive, logger: logger, retryWait: retryWait, data: data}
 }
 
-func (r *RetriableLBConn[T, U]) Receive() (*protocol.ControlMessage, error) {
+func (r *RetriableLBConn[T, U]) ReceiveBytes() ([]byte, error) {
 	for {
 		r.connLock.Lock()
 		if r.conn == nil {
@@ -224,7 +238,7 @@ func (r *RetriableLBConn[T, U]) Receive() (*protocol.ControlMessage, error) {
 		}
 		conn := r.conn
 		r.connLock.Unlock()
-		recved, err := conn.Receive()
+		recved, err := conn.ReceiveBytes()
 		if err != nil {
 			r.connLock.Lock()
 			r.conn.Close()
@@ -236,6 +250,29 @@ func (r *RetriableLBConn[T, U]) Receive() (*protocol.ControlMessage, error) {
 		}
 		return recved, nil
 	}
+}
+
+func (r *RetriableLBConn[T, U]) Receive() (*protocol.ControlMessage, error) {
+	data, err := r.ReceiveBytes()
+	if err != nil {
+		return nil, err
+	}
+	msg := &protocol.ControlMessage{}
+	if err := msg.DecodeExact(data); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func (r *RetriableLBConn[T, U]) ReceiveSize(size int) ([]byte, error) {
+	data, err := r.ReceiveBytes()
+	if err != nil {
+		return nil, err
+	}
+	if len(data) != size {
+		return nil, errors.New("received data size does not match expected size")
+	}
+	return data, nil
 }
 
 func (r *RetriableLBConn[T, U]) Close() error {
@@ -251,7 +288,7 @@ func (r *RetriableLBConn[T, U]) Send(msg *LogMsg) error {
 	return r.conn.Send(msg)
 }
 
-func (r *RetriableLBConn[T, U]) SendCommandline(msg cmdline.OutputCommand) error {
+func (r *RetriableLBConn[T, U]) SendCommandline(msg remoteshell.OutputCommand) error {
 	r.connLock.Lock()
 	defer r.connLock.Unlock()
 	if r.conn == nil {
