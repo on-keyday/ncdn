@@ -88,7 +88,6 @@ func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType, ar
 					fmt.Sprintf("Trying to kill command %d (PID: %d)", s.id, s.Cmd.Process.Pid)),
 			}
 			slog.Info("Tried to kill", "id", s.id, "pid", s.Cmd.Process.Pid)
-			s.Cmd = nil // Reset Cmd after killing
 		} else {
 			output <- OutputCommand{
 				Msg: protocol.LogMessage(protocol.LogLevel_Warn,
@@ -103,7 +102,7 @@ func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType, ar
 	return nil
 }
 
-func (s *stdIO) Input(ctx context.Context, input []byte, output chan OutputCommand) error {
+func (s *stdIO) Input(mgr *manager, ctx context.Context, input []byte, output chan OutputCommand) error {
 	s.m.Lock()
 	defer s.m.Unlock()
 	if s.Cmd == nil {
@@ -171,9 +170,11 @@ func (s *stdIO) Input(ctx context.Context, input []byte, output chan OutputComma
 					Msg: protocol.CommandLineExit(s.id, 0), // Exit code 0
 				}
 			}
-			s.m.Lock()
-			s.Cmd = nil // Reset Cmd on completion
-			s.m.Unlock()
+			mgr.m.Lock()
+			if inst, ok := mgr.ioMap[s.id]; ok && inst == s {
+				delete(mgr.ioMap, s.id) // Remove from manager's map
+			}
+			mgr.m.Unlock()
 		}()
 		output <- OutputCommand{
 			Msg: protocol.LogMessage(protocol.LogLevel_Info, "Command started: "+strings.Join(args, " ")),
@@ -228,7 +229,7 @@ func (m *manager) Input(ctx context.Context, id uint32, input []byte) error {
 		}
 	}
 	m.m.Unlock()
-	return stdio.Input(ctx, input, m.output)
+	return stdio.Input(m, ctx, input, m.output)
 }
 
 func (m *manager) ResizeWindow(id uint32, x, y int) error {

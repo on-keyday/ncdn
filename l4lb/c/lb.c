@@ -425,15 +425,64 @@ __always_inline uint32_t hash_server_id(struct lb_config* config,uint32_t src_ip
     return hash;
 }
 
+__always_inline struct destination_entry* search_consistent_hash_based_destination(struct lb_config* config,uint32_t server_id) {
+  // destination map is sorted by server_id, so we can use binary search
+  // maximum entries is 255, so least 8 times of binary search is enough
+  const uint32_t len = config->num_dests;
+  uint32_t low = 1; // 1-based index
+  uint32_t high = len;
+  uint32_t mid = 0;
+  size_t counter = 0;
+  struct destination_entry* dest = NULL;
+  while (low <= high && counter++ < 8) {
+    mid = (low + high) / 2;
+    dest = bpf_map_lookup_elem(&destinations_map, &mid);
+    if (!dest) {
+      debugk("BUG: search_consistent_hash_based_destination: no destination entry for mid %u", mid);
+      return NULL; // no destination entry found
+    }
+    if (dest->hash_key == server_id) {
+      return dest;
+    }
+    if (dest->hash_key < server_id) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  if(!dest) {
+    debugk("search_consistent_hash_based_destination: no destination entry found for server_id %u", server_id);
+    return NULL; // no destination entry found
+  }
+  if(server_id < dest->hash_key) {
+    return dest; // return the next higher destination entry
+  }
+  // mid is [1, len]
+  // if 5 elements
+  // (1 % 5) + 1 = 2
+  // (2 % 5) + 1 = 3
+  // (3 % 5) + 1 = 4
+  // (4 % 5) + 1 = 5
+  // (5 % 5) + 1 = 1
+  // so this is a wrap around
+  mid = (mid % len) +1; // wrap around to the first entry if needed
+  dest = bpf_map_lookup_elem(&destinations_map, &mid);
+  if (!dest) {
+    debugk("search_consistent_hash_based_destination: no destination entry found for mid %u", mid);
+    return NULL; // no destination entry found  
+  }
+  debugk("search_consistent_hash_based_destination: found destination entry for server_id %u at mid %u", server_id, mid);
+  return dest; // return the next higher destination entry
+}
+
 __always_inline struct destination_entry* handle_initial(uint32_t server_id,
 struct lb_config* config,
 struct stat_counters* c,
                                                const char* context) {
-    uint32_t dest_idx = server_id % config->num_dests + 1; // dest_idx is 1-based index
-    debugk("%s (initial) dest_idx=%d",context, dest_idx);
-    struct destination_entry* dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+    debugk("%s (initial) server_id=%u", context, server_id);
+    struct destination_entry* dest = search_consistent_hash_based_destination(config, server_id);
     if (!dest) {
-      debugk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
+      debugk("ASSERTION FAILURE: no dest entry for %d", server_id);
       ++c->quiclb_no_dest_entry_total;
       return NULL;
     }
@@ -455,7 +504,7 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
     } else {
       cached_server_id = NULL;
     }
-    uint32_t dest_idx = 0;
+    uint32_t server_id;
     if(!cached_server_id) {
       uint8_t output[QUICLB_CONNECTION_ID_SIZE];
       const uint8_t* conn_id_bytes  = (const uint8_t*)conn_id;
@@ -470,37 +519,22 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
         debugk("%s: connection_id_decrypt failed with %d", context, err);
         return NULL;
       }
-      const int dest_idx_ = QUICLB_CONNECTION_ID_SERVER_ID(((struct quiclb_connection_id*)(output))->server_id);
-      dest_idx = dest_idx_ + 1; // dest_idx is 1-based index
-      debugk("%s conn_id dest_idx=%d", context, dest_idx);
-      if(dest_idx > config->num_dests) {
-        debugk("idx %d >= num_dests %d", dest_idx, config->num_dests);
-        return handle_initial(dest_idx, config, c, context);
-      }
+      server_id = QUICLB_CONNECTION_ID_SERVER_ID(((struct quiclb_connection_id*)(output))->server_id);
+      debugk("%s conn_id server_id=%d", context, server_id);
       // update cache
-      int cache_err = bpf_map_update_elem(&connid_cache, conn_id, &dest_idx, BPF_ANY);
+      int cache_err = bpf_map_update_elem(&connid_cache, conn_id, &server_id, BPF_ANY);
       if(cache_err < 0) {
         debugk("%s: bpf_map_update_elem failed with %d, but continue", context, cache_err);
       }
     } else {
-      if(*cached_server_id > config->num_dests) {
-        debugk("ASSERTION FAILURE: cached_server_id %lu > num_dests %d", *cached_server_id, config->num_dests);
-        int cache_err = bpf_map_delete_elem(&connid_cache, conn_id);
-        if(cache_err < 0) {
-          debugk("%s: bpf_map_delete_elem failed with %d", context, cache_err);
-        }
-        return NULL;
-      }
       ++c->quiclb_connid_cache_hit_total;
-      dest_idx = *cached_server_id;
+      server_id = *cached_server_id;
     }
 
-    struct destination_entry* entry = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+    struct destination_entry* entry = search_consistent_hash_based_destination(config, server_id);
     if(!entry) {
-      debugk("no destination entry for %d", dest_idx);
       return NULL;
     }
-    debugk("found dest entry for %d", dest_idx);
     return entry;
 }
 
@@ -698,11 +732,8 @@ int lb_main(struct xdp_md* ctx) {
 
       debugk("incoming packet: ip=%pI4 port=%u", &ip->saddr, ntohs(tcp->source));
 
-      uint32_t dest_idx = hash_server_id(config, ip->saddr, ntohs(tcp->source), 0x55) % config->num_dests + 1;
-      debugk("dest_idx=%d", dest_idx);
-      dest = bpf_map_lookup_elem(&destinations_map, &dest_idx);
+      dest = search_consistent_hash_based_destination(config, hash_server_id(config, ip->saddr, ntohs(tcp->source), 0x55));
       if (!dest) {
-        debugk("ASSERTION FAILURE: no dest entry for %d", dest_idx);
         EXIT(XDP_DROP);
       }
   
