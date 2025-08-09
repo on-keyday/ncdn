@@ -23,6 +23,7 @@ enum ControlMessageType:
     wasm_install # controller -> l7lb
     wasm_uninstall # controller -> l7lb
     message # l4lb,l7lb -> controller
+    large_chunk # both direction
 
 
 format ControlMessageHeader:
@@ -30,6 +31,8 @@ format ControlMessageHeader:
     version == 0
     len :u16
     message_type :ControlMessageType
+
+
 
 
 format ControlMessage:
@@ -52,6 +55,7 @@ format ControlMessage:
         ControlMessageType.cmdline_resize => cmdline_resize :CmdlineResize(input = input.subrange(header.len))
         ControlMessageType.file_transfer => file_transfer :FileTransfer(input = input.subrange(header.len))
         ControlMessageType.cmdline_instr => cmdline_instr :CmdlineInstruction(input = input.subrange(header.len))
+        ControlMessageType.large_chunk => large_chunk :LargeChunkHeader(input = input.subrange(header.len))
         .. => data :[header.len]u8
 
 format MachineInfo:
@@ -141,7 +145,7 @@ format WasmInstallInfo:
     method :[method_len]u8
     path_len :u16
     path :[path_len]u8
-    binary_size :u64 # followed by single data websocket frame contains webassembly
+    chunk_info :ChunkInfo
 
 format WasmUninstallInfo:
     id :u32
@@ -187,10 +191,14 @@ enum OutputType:
     stdout
     stderr
 
+format ChunkInfo:
+    is_chunkd :u1
+    len_or_id :u31
+
 format CmdlineOut:
     cmdline_id :u32
     output_type :OutputType
-    len :u64 # followed by data websocket frame(s) contains commandline output
+    chunk_info :ChunkInfo
 
 format CommandExit:
     cmdline_id :u32
@@ -200,5 +208,9 @@ format FileTransfer:
     path_len :u16
     path :[path_len]u8
     permission :u16
-    file_len :u64 # followed by data websocket frame(s) contains file content
+    chunk_info :ChunkInfo
 
+format LargeChunkHeader:
+    eof :u1
+    chunk_id :u31
+    chunk_len :u32

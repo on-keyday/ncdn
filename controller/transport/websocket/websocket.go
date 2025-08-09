@@ -3,6 +3,7 @@ package wstransport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -43,13 +44,13 @@ func (c *WebSocketConn) Send(p []byte) error {
 func (c *WebSocketConn) SendReader(control []byte, size int, reader io.ReaderAt) error {
 	// Send the control part first.
 	if err := websocket.Message.Send(c.conn, control); err != nil {
-		return err
+		return fmt.Errorf("failed to send control message: %w", err)
 	}
 
 	// Read data from the reader and send it.
 	buf := make([]byte, size)
 	if _, err := reader.ReadAt(buf, 0); err != nil {
-		return err
+		return fmt.Errorf("failed to read from reader: %w", err)
 	}
 	return websocket.Message.Send(c.conn, buf)
 }
@@ -64,10 +65,15 @@ func (c *WebSocketConn) Receive() ([]byte, error) {
 	return p, nil
 }
 
-// ReceiveReader is not implemented for WebSockets as they are message-based, not stream-based.
-// It will return an error as this operation is not supported.
-func (c *WebSocketConn) ReceiveReader(size int) (io.Reader, error) {
-	return nil, errors.New("ReceiveReader is not supported for WebSocket connections")
+func (c *WebSocketConn) ReceiveSize(size int) ([]byte, error) {
+	recv, err := c.Receive()
+	if err != nil {
+		return nil, fmt.Errorf("failed to receive message: %w", err)
+	}
+	if len(recv) != size {
+		return nil, fmt.Errorf("received message size %d does not match expected size %d", len(recv), size)
+	}
+	return recv, nil
 }
 
 // SetReadDeadline sets the read deadline for future read calls.

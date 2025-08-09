@@ -4,6 +4,13 @@ import (
 	"time"
 )
 
+func MakeChunkInfo(isChunkd bool, lenOrID uint32) ChunkInfo {
+	info := ChunkInfo{}
+	info.SetIsChunkd(isChunkd)
+	info.SetLenOrId(lenOrID)
+	return info
+}
+
 type DataWithStat[T interface {
 	Clone() T
 	Update(U)
@@ -433,21 +440,21 @@ func L7LBKeepAlive(nextPeriod time.Duration, stat *MachineStat, d *L7UpdateInfo)
 	return msg
 }
 
-func WasmInstall(id uint32, method string, path string, code_len uint64) *ControlMessage {
+func WasmInstall(id uint32, method string, path string, chunkInfo ChunkInfo) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(4 + 4 + len(method) + 4 + len(path) + 8),
+			Len:         uint16(4 + 4 + len(method) + 4 + len(path) + 4),
 			MessageType: ControlMessageType_WasmInstall,
 		},
 	}
 	msg.SetWasmInstall(WasmInstallInfo{
-		Id:         id,
-		MethodLen:  uint8(len(method)),
-		Method:     []byte(method),
-		PathLen:    uint16(len(path)),
-		Path:       []byte(path),
-		BinarySize: uint64(code_len),
+		Id:        id,
+		MethodLen: uint8(len(method)),
+		Method:    []byte(method),
+		PathLen:   uint16(len(path)),
+		Path:      []byte(path),
+		ChunkInfo: chunkInfo,
 	})
 	return msg
 }
@@ -541,18 +548,18 @@ func CommandLineIn(cmdlineID uint32, input string) *ControlMessage {
 	return controlMsg
 }
 
-func CommandLineOutput(cmdlineID uint32, outputType OutputType, outputLen uint64) *ControlMessage {
+func CommandLineOutput(cmdlineID uint32, outputType OutputType, chunkInfo ChunkInfo) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         4 + 1 + 8,
+			Len:         4 + 1 + 4,
 			MessageType: ControlMessageType_CmdlineOut,
 		},
 	}
 	controlMsg.SetCmdlineOut(CmdlineOut{
 		CmdlineId:  cmdlineID,
 		OutputType: outputType,
-		Len:        outputLen,
+		ChunkInfo:  chunkInfo,
 	})
 	return controlMsg
 }
@@ -572,7 +579,7 @@ func CommandLineExit(cmdlineID uint32, exitCode uint32) *ControlMessage {
 	return controlMsg
 }
 
-func TransferFile(path string, permission uint16, fileLen uint64) *ControlMessage {
+func TransferFile(path string, permission uint16, chunkInfo ChunkInfo) *ControlMessage {
 	pathBytes := []byte(path)
 	if len(pathBytes) > 65535 {
 		pathBytes = pathBytes[:65535] // Limit to 65535 bytes
@@ -582,7 +589,7 @@ func TransferFile(path string, permission uint16, fileLen uint64) *ControlMessag
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         2 + pathLen + 2 + 8, // 2 bytes for path_len + path_len + 2 bytes for permission + 8 bytes for file_len
+			Len:         2 + pathLen + 2 + 4, // 2 bytes for path_len + path_len + 2 bytes for permission + 8 bytes for file_len
 			MessageType: ControlMessageType_FileTransfer,
 		},
 	}
@@ -590,7 +597,7 @@ func TransferFile(path string, permission uint16, fileLen uint64) *ControlMessag
 		PathLen:    pathLen,
 		Path:       pathBytes,
 		Permission: permission,
-		FileLen:    fileLen,
+		ChunkInfo:  chunkInfo,
 	})
 	return controlMsg
 }
@@ -623,5 +630,22 @@ func CommandLineResize(cmdlineID uint32, col, row uint16) *ControlMessage {
 		Col:       col,
 		Row:       row,
 	})
+	return controlMsg
+}
+
+func LargeChunk(chunkID uint32, chunkLen uint32, eof bool) *ControlMessage {
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         4 + 4, // 1 bit for eof + 31 bits for chunkID + 4 bytes for chunkLen
+			MessageType: ControlMessageType_LargeChunk,
+		},
+	}
+	hdr := LargeChunkHeader{
+		ChunkLen: chunkLen,
+	}
+	hdr.SetChunkId(chunkID)
+	hdr.SetEof(eof)
+	controlMsg.SetLargeChunk(hdr)
 	return controlMsg
 }

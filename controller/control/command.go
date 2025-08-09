@@ -37,73 +37,113 @@ func (c *controller) ShareKey(key []byte) {
 	c.logger.Info("Shared key with L4LB and L7LBs", "generation", keyGeneration)
 }
 
-func (c *controller) FileTransfer(typ LBType, serverID uint32, path string, permission uint16, file ReaderAtCloser) error {
-	if len(path) > 65535-12 { // 12 bytes for permission and file size
-		return errors.New("file path exceeds maximum length of 65535 bytes")
+const chunkingThreshold = 65535 - 8 // 8 bytes for header
+
+type secttionReader struct {
+	*io.SectionReader
+}
+
+func (*secttionReader) Close() error { return nil }
+func (*secttionReader) AddRef()      {}
+
+// file should have reference before calling this function
+func sendWithChunk(lb lbSender, makeMsg func(protocol.ChunkInfo) *protocol.ControlMessage, file ReaderAtCloser) error {
+	size := file.Size()
+	if size <= chunkingThreshold {
+		if err := lb.SendMessageBlocking(message{
+			seqNum: lb.GetSeqNum(),
+			data:   makeMsg(protocol.MakeChunkInfo(false, uint32(size))),
+			reader: file,
+		}); err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
+		return nil
 	}
-	msg := protocol.TransferFile(path, permission, uint64(file.Size()))
-	var seqNum uint64
-	switch typ {
-	case LBTypeL7:
-		var l7lbConn *L7LB
-		c.withLock(func() {
-			for _, l7lb := range c.l7lbList.list {
-				if l7lb.data.data.Data.Data.ServerID == serverID {
-					seqNum = c.msgSeqNum
-					c.msgSeqNum++
-					l7lbConn = l7lb
-					break
-				}
-			}
-		})
-		if l7lbConn != nil {
-			file.AddRef() // Ensure the file remains open until the message is sent
-			l7lbConn.SendMessage(message{
-				seqNum: seqNum,
-				data:   msg,
-				reader: file,
-			})
+
+	chunkID := uint32(lb.GetSeqNum() & 0x7FFFFFFF) // Use lower 31 bits for chunk ID
+
+	if err := lb.SendMessageBlocking(message{
+		seqNum: lb.GetSeqNum(),
+		data:   makeMsg(protocol.MakeChunkInfo(true, chunkID)),
+	}); err != nil {
+		return fmt.Errorf("failed to send initial chunk message: %w", err)
+	}
+
+	offset := int64(0)
+	eof := false
+	for offset < size {
+		chunkSize := chunkingThreshold
+		if size-offset < int64(chunkSize) {
+			chunkSize = int(size - offset)
+			eof = true // Last chunk
 		}
-	case LBTypeL4:
-		var l4lbConn *L4LB
-		c.withLock(func() {
-			for _, l4lb := range c.l4lblist.list {
-				if l4lb.data.data.Data.Data.ServerID == serverID {
-					seqNum = c.msgSeqNum
-					c.msgSeqNum++
-					l4lbConn = l4lb
-					break
-				}
-			}
-		})
-		if l4lbConn != nil {
-			file.AddRef() // Ensure the file remains open until the message is sent
-			l4lbConn.SendMessage(message{
-				seqNum: seqNum,
-				data:   msg,
-				reader: file,
-			})
+
+		buf := make([]byte, chunkSize)
+		if _, err := file.ReadAt(buf, offset); err != nil {
+			return fmt.Errorf("failed to read file at offset %d: %w", offset, err)
 		}
+
+		if err := lb.SendMessageBlocking(message{
+			seqNum: lb.GetSeqNum(),
+			data:   protocol.LargeChunk(chunkID, uint32(len(buf)), eof),
+			reader: &secttionReader{SectionReader: io.NewSectionReader(file, offset, int64(len(buf)))},
+		}); err != nil {
+			return fmt.Errorf("failed to send chunk at offset %d: %w", offset, err)
+		}
+
+		offset += int64(len(buf))
 	}
 	return nil
 }
 
+func (c *controller) FileTransfer(typ LBType, serverID uint32, path string, permission uint16, file ReaderAtCloser) error {
+	if len(path) > 65535-8 { // 8 bytes for permission and file size
+		return errors.New("file path exceeds maximum length of 65535 bytes")
+	}
+	var lb lbSender
+	switch typ {
+	case LBTypeL7:
+		c.withLock(func() {
+			for _, l7lb := range c.l7lbList.list {
+				if l7lb.data.data.Data.Data.ServerID == serverID {
+					lb = l7lb
+					break
+				}
+			}
+		})
+	case LBTypeL4:
+		c.withLock(func() {
+			for _, l4lb := range c.l4lblist.list {
+				if l4lb.data.data.Data.Data.ServerID == serverID {
+					lb = l4lb
+					break
+				}
+			}
+		})
+	}
+	if lb == nil {
+		return fmt.Errorf("Load Balancer with server ID %d not found", serverID)
+	}
+	file.AddRef()
+	return sendWithChunk(lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
+		return protocol.TransferFile(path, permission, chunkInfo)
+	}, file)
+}
+
 func (c *controller) WasmInstall(id uint32, method, path string, file ReaderAtCloser) error {
-	msg := protocol.WasmInstall(id, method, path, uint64(file.Size()))
-	var seqNum uint64
 	var l7lblist *l7list
 	c.withLock(func() {
-		seqNum = c.msgSeqNum
-		c.msgSeqNum++
 		l7lblist = c.l7lbList.Clone()
 	})
 	for _, l7lb := range l7lblist.list {
 		file.AddRef() // Ensure the file remains open until the message is sent
-		l7lb.SendMessage(message{
-			seqNum: seqNum,
-			data:   msg,
-			reader: file,
-		})
+		go func(l7lb *L7LB) {
+			if err := sendWithChunk(l7lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
+				return protocol.WasmInstall(id, method, path, chunkInfo)
+			}, file); err != nil {
+				l7lb.logger.Error("Failed to send WasmInstall message", "error", err, "id", id, "method", method, "path", path)
+			}
+		}(l7lb)
 	}
 	return nil
 }
@@ -131,6 +171,7 @@ type CommandLine interface {
 	Stderr() <-chan []byte
 	Stdout() <-chan []byte
 	ResizeWindow(x, y int) error
+	Kill() error
 }
 
 type lbSender interface {
@@ -139,11 +180,12 @@ type lbSender interface {
 }
 
 type commandLine struct {
-	c      *controller
-	lb     lbSender
-	id     uint32
-	outbuf chan []byte
-	errbuf chan []byte
+	c            *controller
+	lb           lbSender
+	id           uint32
+	outbuf       chan []byte
+	errbuf       chan []byte
+	closeOutOnce sync.Once
 }
 
 type stdinWriter struct {
@@ -214,10 +256,34 @@ func (c *commandLine) ResizeWindow(col, row int) error {
 	return nil
 }
 
+func (c *commandLine) Kill() error {
+	if err := c.lb.SendMessageBlocking(message{
+		seqNum: c.lb.GetSeqNum(),
+		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_Kill),
+	}); err != nil {
+		return fmt.Errorf("failed to send kill command: %w", err)
+	}
+	return nil
+}
+
+func (c *commandLine) closeStdouterr() {
+	c.closeOutOnce.Do(func() {
+		close(c.outbuf)
+		close(c.errbuf)
+	})
+}
+
 type commandLineManager struct {
 	mu       sync.Mutex
 	cmdlines map[uint32]*commandLine
 	seqNum   uint32
+}
+
+func newCommandLineManager() *commandLineManager {
+	return &commandLineManager{
+		cmdlines: make(map[uint32]*commandLine),
+		seqNum:   1, // Start from 1 to avoid zero ID
+	}
 }
 
 func (c *commandLineManager) HandleOutput(logger *slog.Logger, id uint32, outType protocol.OutputType, data []byte) error {
@@ -242,8 +308,7 @@ func (c *commandLineManager) HandleExit(logger *slog.Logger, id uint32, exitCode
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if cmd, ok := c.cmdlines[id]; ok {
-		close(cmd.outbuf)
-		close(cmd.errbuf)
+		cmd.closeStdouterr() // Close the output channels
 		delete(c.cmdlines, id)
 		logger.Info("Command line exited", "id", id, "exit_code", exitCode)
 		return nil
@@ -252,7 +317,7 @@ func (c *commandLineManager) HandleExit(logger *slog.Logger, id uint32, exitCode
 	return nil // not found is not error (for resetting)
 }
 
-func (c *commandLineManager) command(ctl *controller, lb lbSender, cmdline string, enablePty bool) (CommandLine, error) {
+func (c *commandLineManager) command(ctl *controller, serverID uint32, lb lbSender, cmdline string, enablePty bool) (CommandLine, error) {
 	c.mu.Lock()
 	cmd := &commandLine{
 		c:      ctl,
@@ -262,6 +327,7 @@ func (c *commandLineManager) command(ctl *controller, lb lbSender, cmdline strin
 		errbuf: make(chan []byte),
 	}
 	c.cmdlines[c.seqNum] = cmd
+	cmd.id = c.seqNum
 	c.seqNum++
 	c.mu.Unlock()
 	if enablePty {
@@ -313,5 +379,5 @@ func (c *controller) Command(typ LBType, serverID uint32, cmdline string, enable
 	default:
 		return nil, fmt.Errorf("unknown Load Balancer type: %v", typ)
 	}
-	return c.commandManager.command(c, lb, cmdline, enablePty)
+	return c.commandManager.command(c, serverID, lb, cmdline, enablePty)
 }

@@ -3,7 +3,9 @@ package cmdline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,20 +38,29 @@ func (s *commandSender) Write(d []byte) (int, error) {
 	if len(d) == 0 {
 		return 0, nil // No data to write
 	}
-	msg := protocol.CommandLineOutput(s.id, s.outType, uint64(len(d)))
-	s.outputChan <- OutputCommand{
-		Msg:  msg,
-		Data: d,
+	chunk := d[:]
+	for len(chunk) > 65535 {
+		oneChunk := chunk[:65535]
+		msg := protocol.CommandLineOutput(s.id, s.outType, protocol.MakeChunkInfo(false, uint32(len(oneChunk))))
+		s.outputChan <- OutputCommand{
+			Msg:  msg,
+			Data: oneChunk,
+		}
+		chunk = chunk[65535:]
+	}
+	if len(chunk) > 0 {
+		msg := protocol.CommandLineOutput(s.id, s.outType, protocol.MakeChunkInfo(false, uint32(len(chunk))))
+		s.outputChan <- OutputCommand{
+			Msg:  msg,
+			Data: chunk,
+		}
 	}
 	return len(d), nil
 }
 
-func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType) error {
+func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType, output chan OutputCommand) error {
 	s.m.Lock()
 	defer s.m.Unlock()
-	if s.Cmd == nil {
-		return nil // No command to control
-	}
 	switch cmd {
 	case protocol.CmdInstructionType_CloseStdin:
 		if s.stdinPipe != nil {
@@ -59,11 +70,27 @@ func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType) er
 			s.stdinPipe = nil // Close the stdin pipe
 		}
 	case protocol.CmdInstructionType_Kill:
-		if s.Cmd != nil {
+		if s.Cmd != nil && s.Cmd.Process != nil {
 			if err := s.Cmd.Process.Kill(); err != nil {
 				return err
 			}
+			if s.stdinPipe != nil {
+				if err := s.stdinPipe.Close(); err != nil {
+					return err
+				}
+				s.stdinPipe = nil // Close the stdin pipe
+			}
+			output <- OutputCommand{
+				Msg: protocol.LogMessage(protocol.LogLevel_Info,
+					fmt.Sprintf("Trying to kill command %d (PID: %d)", s.id, s.Cmd.Process.Pid)),
+			}
+			slog.Info("Tried to kill", "id", s.id, "pid", s.Cmd.Process.Pid)
 			s.Cmd = nil // Reset Cmd after killing
+		} else {
+			output <- OutputCommand{
+				Msg: protocol.LogMessage(protocol.LogLevel_Warn,
+					fmt.Sprintf("No command running with ID %d to kill", s.id)),
+			}
 		}
 	case protocol.CmdInstructionType_UsePty:
 		s.usePty = true
@@ -145,6 +172,10 @@ func (s *stdIO) Input(ctx context.Context, input []byte, output chan OutputComma
 			s.Cmd = nil // Reset Cmd on completion
 			s.m.Unlock()
 		}()
+		output <- OutputCommand{
+			Msg: protocol.LogMessage(protocol.LogLevel_Info, "Command started: "+strings.Join(args, " ")),
+		}
+		return nil
 	}
 	if s.stdinPipe == nil {
 		return nil // No stdin pipe available
@@ -189,6 +220,9 @@ func (m *manager) Input(ctx context.Context, id uint32, input []byte) error {
 		// new stdIO
 		stdio = &stdIO{id: id}
 		m.ioMap[id] = stdio
+		m.output <- OutputCommand{
+			Msg: protocol.LogMessage(protocol.LogLevel_Info, fmt.Sprintf("Starting new command with ID %d", id)),
+		}
 	}
 	m.m.Unlock()
 	return stdio.Input(ctx, input, m.output)
@@ -213,7 +247,7 @@ func (m *manager) Control(ctx context.Context, id uint32, cmd protocol.CmdInstru
 		var errs []error
 		// Kill all commands
 		for _, stdio := range m.ioMap {
-			if err := stdio.Control(ctx, protocol.CmdInstructionType_Kill); err != nil {
+			if err := stdio.Control(ctx, protocol.CmdInstructionType_Kill, m.output); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -225,9 +259,12 @@ func (m *manager) Control(ctx context.Context, id uint32, cmd protocol.CmdInstru
 	if !ok {
 		stdio = &stdIO{id: id} // Create a new stdIO if not found
 		m.ioMap[id] = stdio
+		m.output <- OutputCommand{
+			Msg: protocol.LogMessage(protocol.LogLevel_Info, fmt.Sprintf("Starting new command with ID %d", id)),
+		}
 	}
 	m.m.Unlock()
-	return stdio.Control(ctx, cmd)
+	return stdio.Control(ctx, cmd, m.output)
 }
 
 func (m *manager) Output() <-chan OutputCommand {
@@ -241,7 +278,7 @@ func (m *manager) Output() <-chan OutputCommand {
 
 func DispatchMessage(m Manager, msg *protocol.ControlMessage) error {
 	if msg := msg.CmdlineIn(); msg != nil {
-		return m.Input(context.Background(), msg.CmdlineId, []byte(msg.Cmdline))
+		return m.Input(context.Background(), msg.CmdlineId, msg.Cmdline)
 	}
 	if msg := msg.CmdlineInstr(); msg != nil {
 		return m.Control(context.Background(), msg.CmdlineId, msg.Instr)

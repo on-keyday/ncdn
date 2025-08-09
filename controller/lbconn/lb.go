@@ -27,7 +27,6 @@ type LogMsg struct {
 type LBState[T any, U any] struct {
 	Data          T
 	Conn          transport.Connection
-	Messages      chan *LogMsg
 	CmdlineMsg    chan cmdline.OutputCommand
 	makeKeepAlive func(t time.Duration, m *protocol.MachineStat, data U) (*protocol.ControlMessage, error)
 }
@@ -54,8 +53,7 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 		Data:          data,
 		Conn:          conn,
 		makeKeepAlive: makeKeepAlive,
-		Messages:      make(chan *LogMsg, 1),
-		CmdlineMsg:    make(chan cmdline.OutputCommand, 1),
+		CmdlineMsg:    make(chan cmdline.OutputCommand, 100),
 	}
 	go func() {
 		if keepalive < 10*time.Second {
@@ -103,20 +101,19 @@ func connectLB[T any, U any](logger *slog.Logger, conn transport.Connection,
 				if !doSendKeepAlive() {
 					return
 				}
-			case msg := <-lb.Messages:
-				if msg != nil {
-					msg := protocol.LogMessage(msg.Level, msg.Message)
-					if enc, err := msg.Encode(); err != nil {
-						logger.Error("Failed to encode error report", "error", err)
-					} else if err := conn.Send(enc); err != nil {
-						logger.Error("Failed to send error report", "error", err)
-					}
-				}
 			case c := <-lb.CmdlineMsg:
 				if enc, err := c.Msg.Encode(); err != nil {
-					logger.Error("Failed to encode command line message", "error", err)
-				} else if err := conn.SendReader(enc, len(c.Data), bytes.NewReader(c.Data)); err != nil {
-					logger.Error("Failed to send command line message", "error", err)
+					logger.Error("Failed to encode command line message", "error", err, "msg", c.Msg.Header.MessageType.String())
+				} else {
+					if len(c.Data) > 0 {
+						if err := conn.SendReader(enc, len(c.Data), bytes.NewReader(c.Data)); err != nil {
+							logger.Error("Failed to send command line data", "error", err)
+						}
+					} else {
+						if err := conn.Send(enc); err != nil {
+							logger.Error("Failed to send command line message", "error", err, "msg", c.Msg.Header.MessageType.String())
+						}
+					}
 				}
 			}
 		}
@@ -168,10 +165,8 @@ func (lb *LBState[T, U]) Send(msg *LogMsg) error {
 	if lb.Conn == nil {
 		return errors.New("connection is nil")
 	}
-	select {
-	case lb.Messages <- msg:
-	default:
-		return errors.New("message channel is full")
+	lb.CmdlineMsg <- cmdline.OutputCommand{
+		Msg: protocol.LogMessage(msg.Level, msg.Message),
 	}
 	return nil
 }
@@ -180,11 +175,7 @@ func (lb *LBState[T, U]) SendCommandline(msg cmdline.OutputCommand) error {
 	if lb.Conn == nil {
 		return errors.New("connection is nil")
 	}
-	select {
-	case lb.CmdlineMsg <- msg:
-	default:
-		return errors.New("command line message channel is full")
-	}
+	lb.CmdlineMsg <- msg
 	return nil
 }
 

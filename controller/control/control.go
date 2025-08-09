@@ -60,9 +60,10 @@ func (c *controller) Status() *ControllerStatus {
 
 func NewController(logger *slog.Logger) Controller {
 	c := &controller{
-		logger:   logger,
-		l4lblist: &l4list{},
-		l7lbList: &l7list{},
+		logger:         logger,
+		l4lblist:       &l4list{},
+		l7lbList:       &l7list{},
+		commandManager: newCommandLineManager(),
 	}
 	return c
 }
@@ -140,7 +141,7 @@ type controller struct {
 	sharedKey sharedKey
 	msgSeqNum uint64
 
-	commandManager commandLineManager
+	commandManager *commandLineManager
 }
 
 // multi producer, single consumer message channel
@@ -205,9 +206,9 @@ func (c *messageChannel) SendMessage(msg message) error {
 
 func (c *messageChannel) SendMessageBlocking(msg message) error {
 	c.cancelLock.RLock()
-	defer c.cancelLock.RUnlock()
 	select {
 	case <-c.ctx.Done():
+		c.cancelLock.RUnlock()
 		msg.Close(c.logger) // Clean up the message if the context is done
 		return c.ctx.Err()
 	default:
@@ -438,7 +439,7 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 }
 
 func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], handleKeepAlive func(msg *protocol.ControlMessage) (time.Duration, error), clean func()) {
-	lbConn.logger.Info("LB Connected", "data", lbConn.data, "type", lbType)
+	lbConn.logger.Info("LB Connected", "type", lbType)
 	defer lbConn.Close()
 	defer clean()
 	go func() {
@@ -485,7 +486,7 @@ func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], handle
 			lbConn.logger.Error("Failed to read message from LB", "error", err)
 			return
 		}
-		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType, "len", len)
+		lbConn.logger.Debug("Received message from LB", "message_type", msg.Header.MessageType, "len", len)
 		if msg := msg.Message(); msg != nil {
 			msgStr := string(msg.Msg)
 			switch msg.Level {
@@ -505,15 +506,13 @@ func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], handle
 			continue
 		}
 		if msg := msg.CmdlineOut(); msg != nil {
-			r, err := lbConn.conn.ReceiveReader(int(msg.Len))
-			if err != nil {
-				lbConn.logger.Error("Failed to receive command line output from LB", "error", err)
+			if msg.ChunkInfo.IsChunkd() {
+				lbConn.logger.Error("Received chunked command line output from LB, but chunked output is not supported in this version")
 				return
 			}
-			// TODO: use streaming?
-			data := make([]byte, msg.Len)
-			if _, err := io.ReadFull(r, data); err != nil {
-				lbConn.logger.Error("Failed to read command line output from LB", "error", err)
+			data, err := lbConn.conn.ReceiveSize(int(msg.ChunkInfo.LenOrId()))
+			if err != nil {
+				lbConn.logger.Error("Failed to receive command line output from LB", "error", err)
 				return
 			}
 			err = c.commandManager.HandleOutput(lbConn.logger, msg.CmdlineId, msg.OutputType, data)

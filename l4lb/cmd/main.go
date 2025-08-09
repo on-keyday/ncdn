@@ -287,7 +287,9 @@ func main() {
 			if err := retryConn.SendCommandline(cmd); err != nil {
 				slog.Error("Failed to send command line message", slog.String("error", err.Error()))
 			}
-		case <-done:
+			continue
+		case d := <-done:
+			slog.Info("Received shutdown signal", slog.String("signal", d.String()))
 		}
 		break
 	}

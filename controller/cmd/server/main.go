@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -8,10 +9,12 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/yzp0n/ncdn/controller/control"
 	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
+	"golang.org/x/net/websocket"
 )
 
 type subscriber struct {
@@ -103,6 +106,47 @@ func main() {
 			return
 		}
 	})
+	http.Handle("GET /console", websocket.Handler(func(c *websocket.Conn) {
+		query := c.Request().URL.Query()
+		lbType := query.Get("lbType")
+		if lbType == "" {
+			c.Write([]byte("Error: lbType query parameter is required\n"))
+			return
+		}
+		serverID := query.Get("serverID")
+		if serverID == "" {
+			c.Write([]byte("Error: serverID query parameter is required\n"))
+			return
+		}
+		parsedServerID, err := strconv.Atoi(serverID)
+		if err != nil {
+			c.Write([]byte("Error: serverID must be an integer\n"))
+			return
+		}
+		textScanner := bufio.NewScanner(c)
+		if !textScanner.Scan() {
+			c.Write([]byte("Error: Failed to read command\n"))
+			return
+		}
+		cmdline := textScanner.Text()
+		cmd, err := controller.Command(control.LBType(lbType), uint32(parsedServerID), cmdline, true)
+		if err != nil {
+			io.WriteString(c, "Error: "+err.Error()+"\n")
+			return
+		}
+		defer cmd.Kill() // Ensure the command is killed when done
+		go func() {
+			stdin := cmd.Stdin()
+			defer stdin.Close()
+			_, err = io.Copy(stdin, c)
+			if err != nil {
+				h.Error("Failed to copy input to command stdin", slog.String("error", err.Error()))
+			}
+		}()
+		for out := range cmd.Stdout() {
+			c.Write([]byte(out))
+		}
+	}))
 	if err := controller.Run(ctx, lis); err != nil {
 		log.Fatalf("Controller run failed: %v", err)
 	}
