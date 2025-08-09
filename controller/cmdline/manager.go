@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/creack/pty"
 	"github.com/yzp0n/ncdn/controller/protocol"
@@ -38,7 +39,9 @@ func (s *commandSender) Write(d []byte) (int, error) {
 	if len(d) == 0 {
 		return 0, nil // No data to write
 	}
-	chunk := d[:]
+	cloned := make([]byte, len(d))
+	copy(cloned, d)
+	chunk := cloned[:]
 	for len(chunk) > 65535 {
 		oneChunk := chunk[:65535]
 		msg := protocol.CommandLineOutput(s.id, s.outType, protocol.MakeChunkInfo(false, uint32(len(oneChunk))))
@@ -58,7 +61,7 @@ func (s *commandSender) Write(d []byte) (int, error) {
 	return len(d), nil
 }
 
-func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType, output chan OutputCommand) error {
+func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType, arg byte, output chan OutputCommand) error {
 	s.m.Lock()
 	defer s.m.Unlock()
 	switch cmd {
@@ -71,14 +74,14 @@ func (s *stdIO) Control(ctx context.Context, cmd protocol.CmdInstructionType, ou
 		}
 	case protocol.CmdInstructionType_Kill:
 		if s.Cmd != nil && s.Cmd.Process != nil {
-			if err := s.Cmd.Process.Kill(); err != nil {
-				return err
-			}
-			if s.stdinPipe != nil {
-				if err := s.stdinPipe.Close(); err != nil {
+			if arg == 0 {
+				if err := s.Cmd.Process.Kill(); err != nil {
 					return err
 				}
-				s.stdinPipe = nil // Close the stdin pipe
+			} else {
+				if err := s.Cmd.Process.Signal(syscall.Signal(arg - 1)); err != nil {
+					return fmt.Errorf("failed to send signal %d to command %d: %w", arg, s.id, err)
+				}
 			}
 			output <- OutputCommand{
 				Msg: protocol.LogMessage(protocol.LogLevel_Info,
@@ -195,7 +198,7 @@ func (s *stdIO) ResizeWindow(x, y int) error {
 
 type Manager interface {
 	Input(ctx context.Context, id uint32, input []byte) error
-	Control(ctx context.Context, id uint32, cmd protocol.CmdInstructionType) error
+	Control(ctx context.Context, id uint32, cmd protocol.CmdInstructionType, arg byte) error
 	Output() <-chan OutputCommand
 	ResizeWindow(id uint32, x, y int) error
 }
@@ -241,13 +244,13 @@ func (m *manager) ResizeWindow(id uint32, x, y int) error {
 	return nil
 }
 
-func (m *manager) Control(ctx context.Context, id uint32, cmd protocol.CmdInstructionType) error {
+func (m *manager) Control(ctx context.Context, id uint32, cmd protocol.CmdInstructionType, arg byte) error {
 	m.m.Lock()
 	if cmd == protocol.CmdInstructionType_KillAll {
 		var errs []error
 		// Kill all commands
 		for _, stdio := range m.ioMap {
-			if err := stdio.Control(ctx, protocol.CmdInstructionType_Kill, m.output); err != nil {
+			if err := stdio.Control(ctx, protocol.CmdInstructionType_Kill, arg, m.output); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -264,15 +267,10 @@ func (m *manager) Control(ctx context.Context, id uint32, cmd protocol.CmdInstru
 		}
 	}
 	m.m.Unlock()
-	return stdio.Control(ctx, cmd, m.output)
+	return stdio.Control(ctx, cmd, arg, m.output)
 }
 
 func (m *manager) Output() <-chan OutputCommand {
-	m.m.Lock()
-	defer m.m.Unlock()
-	if m.output == nil {
-		m.output = make(chan OutputCommand, 100) // Buffered channel to avoid blocking
-	}
 	return m.output
 }
 
@@ -281,7 +279,7 @@ func DispatchMessage(m Manager, msg *protocol.ControlMessage) error {
 		return m.Input(context.Background(), msg.CmdlineId, msg.Cmdline)
 	}
 	if msg := msg.CmdlineInstr(); msg != nil {
-		return m.Control(context.Background(), msg.CmdlineId, msg.Instr)
+		return m.Control(context.Background(), msg.CmdlineId, msg.Instr, msg.Arg)
 	}
 	if msg := msg.CmdlineResize(); msg != nil {
 		return m.ResizeWindow(msg.CmdlineId, int(msg.Col), int(msg.Row))

@@ -172,6 +172,7 @@ type CommandLine interface {
 	Stdout() <-chan []byte
 	ResizeWindow(x, y int) error
 	Kill() error
+	Signal(signal int) error // argument is signal number
 }
 
 type lbSender interface {
@@ -222,7 +223,7 @@ func (s *stdinWriter) Write(p []byte) (n int, err error) {
 func (c *stdinWriter) Close() error {
 	if err := c.s.SendMessageBlocking(message{
 		seqNum: c.s.GetSeqNum(),
-		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_CloseStdin),
+		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_CloseStdin, 0),
 	}); err != nil {
 		return err
 	}
@@ -237,7 +238,7 @@ func (c *commandLine) Stderr() <-chan []byte {
 }
 
 func (c *commandLine) Stdin() io.WriteCloser {
-	return &stdinWriter{s: c.lb}
+	return &stdinWriter{s: c.lb, id: c.id}
 }
 
 func (c *commandLine) ResizeWindow(col, row int) error {
@@ -256,10 +257,30 @@ func (c *commandLine) ResizeWindow(col, row int) error {
 	return nil
 }
 
-func (c *commandLine) Kill() error {
+func (c *commandLine) Signal(signal int) error {
+	if signal < 0 || signal > 127 {
+		return fmt.Errorf("invalid signal number: %d", signal)
+	}
 	if err := c.lb.SendMessageBlocking(message{
 		seqNum: c.lb.GetSeqNum(),
-		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_Kill),
+		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_Kill, byte(signal+1)), // signal + 1 to match protocol
+	}); err != nil {
+		return fmt.Errorf("failed to send signal command: %w", err)
+	}
+	return nil
+}
+
+func (c *commandLine) Kill() error {
+	// before killing, close stdin to ensure no more input is sent
+	if err := c.lb.SendMessageBlocking(message{
+		seqNum: c.lb.GetSeqNum(),
+		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_CloseStdin, 0),
+	}); err != nil {
+		return fmt.Errorf("failed to send kill command: %w", err)
+	}
+	if err := c.lb.SendMessageBlocking(message{
+		seqNum: c.lb.GetSeqNum(),
+		data:   protocol.CommandLineInstruction(c.id, protocol.CmdInstructionType_Kill, 0),
 	}); err != nil {
 		return fmt.Errorf("failed to send kill command: %w", err)
 	}
@@ -333,7 +354,7 @@ func (c *commandLineManager) command(ctl *controller, serverID uint32, lb lbSend
 	if enablePty {
 		if err := lb.SendMessageBlocking(message{
 			seqNum: lb.GetSeqNum(),
-			data:   protocol.CommandLineInstruction(cmd.id, protocol.CmdInstructionType_UsePty),
+			data:   protocol.CommandLineInstruction(cmd.id, protocol.CmdInstructionType_UsePty, 0),
 		}); err != nil {
 			return nil, fmt.Errorf("failed to send use pty command: %w", err)
 		}
@@ -380,4 +401,44 @@ func (c *controller) Command(typ LBType, serverID uint32, cmdline string, enable
 		return nil, fmt.Errorf("unknown Load Balancer type: %v", typ)
 	}
 	return c.commandManager.command(c, serverID, lb, cmdline, enablePty)
+}
+
+func (c *controller) KillAll(typ LBType, serverID uint32) error {
+	var lb lbSender
+	switch typ {
+	case LBTypeL7:
+		var l7lb *L7LB
+		c.withLock(func() {
+			for _, l7lbConn := range c.l7lbList.list {
+				if l7lbConn.data.data.Data.Data.ServerID == serverID {
+					l7lb = l7lbConn
+					break
+				}
+			}
+		})
+		if l7lb == nil {
+			return fmt.Errorf("L7 Load Balancer with server ID %d not found", serverID)
+		}
+		lb = l7lb
+	case LBTypeL4:
+		var l4lb *L4LB
+		c.withLock(func() {
+			for _, l4lbConn := range c.l4lblist.list {
+				if l4lbConn.data.data.Data.Data.ServerID == serverID {
+					l4lb = l4lbConn
+					break
+				}
+			}
+		})
+		if l4lb == nil {
+			return fmt.Errorf("L4 Load Balancer with server ID %d not found", serverID)
+		}
+		lb = l4lb
+	default:
+		return fmt.Errorf("unknown Load Balancer type: %v", typ)
+	}
+	return lb.SendMessageBlocking(message{
+		seqNum: lb.GetSeqNum(),
+		data:   protocol.CommandLineInstruction(0, protocol.CmdInstructionType_KillAll, 0),
+	})
 }

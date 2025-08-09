@@ -602,17 +602,18 @@ func TransferFile(path string, permission uint16, chunkInfo ChunkInfo) *ControlM
 	return controlMsg
 }
 
-func CommandLineInstruction(cmdlineID uint32, instruction CmdInstructionType) *ControlMessage {
+func CommandLineInstruction(cmdlineID uint32, instruction CmdInstructionType, arg byte) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         1 + 4, // 4 bytes for cmdlineID + 1 byte for instruction
+			Len:         1 + 4 + 1, // 4 bytes for cmdlineID + 1 byte for instruction + 1 byte for arg
 			MessageType: ControlMessageType_CmdlineInstr,
 		},
 	}
 	controlMsg.SetCmdlineInstr(CmdlineInstruction{
 		CmdlineId: cmdlineID,
 		Instr:     instruction,
+		Arg:       arg,
 	})
 	return controlMsg
 }

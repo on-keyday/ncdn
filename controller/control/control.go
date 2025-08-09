@@ -34,6 +34,7 @@ type Controller interface {
 	ShareKey([]byte)
 	Run(context.Context, transport.Listener) error
 	Status() *ControllerStatus
+	KillAll(typ LBType, serverID uint32) error
 	Command(typ LBType, serverID uint32, cmdline string, enablePty bool) (CommandLine, error)
 }
 
@@ -315,7 +316,7 @@ func sendKeyShare[T any](lbConn *LBConn[T], key []byte, seqNum uint64) {
 func sendCommandLineReset[T any](lbConn *LBConn[T]) {
 	if err := lbConn.SendMessage(message{
 		seqNum: lbConn.GetSeqNum(),
-		data:   protocol.CommandLineInstruction(0, protocol.CmdInstructionType_KillAll),
+		data:   protocol.CommandLineInstruction(0, protocol.CmdInstructionType_KillAll, 0),
 	}); err != nil {
 		lbConn.logger.Error("Failed to send CommandLineKill message", "error", err)
 	}
@@ -486,7 +487,7 @@ func handleLBConn[T any](c *controller, lbType string, lbConn *LBConn[T], handle
 			lbConn.logger.Error("Failed to read message from LB", "error", err)
 			return
 		}
-		lbConn.logger.Debug("Received message from LB", "message_type", msg.Header.MessageType, "len", len)
+		lbConn.logger.Info("Received message from LB", "message_type", msg.Header.MessageType, "len", len)
 		if msg := msg.Message(); msg != nil {
 			msgStr := string(msg.Msg)
 			switch msg.Level {

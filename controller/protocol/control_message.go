@@ -270,6 +270,7 @@ type Message struct {
 type CmdlineInstruction struct {
 	CmdlineId uint32
 	Instr     CmdInstructionType
+	Arg       uint8
 }
 type CmdlineIn struct {
 	CmdlineId uint32
@@ -1358,6 +1359,7 @@ func (t *Message) DecodeExact(d []byte) error {
 func (t *CmdlineInstruction) Visit(v VisitorJJRQX) {
 	v.Visit(v, "CmdlineId", &t.CmdlineId)
 	v.Visit(v, "Instr", &t.Instr)
+	v.Visit(v, "Arg", &t.Arg)
 }
 func (t *CmdlineInstruction) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
@@ -1371,10 +1373,13 @@ func (t *CmdlineInstruction) Write(w io.Writer) (err error) {
 	if n, err := w.Write([]byte{byte(t.Instr)}); err != nil || n != 1 {
 		return fmt.Errorf("encode t.Instr: %w", err)
 	}
+	if n, err := w.Write([]byte{byte(t.Arg)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.Arg: %w", err)
+	}
 	return nil
 }
 func (t *CmdlineInstruction) Encode() ([]byte, error) {
-	w := bytes.NewBuffer(make([]byte, 0, 5))
+	w := bytes.NewBuffer(make([]byte, 0, 6))
 	if err := t.Write(w); err != nil {
 		return nil, err
 	}
@@ -1400,6 +1405,12 @@ func (t *CmdlineInstruction) Read(r io.Reader) (err error) {
 		return fmt.Errorf("read Instr: expect 1 byte but read %d bytes: %w", n_Instr, err)
 	}
 	t.Instr = CmdInstructionType(tmpInstr[0])
+	tmpArg := [1]byte{}
+	n_Arg, err := io.ReadFull(r, tmpArg[:])
+	if err != nil {
+		return fmt.Errorf("read Arg: expect 1 byte but read %d bytes: %w", n_Arg, err)
+	}
+	t.Arg = uint8(tmpArg[0])
 	return nil
 }
 

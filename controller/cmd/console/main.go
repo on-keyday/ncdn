@@ -29,6 +29,7 @@ func main() {
 		panic(err)
 	}
 	defer ws.Close()
+	fmt.Print("command> ")
 	go func() {
 		io.Copy(ws, os.Stdin)
 	}()

@@ -168,13 +168,14 @@ enum CmdInstructionType:
     :u8
     use_pty # enable pty. should send before first CmdlineIn. stderr will be merged into stdout
     close_stdin
-    kill
+    kill # takes arg that signal number + 1. if 0, default behaviour
     kill_all # ignore cmdline_id and kill all managed process (for resetting)
 
 
 format CmdlineInstruction:
     cmdline_id :u32
     instr :CmdInstructionType
+    arg :u8 # instruction argument
 
 format CmdlineIn: # initial CmdlineIn message will be command line, later ones will be stdin
     cmdline_id :u32

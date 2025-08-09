@@ -137,7 +137,7 @@ func main() {
 		defer cmd.Kill() // Ensure the command is killed when done
 		go func() {
 			stdin := cmd.Stdin()
-			defer stdin.Close()
+			defer cmd.Kill() // Ensure the command is killed when done
 			_, err = io.Copy(stdin, c)
 			if err != nil {
 				h.Error("Failed to copy input to command stdin", slog.String("error", err.Error()))
