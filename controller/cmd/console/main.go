@@ -29,7 +29,7 @@ func main() {
 		panic(err)
 	}
 	defer ws.Close()
-	ws.Write([]byte("bash\n"))
+	// ws.Write([]byte("bash\n"))
 	go func() {
 		io.Copy(ws, os.Stdin)
 	}()

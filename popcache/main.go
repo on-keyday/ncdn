@@ -22,6 +22,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/spaolacci/murmur3"
 	"github.com/tetratelabs/wazero"
 	"github.com/yzp0n/ncdn/controller/chunk"
 	"github.com/yzp0n/ncdn/controller/lbconn"
@@ -45,7 +46,7 @@ var originURLStr = flag.String("originURL", "http://localhost:8888", "Origin ser
 var secureListenAddr = flag.String("listenAddr", ":8889", "Address to listen on")
 var httpListenAddr = flag.String("insecureListenAddr", ":8890", "HTTP server address to listen on")
 var nodeId = flag.String("nodeId", "unknown_node", "Name of the node")
-var lbNodeId = flag.Int("lbNodeId", 0, "Node ID for load balancer (0 for default)")
+var lbNodeId = flag.Uint("lbNodeId", 0, "LB node ID (if 0, derived from nodeId)")
 var certFile = flag.String("certFile", "ca/cert.pem", "Path to the TLS certificate file")
 var keyFile = flag.String("keyFile", "ca/key.pem", "Path to the TLS key file")
 var sharedSecret = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation(TODO: move into secure place)")
@@ -165,10 +166,16 @@ func main() {
 	c := cache.NewCache()
 
 	appStat := &appStat{}
+	var serverID uint32
+	if *lbNodeId == 0 {
+		serverID = murmur3.Sum32([]byte(*nodeId)) // Use MurmurHash3 for consistent hashing
+	} else {
+		serverID = uint32(*lbNodeId)
+	}
 
 	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectL7LB,
 		&protocol.L7LBData{
-			ServerID:   uint32(*lbNodeId),
+			ServerID:   serverID,
 			Address:    [4]byte(addrs[0].(*net.IPNet).IP.To4()),
 			MacAddress: [6]byte(ifaces[0].HardwareAddr),
 		}, 20*time.Second, func() (transport.Connection, error) {
@@ -290,7 +297,7 @@ func main() {
 				}
 			}()
 			handleRequest = func(req *http.Request) {
-				err := ec.ProcessRequest(r.Context(), reqID, uint32(*lbNodeId), req)
+				err := ec.ProcessRequest(r.Context(), reqID, serverID, req)
 				if err != nil {
 					log.Printf("Failed to process request: %v", err)
 				}
@@ -465,10 +472,6 @@ func main() {
 
 	pkt = &ObservedPacketConn{OOBCapablePacketConn: oobcap, bt: ipv4.NewPacketConn(pkt)}
 
-	if *lbNodeId < 0 || *lbNodeId > 15 {
-		log.Fatalf("lbNodeId must be between 0 and 15, got %d", *lbNodeId)
-	}
-
 	derivedKey, err := util.DeriveKey([]byte(*sharedSecret), "quic-lb")
 	if err != nil {
 		log.Fatalf("Failed to derive key: %v", err)
@@ -477,7 +480,7 @@ func main() {
 	tr := &quic.Transport{
 		Conn:                  pkt,
 		ConnectionIDLength:    20,
-		ConnectionIDGenerator: lbconnid.NewQUICLBConnIDGenerator(uint32(*lbNodeId), derivedKey, 17),
+		ConnectionIDGenerator: lbconnid.NewQUICLBConnIDGenerator(serverID, derivedKey, 17),
 	}
 
 	tlsConf := &tls.Config{

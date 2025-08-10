@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+	"github.com/flynn/go-shlex"
 	"github.com/yzp0n/ncdn/controller/protocol"
 )
 
@@ -107,7 +108,19 @@ func (s *stdIO) Input(mgr *manager, ctx context.Context, input []byte, output ch
 	defer s.m.Unlock()
 	if s.Cmd == nil {
 		// this is the first input, so we need to create the command
-		args := strings.Split(string(input), " ")
+		args, err := shlex.Split(string(input))
+		if err != nil {
+			output <- OutputCommand{
+				Msg: protocol.CommandLineExit(s.id, 1), // Exit code 1 for error
+			}
+			return fmt.Errorf("failed to parse command: %w", err)
+		}
+		if len(args) == 0 {
+			output <- OutputCommand{
+				Msg: protocol.CommandLineExit(s.id, 1), // Exit code 1 for error
+			}
+			return errors.New("no command provided")
+		}
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		isPty := s.usePty
 		var ptyFile *os.File
@@ -135,6 +148,9 @@ func (s *stdIO) Input(mgr *manager, ctx context.Context, input []byte, output ch
 				outputChan: output,
 			}
 			if err := cmd.Start(); err != nil {
+				output <- OutputCommand{
+					Msg: protocol.CommandLineExit(s.id, 1), // Exit code 1 for error
+				}
 				return err
 			}
 		}

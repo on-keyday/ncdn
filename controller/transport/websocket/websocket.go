@@ -128,7 +128,10 @@ func NewWebSocketListener(addr string, tlsConf *tls.Config) (*WebSocketListener,
 		},
 		Handler: func(ws *websocket.Conn) {
 			ctx, cancel := context.WithCancel(ws.Request().Context())
-			hasMTLS := len(ws.Request().TLS.PeerCertificates) > 0
+			hasMTLS := false
+			if ws.Request().TLS != nil && len(ws.Request().TLS.PeerCertificates) > 0 {
+				hasMTLS = true
+			}
 			listener.connChan <- NewWebSocketConn(ws, ws.Request().RemoteAddr, cancel, hasMTLS)
 			<-ctx.Done() // Wait for the context to be done before closing the connection
 		},
@@ -138,8 +141,15 @@ func NewWebSocketListener(addr string, tlsConf *tls.Config) (*WebSocketListener,
 	http.Handle("/", handler)
 
 	go func() {
-		if err := listener.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("HTTP server failed: %v", err)
+		if tlsConf != nil {
+			listener.httpServer.TLSConfig = tlsConf
+			if err := listener.httpServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("HTTPS server failed: %v", err)
+			}
+		} else {
+			if err := listener.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("HTTP server failed: %v", err)
+			}
 		}
 	}()
 

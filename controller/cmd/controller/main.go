@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/flynn/go-shlex"
 	"github.com/yzp0n/ncdn/controller/control"
 )
 
@@ -27,18 +30,53 @@ var controlPlane = flag.String("controlPlane", "http://localhost:8080", "Control
 
 func main() {
 	flag.Parse()
-	url, err := url.Parse(*controlPlane)
+	cplaneURL, err := url.Parse(*controlPlane)
 	if err != nil {
 		log.Fatalf("Invalid control plane URL: %v", err)
 	}
-	if url.Scheme != "http" && url.Scheme != "https" {
-		log.Fatalf("Control plane URL must use http or https scheme, got: %s", url.Scheme)
+	if cplaneURL.Scheme != "http" && cplaneURL.Scheme != "https" {
+		log.Fatalf("Control plane URL must use http or https scheme, got: %s", cplaneURL.Scheme)
 	}
-	p := tea.NewProgram(initialModel())
+	fileSendChan := make(chan fileSendRequest)
+	p := tea.NewProgram(initialModel(fileSendChan))
 	go func() {
-		p.Send(writerUpdate("Connecting to control plane..."))
+		for req := range fileSendChan {
+			func(req fileSendRequest) {
+				file, err := os.Open(req.source)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to open file %s: %w", req.source, err)))
+					return
+				}
+				defer file.Close()
+				target := fmt.Sprintf("%s/file?lbType=%s&serverID=%s&path=%s&permission=%s",
+					*controlPlane, url.QueryEscape(req.lbType),
+					url.QueryEscape(req.serverID), url.QueryEscape(req.path),
+					url.QueryEscape(req.permission))
+				p.Send(logUpdate(fmt.Sprintf("Sending file %s to %s", req.source, target)))
+				resp, err := http.Post(target, "application/octet-stream", file)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to send file %s: %w", req.source, err)))
+					return
+				}
+				defer resp.Body.Close()
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to read response body: %w", err)))
+					return
+				}
+				if resp.StatusCode != http.StatusAccepted {
+					p.Send(errMsg(fmt.Errorf("failed to send file %s, server returned status: %s, %s", req.source, resp.Status, body)))
+					return
+				}
+				p.Send(logUpdate(fmt.Sprintf("Control plane accepted to send %s to %s/%s/%s with permission bit %s",
+					req.source, req.lbType, req.serverID, req.path, req.permission)))
+			}(req)
+		}
+	}()
+	go func() {
+		p.Send(logUpdate("Connecting to control plane..."))
 		for {
-			logStream, err := http.Get(url.String() + "/logs")
+			logStream, err := http.Get(cplaneURL.String() + "/logs")
 			if err != nil {
 				p.Send(errMsg(fmt.Errorf("failed to connect to control plane: %w", err)))
 				return
@@ -48,9 +86,9 @@ func main() {
 			for scanner.Scan() {
 				line := scanner.Text()
 				if strings.HasPrefix(line, "data: ") {
-					p.Send(writerUpdate(line[6:])) // Remove "data: " prefix
+					p.Send(logUpdate(line[6:])) // Remove "data: " prefix
 				} else {
-					p.Send(writerUpdate(line))
+					p.Send(logUpdate(line))
 				}
 			}
 			if err := scanner.Err(); err != nil {
@@ -67,7 +105,7 @@ func main() {
 			uptime: time.Since(startTime),
 		})
 		for {
-			resp, err := http.Get(url.String() + "/status")
+			resp, err := http.Get(cplaneURL.String() + "/status")
 			if err != nil {
 				p.Send(errMsg(fmt.Errorf("failed to connect to control plane: %w", err)))
 				return
@@ -99,22 +137,33 @@ type (
 	errMsg error
 )
 
+type fileSendRequest struct {
+	source     string
+	lbType     string
+	serverID   string
+	path       string
+	permission string
+}
+
 type model struct {
 	cmdline           textinput.Model
 	logOutput         viewport.Model
 	statView          table.Model
 	connectionEntries table.Model
+	commandOutput     viewport.Model
 	err               error
 	buffer            []string
+	fileSender        chan fileSendRequest
 }
 
-type writerUpdate string
+type logUpdate string
+type commandUpdate string
 type tableUpdate struct {
 	stat   *control.ControllerStatus
 	uptime time.Duration
 }
 
-func initialModel() model {
+func initialModel(fileSender chan fileSendRequest) model {
 	ti := textinput.New()
 	ti.Placeholder = "Command?"
 	ti.Focus()
@@ -135,13 +184,18 @@ func initialModel() model {
 		{Title: "Uptime", Width: 10},
 		{Title: "Load", Width: 10},
 	})
+	cmdVp := viewport.New(80, 5)
+	cmdVp.SetContent("Command output will appear here.")
 
 	return model{
 		cmdline:           ti,
 		logOutput:         vp,
 		statView:          tableModel,
 		connectionEntries: connEntries,
+		commandOutput:     cmdVp,
 		err:               nil,
+		buffer:            make([]string, 0, 100),
+		fileSender:        fileSender,
 	}
 }
 
@@ -150,9 +204,6 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	var cmd2 tea.Cmd
-	var cmd3 tea.Cmd
 	updateLog := func() {
 		var width = m.logOutput.Width
 		var buf strings.Builder
@@ -175,12 +226,65 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			cmd := m.cmdline.Value()
 			m.cmdline.Reset()
-			switch cmd {
-			case "quit", "exit":
-				return m, tea.Quit
+			parsedCmd, err := shlex.Split(cmd)
+			setContent := func(content string) {
+				m.commandOutput.SetContent(fmt.Sprintf("command> %s\n%s", cmd, content))
+				m.commandOutput.GotoTop()
+			}
+			if err != nil {
+				setContent(fmt.Sprintf("Error parsing command: %v", err))
+			} else if len(parsedCmd) == 0 {
+			} else {
+				switch parsedCmd[0] {
+				case "quit", "exit":
+					return m, tea.Quit
+				case "pwd":
+					wd, err := os.Getwd()
+					if err != nil {
+						setContent(fmt.Sprintf("Error getting current directory: %v", err))
+					} else {
+						setContent(wd)
+					}
+				case "cd":
+					if len(parsedCmd) < 2 {
+						setContent("Usage: cd <directory>")
+					} else {
+						if err := os.Chdir(parsedCmd[1]); err != nil {
+							setContent(fmt.Sprintf("Error changing directory: %v", err))
+						} else {
+							setContent(fmt.Sprintf("Changed directory to %s", parsedCmd[1]))
+						}
+					}
+				case "why":
+					setContent("Because you were a spoiled kid...")
+				case "sendfile":
+					if len(parsedCmd) < 5 {
+						setContent("Usage: sendfile <source> <lbType> <serverID> <path> <permission>")
+
+					} else {
+						source := parsedCmd[1]
+						lbType := parsedCmd[2]
+						serverID := parsedCmd[3]
+						path := parsedCmd[4]
+						permission := parsedCmd[5]
+						setContent(fmt.Sprintf("sending file %s to %s/%s/%s with permission %s requested", source, lbType, serverID, path, permission))
+						fileSender := m.fileSender
+						go func() {
+							fileSender <- fileSendRequest{
+								source:     source,
+								lbType:     lbType,
+								serverID:   serverID,
+								path:       path,
+								permission: permission,
+							}
+						}()
+					}
+				default:
+					setContent(fmt.Sprintf("Unknown command: %s", parsedCmd[0]))
+				}
 			}
 		}
-	case writerUpdate:
+	case logUpdate:
 		if msg != "" {
 			m.buffer = append(m.buffer, string(msg)+"\n")
 			if len(m.buffer) > 100 {
@@ -225,13 +329,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connectionEntries.SetHeight(10)
 		m.connectionEntries.SetWidth(m.logOutput.Width)
 	case tea.WindowSizeMsg:
-		m.logOutput.Width = msg.Width / 2    // ウィンドウの幅をセット
-		m.logOutput.Height = msg.Height - 10 // 必要なら他のUI分を引く
+		m.logOutput.Width = msg.Width / 2   // ウィンドウの幅をセット
+		m.logOutput.Height = msg.Height - 9 // 必要なら他のUI分を引く
 		updateLog()
+		m.commandOutput.Width = msg.Width/2 - 10
+		m.commandOutput.Height = 5
 	}
 
-	m.cmdline, cmd = m.cmdline.Update(msg)
-	return m, tea.Batch(cmd, cmd2, cmd3)
+	var (
+		cmd1 tea.Cmd
+		cmd2 tea.Cmd
+		cmd3 tea.Cmd
+		cmd4 tea.Cmd
+		cmd5 tea.Cmd
+	)
+	m.cmdline, cmd1 = m.cmdline.Update(msg)
+	m.logOutput, cmd2 = m.logOutput.Update(msg)
+	m.statView, cmd3 = m.statView.Update(msg)
+	m.connectionEntries, cmd4 = m.connectionEntries.Update(msg)
+	m.commandOutput, cmd5 = m.commandOutput.Update(msg)
+	return m, tea.Batch(
+		cmd1,
+		cmd2,
+		cmd3,
+		cmd4,
+		cmd5,
+	)
 }
 
 func (m model) View() string {
@@ -239,7 +362,7 @@ func (m model) View() string {
 	return fmt.Sprintf(
 		"%s\n\nNCDN Controller\n\n%s\n\n%s",
 		lipgloss.JoinHorizontal(lipgloss.Top, style.Render(m.logOutput.View()),
-			lipgloss.JoinVertical(lipgloss.Left, m.statView.View(), m.connectionEntries.View())),
+			lipgloss.JoinVertical(lipgloss.Left, m.statView.View(), m.connectionEntries.View(), style.Render(m.commandOutput.View()))),
 		m.cmdline.View(),
 		"(esc to quit)",
 	) + "\n"
