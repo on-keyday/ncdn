@@ -300,9 +300,11 @@ func (r *RoutingRegistry) Register(id uint32, method, path string, mod wazero.Co
 func (r *RoutingRegistry) Unregister(id uint32) error {
 	r.registerRW.Lock()
 	defer r.registerRW.Unlock()
-	if _, ok := r.compiled[id]; !ok {
+	c, ok := r.compiled[id]
+	if !ok {
 		return fmt.Errorf("no compiled instance found for ID %d", id)
 	}
+	defer c.Close(context.Background())
 	delete(r.compiled, id)
 	for key, value := range r.methodPathToID {
 		if value == id {
@@ -523,6 +525,7 @@ func (r *edgeComputing) Register(ctx context.Context, id uint32, method, path st
 		if f, ok := exported[hook]; ok {
 			params := f.ParamTypes()
 			if len(params) != 0 {
+				mod.Close(ctx)
 				return fmt.Errorf("function %s must not have parameters", hook)
 			}
 			// return values are ignored, so we don't check them.
@@ -530,9 +533,11 @@ func (r *edgeComputing) Register(ctx context.Context, id uint32, method, path st
 		}
 	}
 	if !hasLeastOne {
+		mod.Close(ctx)
 		return fmt.Errorf("module must export at least one of the following functions: %v", hooks)
 	}
 	if err := r.routing.Register(id, method, path, mod); err != nil {
+		mod.Close(ctx)
 		return fmt.Errorf("failed to register edge function %s %s with ID %d: %w", method, path, id, err)
 	}
 	return nil
