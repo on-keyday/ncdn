@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/yzp0n/ncdn/controller/api"
 	"github.com/yzp0n/ncdn/controller/control"
 	wstransport "github.com/yzp0n/ncdn/controller/transport/websocket"
 	"golang.org/x/net/websocket"
@@ -30,9 +31,16 @@ type lockedWriter struct {
 	l           sync.Mutex
 	lines       []string
 	subscribers []*subscriber
+	teeWriter   io.Writer
 }
 
 func (lw *lockedWriter) Write(p []byte) (n int, err error) {
+	if lw.teeWriter != nil {
+		n, err = lw.teeWriter.Write(p)
+		if err != nil {
+			return n, err
+		}
+	}
 	lw.l.Lock()
 	defer lw.l.Unlock()
 	line := string(p)
@@ -85,6 +93,7 @@ var serverKey = flag.String("serverKey", "", "Path to the server TLS key file")
 var serverCert = flag.String("serverCert", "", "Path to the server TLS certificate file")
 var enableTLS = flag.Bool("enableTLS", false, "Enable TLS for the controller")
 var clientCertRoot = flag.String("clientCertRoot", "", "Path to the client certificate root CA file")
+var logFile = flag.String("logFile", "", "Path to the log file")
 
 func main() {
 	flag.Parse()
@@ -116,6 +125,14 @@ func main() {
 		log.Fatalf("Failed to create WebSocket listener: %v", err)
 	}
 	lw := &lockedWriter{}
+	if *logFile != "" {
+		file, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatalf("Failed to open log file: %v", err)
+		}
+		lw.teeWriter = file
+		defer file.Close()
+	}
 	h := slog.New(slog.NewTextHandler(lw, nil))
 	controller := control.NewController(h)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -178,99 +195,62 @@ func main() {
 			c.Write([]byte(out))
 		}
 	}))
-	http.HandleFunc("POST /file", func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query()
-		lbType := query.Get("lbType")
-		if lbType == "" {
-			http.Error(w, "lbType query parameter is required", http.StatusBadRequest)
-			return
-		}
-		serverID := query.Get("serverID")
-		if serverID == "" {
-			http.Error(w, "serverID query parameter is required", http.StatusBadRequest)
-			return
-		}
-		path := query.Get("path")
-		if path == "" {
-			http.Error(w, "path query parameter is required", http.StatusBadRequest)
-			return
-		}
-		permission := query.Get("permission")
-		if permission == "" {
-			http.Error(w, "permission query parameter is required", http.StatusBadRequest)
-			return
-		}
-		parsedPermission, err := strconv.ParseUint(permission, 8, 16)
+
+	uploaderManager := api.NewUploaderManager()
+	http.HandleFunc("POST /upload", func(w http.ResponseWriter, r *http.Request) {
+		payload, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "permission must be an octal number", http.StatusBadRequest)
+			http.Error(w, "Failed to read payload: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		parsedServerID, err := strconv.Atoi(serverID)
-		if err != nil {
-			http.Error(w, "serverID must be an integer", http.StatusBadRequest)
+		id := uploaderManager.AddPayload(payload)
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]uint64{"id": id}); err != nil {
+			http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		binaryData, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Failed to read file data: "+err.Error(), http.StatusInternalServerError)
+	})
+	http.HandleFunc("POST /file/transfer", func(w http.ResponseWriter, r *http.Request) {
+		info := &api.FileUploadBody{}
+		if err := json.NewDecoder(r.Body).Decode(info); err != nil {
+			http.Error(w, "Failed to decode request body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		r.Body.Close() // Close the body to prevent resource leaks
-		err = controller.FileTransfer(control.LBType(lbType), uint32(parsedServerID), path, uint16(parsedPermission), control.NewSectionReader(io.NewSectionReader(bytes.NewReader(binaryData), 0, int64(len(binaryData)))))
-		if err != nil {
+		file, exists := uploaderManager.GetPayload(info.FileID)
+		if !exists {
+			http.Error(w, "File not found or expired", http.StatusNotFound)
+			return
+		}
+		if err := controller.FileTransfer(&info.Dest, info.Path, info.Mode, control.NewReaderAtCloser(io.NewSectionReader(bytes.NewReader(file), 0, int64(len(file))))); err != nil {
 			http.Error(w, "Failed to transfer file: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusAccepted)
 	})
-	http.HandleFunc("POST /wasm", func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query()
-		id := query.Get("id")
-		if id == "" {
-			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+	http.HandleFunc("POST /wasm/install", func(w http.ResponseWriter, r *http.Request) {
+		info := &api.WasmInstallBody{}
+		if err := json.NewDecoder(r.Body).Decode(info); err != nil {
+			http.Error(w, "Failed to decode request body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		method := query.Get("method")
-		if method == "" {
-			http.Error(w, "method query parameter is required", http.StatusBadRequest)
+		file, exists := uploaderManager.GetPayload(info.FileID)
+		if !exists {
+			http.Error(w, "File not found or expired", http.StatusNotFound)
 			return
 		}
-		path := query.Get("path")
-		if path == "" {
-			http.Error(w, "path query parameter is required", http.StatusBadRequest)
-			return
-		}
-		parsedID, err := strconv.Atoi(id)
-		if err != nil {
-			http.Error(w, "id must be an integer", http.StatusBadRequest)
-			return
-		}
-		binaryData, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Failed to read request body: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		r.Body.Close()
-		err = controller.WasmInstall(uint32(parsedID), method, path, control.NewSectionReader(io.NewSectionReader(bytes.NewReader(binaryData), 0, int64(len(binaryData)))))
-		if err != nil {
+		if err := controller.WasmInstall(&info.Dest, info.WasmID, info.Method, info.Path, control.NewReaderAtCloser(io.NewSectionReader(bytes.NewReader(file), 0, int64(len(file))))); err != nil {
 			http.Error(w, "Failed to install WASM: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusAccepted)
 	})
-	http.HandleFunc("DELETE /wasm", func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query()
-		id := query.Get("id")
-		if id == "" {
-			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+	http.HandleFunc("POST /wasm/uninstall", func(w http.ResponseWriter, r *http.Request) {
+		info := &api.WasmInstallBody{}
+		if err := json.NewDecoder(r.Body).Decode(info); err != nil {
+			http.Error(w, "Failed to decode request body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		parsedID, err := strconv.Atoi(id)
-		if err != nil {
-			http.Error(w, "id must be an integer", http.StatusBadRequest)
-			return
-		}
-		err = controller.WasmUninstall(uint32(parsedID))
+		err = controller.WasmUninstall(&info.Dest, info.WasmID)
 		if err != nil {
 			http.Error(w, "Failed to uninstall WASM: "+err.Error(), http.StatusInternalServerError)
 			return

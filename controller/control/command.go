@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/yzp0n/ncdn/controller/protocol"
@@ -39,7 +40,7 @@ func (c *controller) ShareKey(key []byte) {
 
 const chunkingThreshold = 65535 - 8 // 8 bytes for header
 
-func NewSectionReader(s *io.SectionReader) *SecttionReader {
+func NewReaderAtCloser(s *io.SectionReader) *SecttionReader {
 	return &SecttionReader{SectionReader: s}
 }
 
@@ -100,72 +101,118 @@ func sendWithChunk(lb lbSender, makeMsg func(protocol.ChunkInfo) *protocol.Contr
 	return nil
 }
 
-func (c *controller) FileTransfer(typ LBType, serverID uint32, path string, permission uint16, file ReaderAtCloser) error {
-	if len(path) > 65535-8 { // 8 bytes for permission and file size
-		return errors.New("file path exceeds maximum length of 65535 bytes")
-	}
-	var lb lbSender
-	switch typ {
-	case LBTypeL7:
-		c.withLock(func() {
-			for _, l7lb := range c.l7lbList.list {
-				if l7lb.data.data.Data.Data.ServerID == serverID {
-					lb = l7lb
-					break
+func (c *controller) lookupSender(dest *DestInfo) ([]lbSender, error) {
+	var lb []lbSender
+	for _, entry := range dest.DestEntries {
+		if entry.Broadcast && len(entry.ServerIDs) > 0 {
+			return nil, fmt.Errorf("broadcast cannot have server IDs")
+		}
+		if !entry.Broadcast && len(entry.ServerIDs) == 0 {
+			c.logger.Warn("No server IDs specified for non-broadcast entry, skipping", "entry", entry)
+			continue // No server IDs means no specific target, skip this entry
+		}
+		switch entry.LBType {
+		case LBTypeL4:
+			c.withLock(func() {
+				if entry.Broadcast {
+					for _, l4lbConn := range c.l4lblist.list {
+						lb = append(lb, l4lbConn)
+					}
+					return
 				}
-			}
-		})
-	case LBTypeL4:
-		c.withLock(func() {
-			for _, l4lb := range c.l4lblist.list {
-				if l4lb.data.data.Data.Data.ServerID == serverID {
-					lb = l4lb
-					break
+				for _, l4lbConn := range c.l4lblist.list {
+					if slices.Contains(entry.ServerIDs, l4lbConn.data.data.Data.Data.ServerID) {
+						lb = append(lb, l4lbConn)
+					}
 				}
-			}
-		})
+			})
+		case LBTypeL7:
+			c.withLock(func() {
+				if entry.Broadcast {
+					for _, l7lbConn := range c.l7lbList.list {
+						lb = append(lb, l7lbConn)
+					}
+					return
+				}
+				for _, l7lbConn := range c.l7lbList.list {
+					if slices.Contains(entry.ServerIDs, l7lbConn.data.data.Data.Data.ServerID) {
+						lb = append(lb, l7lbConn)
+					}
+				}
+			})
+		default:
+			return nil, fmt.Errorf("unknown Load Balancer type: %v", entry.LBType)
+		}
 	}
-	if lb == nil {
-		return fmt.Errorf("Load Balancer with server ID %d not found", serverID)
-	}
-	file.AddRef()
-	return sendWithChunk(lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
-		return protocol.TransferFile(path, permission, chunkInfo)
-	}, file)
+	return lb, nil
 }
 
-func (c *controller) WasmInstall(id uint32, method, path string, file ReaderAtCloser) error {
-	var l7lblist *l7list
-	c.withLock(func() {
-		l7lblist = c.l7lbList.Clone()
-	})
-	for _, l7lb := range l7lblist.list {
+func (c *controller) sendToLB(lb []lbSender, makeMsg func(protocol.ChunkInfo) *protocol.ControlMessage, file ReaderAtCloser) error {
+	if len(lb) == 0 {
+		return errors.New("no Load Balancer found for the specified destination")
+	}
+	if len(lb) == 1 {
 		file.AddRef() // Ensure the file remains open until the message is sent
-		go func(l7lb *L7LB) {
-			if err := sendWithChunk(l7lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
-				return protocol.WasmInstall(id, method, path, chunkInfo)
-			}, file); err != nil {
-				l7lb.logger.Error("Failed to send WasmInstall message", "error", err, "id", id, "method", method, "path", path)
+		return sendWithChunk(lb[0], makeMsg, file)
+	}
+	for _, l := range lb {
+		file.AddRef() // Ensure the file remains open until the message is sent
+		go func(l lbSender) {
+			if err := sendWithChunk(l, makeMsg, file); err != nil {
+				l.Logger().Error("Failed to send message", "error", err)
 			}
-		}(l7lb)
+		}(l)
 	}
 	return nil
 }
 
-func (c *controller) WasmUninstall(id uint32) error {
+func (c *controller) FileTransfer(dest *DestInfo, path string, permission uint16, file ReaderAtCloser) error {
+	if len(path) > 65535-8 { // 8 bytes for permission and file size
+		return errors.New("file path exceeds maximum length of 65535 bytes")
+	}
+	lb, err := c.lookupSender(dest)
+	if err != nil {
+		return fmt.Errorf("failed to lookup sender: %w", err)
+	}
+	return c.sendToLB(lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
+		return protocol.TransferFile(path, permission, chunkInfo)
+	}, file)
+}
+
+func (c *controller) WasmInstall(dest *DestInfo, id uint32, method, path string, file ReaderAtCloser) error {
+	lb, err := c.lookupSender(dest)
+	if err != nil {
+		return fmt.Errorf("failed to lookup sender: %w", err)
+	}
+	return c.sendToLB(lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
+		return protocol.WasmInstall(id, method, path, chunkInfo)
+	}, file)
+}
+
+func (c *controller) WasmUninstall(dest *DestInfo, id uint32) error {
+	lb, err := c.lookupSender(dest)
+	if err != nil {
+		return fmt.Errorf("failed to lookup sender: %w", err)
+	}
+	if len(lb) == 0 {
+		return errors.New("no Load Balancer found for the specified destination")
+	}
 	msg := protocol.WasmUninstall(id)
-	var seqNum uint64
-	var l7lblist *l7list
-	c.withLock(func() {
-		seqNum = c.msgSeqNum
-		c.msgSeqNum++
-		l7lblist = c.l7lbList.Clone()
-	})
-	for _, l7lb := range l7lblist.list {
-		l7lb.SendMessage(message{
-			seqNum: seqNum,
+	if len(lb) == 1 {
+		return lb[0].SendMessageBlocking(message{
+			seqNum: lb[0].GetSeqNum(),
 			data:   msg,
 		})
+	}
+	for _, l := range lb {
+		go func(l lbSender) {
+			if err := l.SendMessageBlocking(message{
+				seqNum: l.GetSeqNum(),
+				data:   msg,
+			}); err != nil {
+				l.Logger().Error("Failed to send message", "error", err)
+			}
+		}(l)
 	}
 	return nil
 }
@@ -182,6 +229,7 @@ type CommandLine interface {
 type lbSender interface {
 	GetSeqNum() uint64
 	SendMessageBlocking(msg message) error
+	Logger() *slog.Logger
 }
 
 type commandLine struct {

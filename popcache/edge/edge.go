@@ -21,8 +21,8 @@ import (
 
 type EdgeComputer interface {
 	io.Closer
-	Register(ctx context.Context, method, path string, binary []byte) error
-	Unregister(method, path string) error
+	Register(ctx context.Context, id uint32, method, path string, binary []byte) error
+	Unregister(id uint32) error
 	StartRequest(ctx context.Context, p *http.Request) (uint64, error)
 	ProcessRequest(ctx context.Context, reqID uint64, popID uint32, p *http.Request) error
 	ProcessResponse(ctx context.Context, reqID uint64, p *http.Response) error
@@ -278,24 +278,79 @@ type HandleContext struct {
 	bufferSize    uint32
 }
 
+type RoutingRegistry struct {
+	registerRW     sync.RWMutex
+	compiled       map[uint32]wazero.CompiledModule
+	methodPathToID map[string]uint32
+	idToMethodPath map[uint32]string
+}
+
+func (r *RoutingRegistry) Register(id uint32, method, path string, mod wazero.CompiledModule) error {
+	r.registerRW.Lock()
+	defer r.registerRW.Unlock()
+	if _, ok := r.compiled[id]; ok {
+		return fmt.Errorf("instance already registered for %s %s with ID %d", method, path, id)
+	}
+	r.compiled[id] = mod
+	r.methodPathToID[method+" "+path] = id
+	r.idToMethodPath[id] = method + " " + path
+	return nil
+}
+
+func (r *RoutingRegistry) Unregister(id uint32) error {
+	r.registerRW.Lock()
+	defer r.registerRW.Unlock()
+	if _, ok := r.compiled[id]; !ok {
+		return fmt.Errorf("no compiled instance found for ID %d", id)
+	}
+	delete(r.compiled, id)
+	for key, value := range r.methodPathToID {
+		if value == id {
+			delete(r.methodPathToID, key)
+			break
+		}
+	}
+	delete(r.idToMethodPath, id)
+	return nil
+}
+
+func (r *RoutingRegistry) LookupByMethodPath(method, path string) (wazero.CompiledModule, bool) {
+	r.registerRW.RLock()
+	defer r.registerRW.RUnlock()
+	id, ok := r.methodPathToID[method+" "+path]
+	if !ok {
+		return nil, false
+	}
+	mod, ok := r.compiled[id]
+	return mod, ok
+}
+
+func NewRoutingRegistry() *RoutingRegistry {
+	return &RoutingRegistry{
+		compiled:       make(map[uint32]wazero.CompiledModule),
+		methodPathToID: make(map[string]uint32),
+		idToMethodPath: make(map[uint32]string),
+	}
+}
+
 type edgeComputing struct {
-	rt         wazero.Runtime
-	registerRW sync.RWMutex
-	compiled   map[string]wazero.CompiledModule
+	rt wazero.Runtime
 
 	handlerRW     sync.RWMutex
 	atomicCounter atomic.Uint64
 	handleContext map[uint64]*HandleContext
 
 	computingTimeout time.Duration
+
+	routing *RoutingRegistry
 }
 
 func NewEdgeComputing(rt wazero.Runtime, timeout time.Duration) EdgeComputer {
 	c := &edgeComputing{
 		rt:               rt,
-		compiled:         make(map[string]wazero.CompiledModule),
 		handleContext:    make(map[uint64]*HandleContext),
 		computingTimeout: timeout,
+		routing:          NewRoutingRegistry(),
 	}
 	if err := c.initRequestHandler(); err != nil {
 		log.Fatalf("Failed to initialize request handler: %v", err)
@@ -457,7 +512,7 @@ const hookOnFinish = "on_finish"
 
 var hooks = []string{hookOnRequest, hookOnResponse, hookOnFinish}
 
-func (r *edgeComputing) Register(ctx context.Context, method, path string, binary []byte) error {
+func (r *edgeComputing) Register(ctx context.Context, id uint32, method, path string, binary []byte) error {
 	mod, err := r.rt.CompileModule(ctx, binary)
 	if err != nil {
 		return err
@@ -477,23 +532,16 @@ func (r *edgeComputing) Register(ctx context.Context, method, path string, binar
 	if !hasLeastOne {
 		return fmt.Errorf("module must export at least one of the following functions: %v", hooks)
 	}
-	r.registerRW.Lock()
-	defer r.registerRW.Unlock()
-	if _, ok := r.compiled[method+" "+path]; ok {
-		return fmt.Errorf("instance already registered for %s %s", method, path)
+	if err := r.routing.Register(id, method, path, mod); err != nil {
+		return fmt.Errorf("failed to register edge function %s %s with ID %d: %w", method, path, id, err)
 	}
-	r.compiled[method+" "+path] = mod
 	return nil
 }
 
-func (r *edgeComputing) Unregister(method, path string) error {
-	r.registerRW.Lock()
-	defer r.registerRW.Unlock()
-	key := method + " " + path
-	if _, ok := r.compiled[key]; !ok {
-		return fmt.Errorf("no compiled instance found for %s %s", method, path)
+func (r *edgeComputing) Unregister(id uint32) error {
+	if err := r.routing.Unregister(id); err != nil {
+		return fmt.Errorf("failed to unregister edge function with ID %d: %w", id, err)
 	}
-	delete(r.compiled, key)
 	return nil
 }
 
@@ -670,10 +718,7 @@ func (r *edgeComputing) changeResponse(ctx context.Context, mod api.Module, poin
 var ErrNoEdgeFunction = errors.New("no edge function registered for this request")
 
 func (r *edgeComputing) StartRequest(ctx context.Context, p *http.Request) (uint64, error) {
-	key := p.Method + " " + p.URL.Path
-	r.registerRW.RLock()
-	compiled, ok := r.compiled[key]
-	r.registerRW.RUnlock()
+	compiled, ok := r.routing.LookupByMethodPath(p.Method, p.URL.Path)
 	if !ok {
 		return 0, fmt.Errorf("%w: %s %s", ErrNoEdgeFunction, p.Method, p.URL.Path)
 	}

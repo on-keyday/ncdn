@@ -27,10 +27,20 @@ const (
 	LBTypeL7 LBType = "L7LB"
 )
 
+type DestEntry struct {
+	ServerIDs []uint32 `json:"server_ids,omitempty"`
+	Broadcast bool     `json:"broadcast,omitempty"` // explicitly, if this true, serverIDs must be empty
+	LBType    LBType   `json:"lb_type"`
+}
+
+type DestInfo struct {
+	DestEntries []DestEntry `json:"dests"`
+}
+
 type Controller interface {
-	FileTransfer(typ LBType, serverID uint32, path string, permission uint16, file ReaderAtCloser) error
-	WasmInstall(id uint32, method, path string, file ReaderAtCloser) error
-	WasmUninstall(id uint32) error
+	FileTransfer(dest *DestInfo, path string, permission uint16, file ReaderAtCloser) error
+	WasmInstall(dest *DestInfo, wasmID uint32, method, path string, file ReaderAtCloser) error
+	WasmUninstall(dest *DestInfo, wasmID uint32) error
 	ShareKey([]byte)
 	Run(context.Context, transport.Listener) error
 	Status() *ControllerStatus
@@ -157,6 +167,10 @@ type messageChannel struct {
 	latestSeqPerEvent map[protocol.ControlMessageType]uint64
 	senderWg          sync.WaitGroup
 	logger            *slog.Logger
+}
+
+func (c *messageChannel) Logger() *slog.Logger {
+	return c.logger
 }
 
 func (c *messageChannel) CloseChannel() {

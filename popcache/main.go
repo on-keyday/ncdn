@@ -25,6 +25,7 @@ import (
 	"github.com/spaolacci/murmur3"
 	"github.com/tetratelabs/wazero"
 	"github.com/yzp0n/ncdn/controller/chunk"
+	"github.com/yzp0n/ncdn/controller/file"
 	"github.com/yzp0n/ncdn/controller/lbconn"
 	"github.com/yzp0n/ncdn/controller/protocol"
 	"github.com/yzp0n/ncdn/controller/remoteshell"
@@ -159,7 +160,7 @@ func main() {
 	conf := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
 	rt := wazero.NewRuntimeWithConfig(context.Background(), conf)
 	ec := edge.NewEdgeComputing(rt, 100*time.Millisecond)
-	err = ec.Register(context.Background(), "GET", "/index.html", edgeApp)
+	err = ec.Register(context.Background(), 0, "GET", "/index.html", edgeApp)
 	if err != nil {
 		log.Fatalf("Failed to register edge function: %v", err)
 	}
@@ -210,22 +211,18 @@ func main() {
 				continue
 			}
 			if chunked != nil {
-				if file := chunked.Msg.FileTransfer(); file != nil {
-					err := os.WriteFile(string(file.Path), chunked.Data, os.FileMode(file.Permission))
-					if err != nil {
-						retryConn.Send(&lbconn.LogMsg{
-							Level:   protocol.LogLevel_Error,
-							Message: fmt.Sprintf("Failed to write file %q: %v", file.Path, err),
-						})
-					} else {
-						retryConn.Send(&lbconn.LogMsg{
-							Level:   protocol.LogLevel_Info,
-							Message: fmt.Sprintf("File %q written successfully", file.Path),
-						})
-					}
-				}
-				if wasm := chunked.Msg.WasmInstall(); wasm != nil {
-					err := ec.Register(context.Background(), string(wasm.Method), string(wasm.Path), chunked.Data)
+				if handled, path, perm, err := file.MaySaveFile(chunked); err != nil {
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Error,
+						Message: fmt.Sprintf("Failed to save file: %v", err),
+					})
+				} else if handled {
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Info,
+						Message: fmt.Sprintf("File saved to %s with permission %o", path, perm),
+					})
+				} else if wasm := chunked.Msg.WasmInstall(); wasm != nil {
+					err := ec.Register(context.Background(), wasm.Id, string(wasm.Method), string(wasm.Path), chunked.Data)
 					if err != nil {
 						retryConn.Send(&lbconn.LogMsg{
 							Level:   protocol.LogLevel_Error,
@@ -237,6 +234,24 @@ func main() {
 							Message: fmt.Sprintf("WASM module %d:%s %s registered successfully", wasm.Id, wasm.Method, wasm.Path),
 						})
 					}
+				} else if wasm := chunked.Msg.WasmUninstall(); wasm != nil {
+					err := ec.Unregister(wasm.Id)
+					if err != nil {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Error,
+							Message: fmt.Sprintf("Failed to unregister WASM module %d: %v", wasm.Id, err),
+						})
+					} else {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Info,
+							Message: fmt.Sprintf("WASM module %d unregistered successfully", wasm.Id),
+						})
+					}
+				} else {
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Info,
+						Message: fmt.Sprintf("Received unhandled data %s", chunked.Msg.Header.MessageType),
+					})
 				}
 			}
 		}

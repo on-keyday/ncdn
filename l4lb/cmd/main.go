@@ -20,6 +20,7 @@ import (
 	"unsafe"
 
 	"github.com/yzp0n/ncdn/controller/chunk"
+	"github.com/yzp0n/ncdn/controller/file"
 	"github.com/yzp0n/ncdn/controller/lbconn"
 	"github.com/yzp0n/ncdn/controller/protocol"
 	"github.com/yzp0n/ncdn/controller/remoteshell"
@@ -258,17 +259,20 @@ func main() {
 				continue
 			}
 			if chunked != nil {
-				if file := chunked.Msg.FileTransfer(); file != nil {
-					err := os.WriteFile(string(file.Path), chunked.Data, os.FileMode(file.Permission))
-					if err != nil {
-						retryConn.Send(&lbconn.LogMsg{
-							Level:   protocol.LogLevel_Error,
-							Message: fmt.Sprintf("Failed to write file %q: %v", file.Path, err),
-						})
-					}
+				if handled, path, perm, err := file.MaySaveFile(chunked); err != nil {
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Error,
+						Message: fmt.Sprintf("Failed to save file: %v", err),
+					})
+				} else if handled {
 					retryConn.Send(&lbconn.LogMsg{
 						Level:   protocol.LogLevel_Info,
-						Message: fmt.Sprintf("File %q written successfully", file.Path),
+						Message: fmt.Sprintf("File saved to %s with permission %o", path, perm),
+					})
+				} else {
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Error,
+						Message: "Received chunked data that is not a file",
 					})
 				}
 			}

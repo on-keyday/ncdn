@@ -1,19 +1,16 @@
 package main
 
-// A simple program demonstrating the text input component from the Bubbles
-// component library.
-
 import (
 	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +20,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/flynn/go-shlex"
+	"github.com/yzp0n/ncdn/controller/api"
 	"github.com/yzp0n/ncdn/controller/control"
 )
 
@@ -37,10 +35,14 @@ func main() {
 	if cplaneURL.Scheme != "http" && cplaneURL.Scheme != "https" {
 		log.Fatalf("Control plane URL must use http or https scheme, got: %s", cplaneURL.Scheme)
 	}
-	fileSendChan := make(chan fileSendRequest)
-	p := tea.NewProgram(initialModel(fileSendChan))
+	c := &channels{
+		fileSender:  make(chan fileSendRequest, 10),
+		wasmSender:  make(chan wasmDeployRequest, 10),
+		wasmRemover: make(chan wasmRemoveRequest, 10),
+	}
+	p := tea.NewProgram(initialModel(c))
 	go func() {
-		for req := range fileSendChan {
+		for req := range c.fileSender {
 			func(req fileSendRequest) {
 				file, err := os.Open(req.source)
 				if err != nil {
@@ -48,28 +50,137 @@ func main() {
 					return
 				}
 				defer file.Close()
-				target := fmt.Sprintf("%s/file?lbType=%s&serverID=%s&path=%s&permission=%s",
-					*controlPlane, url.QueryEscape(req.lbType),
-					url.QueryEscape(req.serverID), url.QueryEscape(req.path),
-					url.QueryEscape(req.permission))
-				p.Send(logUpdate(fmt.Sprintf("Sending file %s to %s", req.source, target)))
-				resp, err := http.Post(target, "application/octet-stream", file)
+				upload := fmt.Sprintf("%s/upload", *controlPlane)
+				p.Send(logUpdate(fmt.Sprintf("Sending file %s to %s", req.source, upload)))
+				resp, err := http.Post(upload, "application/octet-stream", file)
 				if err != nil {
 					p.Send(errMsg(fmt.Errorf("failed to send file %s: %w", req.source, err)))
 					return
 				}
 				defer resp.Body.Close()
-				body, err := io.ReadAll(resp.Body)
+				if resp.StatusCode != http.StatusOK {
+					p.Send(errMsg(fmt.Errorf("failed to upload file %s, status: %s", req.source, resp.Status)))
+					return
+				}
+				var uploadResp api.UploadResponse
+				if err := json.NewDecoder(resp.Body).Decode(&uploadResp); err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to decode upload response: %w", err)))
+					return
+				}
+				p.Send(logUpdate(fmt.Sprintf("File %s uploaded successfully, ID: %d", req.source, uploadResp.ID)))
+				fileTransferInfo := api.FileUploadBody{
+					FileID: uploadResp.ID,
+					Path:   req.path,
+					Mode:   req.permission,
+					Dest: control.DestInfo{
+						DestEntries: req.dests,
+					},
+				}
+				jsonData, err := json.Marshal(fileTransferInfo)
 				if err != nil {
-					p.Send(errMsg(fmt.Errorf("failed to read response body: %w", err)))
+					p.Send(errMsg(fmt.Errorf("failed to marshal file transfer info: %w", err)))
 					return
 				}
+				transferURL := fmt.Sprintf("%s/file/transfer", *controlPlane)
+				p.Send(logUpdate(fmt.Sprintf("Transferring file %s to %s", req.source, transferURL)))
+				transferResp, err := http.Post(transferURL, "application/json", strings.NewReader(string(jsonData)))
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to transfer file %s: %w", req.source, err)))
+					return
+				}
+				defer transferResp.Body.Close()
+				if transferResp.StatusCode != http.StatusAccepted {
+					p.Send(errMsg(fmt.Errorf("failed to transfer file %s, status: %s", req.source, transferResp.Status)))
+					return
+				}
+				p.Send(logUpdate(fmt.Sprintf("File %s transferred successfully", req.source)))
+			}(req)
+		}
+	}()
+	go func() {
+		for req := range c.wasmSender {
+			func(req wasmDeployRequest) {
+				file, err := os.Open(req.wasmFile)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to open WASM file %s: %w", req.wasmFile, err)))
+					return
+				}
+				defer file.Close()
+				upload := fmt.Sprintf("%s/upload", *controlPlane)
+				p.Send(logUpdate(fmt.Sprintf("Sending WASM file %s to %s", req.wasmFile, upload)))
+				resp, err := http.Post(upload, "application/octet-stream", file)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to send WASM file %s: %w", req.wasmFile, err)))
+					return
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					p.Send(errMsg(fmt.Errorf("failed to upload WASM file %s, status: %s", req.wasmFile, resp.Status)))
+					return
+				}
+				var uploadResp api.UploadResponse
+				if err := json.NewDecoder(resp.Body).Decode(&uploadResp); err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to decode upload response: %w", err)))
+					return
+				}
+				p.Send(logUpdate(fmt.Sprintf("WASM file %s uploaded successfully, ID: %d", req.wasmFile, uploadResp.ID)))
+				wasmInstallInfo := api.WasmInstallBody{
+					FileID: uploadResp.ID,
+					WasmID: req.wasmID,
+					Method: req.method,
+					Path:   req.path,
+					Dest: control.DestInfo{
+						DestEntries: req.dests,
+					},
+				}
+				jsonData, err := json.Marshal(wasmInstallInfo)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to marshal WASM install info: %w", err)))
+					return
+				}
+				installURL := fmt.Sprintf("%s/wasm/install", *controlPlane)
+				p.Send(logUpdate(fmt.Sprintf("Installing WASM %s with ID %d to %s", req.wasmFile, req.wasmID, installURL)))
+				installResp, err := http.Post(installURL, "application/json", strings.NewReader(string(jsonData)))
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to install WASM %s: %w", req.wasmFile, err)))
+					return
+				}
+				defer installResp.Body.Close()
+				if installResp.StatusCode != http.StatusAccepted {
+					p.Send(errMsg(fmt.Errorf("failed to install WASM %s, status: %s", req.wasmFile, installResp.Status)))
+					return
+				}
+				p.Send(logUpdate(fmt.Sprintf("WASM %s with ID %d installed successfully", req.wasmFile, req.wasmID)))
+			}(req)
+		}
+	}()
+	go func() {
+		for req := range c.wasmRemover {
+			func(req wasmRemoveRequest) {
+				wasmUninstallInfo := api.WasmUninstallBody{
+					WasmID: req.wasmID,
+					Dest: control.DestInfo{
+						DestEntries: req.dests,
+					},
+				}
+				jsonData, err := json.Marshal(wasmUninstallInfo)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to marshal WASM uninstall info: %w", err)))
+					return
+				}
+				uninstallURL := fmt.Sprintf("%s/wasm/uninstall", *controlPlane)
+				p.Send(logUpdate(fmt.Sprintf("Uninstalling WASM with ID %d from %s", req.wasmID, uninstallURL)))
+				resp, err := http.Post(uninstallURL, "application/json", strings.NewReader(string(jsonData)))
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to uninstall WASM with ID %d: %w", req.wasmID, err)))
+					return
+				}
+				defer resp.Body.Close()
 				if resp.StatusCode != http.StatusAccepted {
-					p.Send(errMsg(fmt.Errorf("failed to send file %s, server returned status: %s, %s", req.source, resp.Status, body)))
+					p.Send(errMsg(fmt.Errorf("failed to uninstall WASM with ID %d, status: %s", req.wasmID, resp.Status)))
 					return
 				}
-				p.Send(logUpdate(fmt.Sprintf("Control plane accepted to send %s to %s/%s/%s with permission bit %s",
-					req.source, req.lbType, req.serverID, req.path, req.permission)))
+				p.Send(logUpdate(fmt.Sprintf("WASM with ID %d uninstalled successfully", req.wasmID)))
 			}(req)
 		}
 	}()
@@ -139,10 +250,28 @@ type (
 
 type fileSendRequest struct {
 	source     string
-	lbType     string
-	serverID   string
 	path       string
-	permission string
+	permission uint16
+	dests      []control.DestEntry
+}
+
+type wasmDeployRequest struct {
+	wasmFile string
+	wasmID   uint32
+	method   string
+	path     string
+	dests    []control.DestEntry
+}
+
+type wasmRemoveRequest struct {
+	wasmID uint32
+	dests  []control.DestEntry
+}
+
+type channels struct {
+	fileSender  chan fileSendRequest
+	wasmSender  chan wasmDeployRequest
+	wasmRemover chan wasmRemoveRequest
 }
 
 type model struct {
@@ -153,17 +282,17 @@ type model struct {
 	commandOutput     viewport.Model
 	err               error
 	buffer            []string
-	fileSender        chan fileSendRequest
+	c                 *channels
 }
 
 type logUpdate string
-type commandUpdate string
+
 type tableUpdate struct {
 	stat   *control.ControllerStatus
 	uptime time.Duration
 }
 
-func initialModel(fileSender chan fileSendRequest) model {
+func initialModel(c *channels) model {
 	ti := textinput.New()
 	ti.Placeholder = "Command?"
 	ti.Focus()
@@ -195,12 +324,52 @@ func initialModel(fileSender chan fileSendRequest) model {
 		commandOutput:     cmdVp,
 		err:               nil,
 		buffer:            make([]string, 0, 100),
-		fileSender:        fileSender,
+		c:                 c,
 	}
 }
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(textinput.Blink)
+}
+
+func parseServerIDs(serverIDs []string) ([]control.DestEntry, error) {
+	var dests []control.DestEntry
+	for _, serverID := range serverIDs {
+		parts := strings.Split(serverID, ":")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid server ID format: %s", serverID)
+		}
+		lbType := parts[0]
+		if parts[1] == "*" {
+			dests = append(dests, control.DestEntry{
+				LBType:    control.LBType(lbType),
+				ServerIDs: nil,
+				Broadcast: true,
+			})
+			continue
+		}
+		idParts := strings.Split(parts[1], ",")
+		var ids []uint32
+		for _, idPart := range idParts {
+			id, err := strconv.Atoi(idPart)
+			if err != nil {
+				return nil, fmt.Errorf("invalid server ID: %s", idPart)
+			}
+			if id > int(^uint32(0)) {
+				return nil, fmt.Errorf("invalid server ID: %s", idPart)
+			}
+			ids = append(ids, uint32(id))
+		}
+		dests = append(dests, control.DestEntry{
+			LBType:    control.LBType(lbType),
+			ServerIDs: ids,
+			Broadcast: false,
+		})
+	}
+	if len(dests) == 0 {
+		return nil, fmt.Errorf("no valid server IDs provided")
+	}
+	return dests, nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -216,6 +385,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.logOutput.SetContent(buf.String())
 		m.logOutput.GotoBottom()
+	}
+
+	finalUpdate := func() (tea.Model, tea.Cmd) {
+		var (
+			cmd1 tea.Cmd
+			cmd2 tea.Cmd
+			cmd3 tea.Cmd
+			cmd4 tea.Cmd
+			cmd5 tea.Cmd
+		)
+		m.cmdline, cmd1 = m.cmdline.Update(msg)
+		m.logOutput, cmd2 = m.logOutput.Update(msg)
+		m.statView, cmd3 = m.statView.Update(msg)
+		m.connectionEntries, cmd4 = m.connectionEntries.Update(msg)
+		m.commandOutput, cmd5 = m.commandOutput.Update(msg)
+		return m, tea.Batch(
+			cmd1,
+			cmd2,
+			cmd3,
+			cmd4,
+			cmd5,
+		)
 	}
 
 	switch msg := msg.(type) {
@@ -259,23 +450,85 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					setContent("Because you were a spoiled kid...")
 				case "sendfile":
 					if len(parsedCmd) < 5 {
-						setContent("Usage: sendfile <source> <lbType> <serverID> <path> <permission>")
-
+						setContent("Usage: sendfile <source> <dest> <permission> <serverID(lbType:id1,id2,...)>...")
 					} else {
 						source := parsedCmd[1]
-						lbType := parsedCmd[2]
-						serverID := parsedCmd[3]
-						path := parsedCmd[4]
-						permission := parsedCmd[5]
-						setContent(fmt.Sprintf("sending file %s to %s/%s/%s with permission %s requested", source, lbType, serverID, path, permission))
-						fileSender := m.fileSender
+						dest := parsedCmd[2]
+						permission := parsedCmd[3]
+						parsedPermission, err := strconv.ParseUint(permission, 8, 16)
+						if err != nil {
+							setContent(fmt.Sprintf("Invalid permission: %v", err))
+							return finalUpdate()
+						}
+						serverIDs, err := parseServerIDs(parsedCmd[4:])
+						if err != nil {
+							setContent(fmt.Sprintf("Error parsing server IDs: %v", err))
+							return finalUpdate()
+						}
+						setContent(fmt.Sprintf("sending file %s to %s with permission %o to servers %v", source, dest, parsedPermission, serverIDs))
+						fileSender := m.c.fileSender
 						go func() {
 							fileSender <- fileSendRequest{
 								source:     source,
-								lbType:     lbType,
-								serverID:   serverID,
-								path:       path,
-								permission: permission,
+								dests:      serverIDs,
+								path:       dest,
+								permission: uint16(parsedPermission),
+							}
+						}()
+					}
+				case "wasmdeploy":
+					if len(parsedCmd) < 5 {
+						setContent("Usage: wasmdeploy <wasmFile> <wasmID> <httpMethod> <httpPath> <serverID(lbType:id1,id2,...)>...")
+					} else {
+						wasmFile := parsedCmd[1]
+						wasmID := parsedCmd[2]
+						wasmIDUint, err := strconv.ParseUint(wasmID, 10, 32)
+						if err != nil {
+							setContent(fmt.Sprintf("Invalid WASM ID: %v", err))
+							return finalUpdate()
+						}
+						httpMethod := parsedCmd[3]
+						httpPath := parsedCmd[4]
+						serverIDs, err := parseServerIDs(parsedCmd[5:])
+						if err != nil {
+							setContent(fmt.Sprintf("Error parsing server IDs: %v", err))
+							return finalUpdate()
+						}
+						setContent(fmt.Sprintf("Deploying WASM file %s with ID %d using method %s at path %s to servers %v", wasmFile, wasmIDUint, httpMethod, httpPath, serverIDs))
+						// Here you would implement the actual deployment logic
+						wasmSender := m.c.wasmSender
+						go func() {
+							wasmSender <- wasmDeployRequest{
+								wasmFile: wasmFile,
+								wasmID:   uint32(wasmIDUint),
+								method:   httpMethod,
+								path:     httpPath,
+								dests:    serverIDs,
+							}
+						}()
+					}
+				case "wasmremove":
+					if len(parsedCmd) < 3 {
+						setContent("Usage: wasmremove <wasmID> <serverID(lbType:id1,id2,...)>...")
+					} else {
+						wasmID := parsedCmd[1]
+						wasmIDUint, err := strconv.ParseUint(wasmID, 10, 32)
+						if err != nil {
+							setContent(fmt.Sprintf("Invalid WASM ID: %v", err))
+							return finalUpdate()
+						}
+						serverIDs, err := parseServerIDs(parsedCmd[2:])
+						if err != nil {
+							setContent(fmt.Sprintf("Error parsing server IDs: %v", err))
+							return finalUpdate()
+						}
+						setContent(fmt.Sprintf("Removing WASM with ID %s from servers %v", wasmID, serverIDs))
+						// Here you would implement the actual removal logic
+						wasmRemover := m.c.wasmRemover
+						go func() {
+							wasmRemover <- wasmRemoveRequest{
+								wasmID: uint32(wasmIDUint),
+								dests:  serverIDs,
 							}
 						}()
 					}
@@ -334,27 +587,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updateLog()
 		m.commandOutput.Width = msg.Width/2 - 10
 		m.commandOutput.Height = 5
+		m.cmdline.Width = msg.Width/2 - 10
 	}
-
-	var (
-		cmd1 tea.Cmd
-		cmd2 tea.Cmd
-		cmd3 tea.Cmd
-		cmd4 tea.Cmd
-		cmd5 tea.Cmd
-	)
-	m.cmdline, cmd1 = m.cmdline.Update(msg)
-	m.logOutput, cmd2 = m.logOutput.Update(msg)
-	m.statView, cmd3 = m.statView.Update(msg)
-	m.connectionEntries, cmd4 = m.connectionEntries.Update(msg)
-	m.commandOutput, cmd5 = m.commandOutput.Update(msg)
-	return m, tea.Batch(
-		cmd1,
-		cmd2,
-		cmd3,
-		cmd4,
-		cmd5,
-	)
+	return finalUpdate()
 }
 
 func (m model) View() string {
