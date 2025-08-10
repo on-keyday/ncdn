@@ -444,7 +444,7 @@ func WasmInstall(id uint32, method string, path string, chunkInfo ChunkInfo) *Co
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(4 + 4 + len(method) + 4 + len(path) + 4),
+			Len:         uint16(4 + 1 + len(method) + 2 + len(path) + 4),
 			MessageType: ControlMessageType_WasmInstall,
 		},
 	}
