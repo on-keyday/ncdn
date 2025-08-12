@@ -504,7 +504,24 @@ func (c *controller) UpdateVIP(dest *DestInfo, vip netip.Addr) error {
 	if err != nil {
 		return fmt.Errorf("failed to lookup sender: %w", err)
 	}
-	return c.sendToLB(lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
-		return protocol.L4LBUpdate(vip.As4())
-	}, nil)
+	if len(lb) == 0 {
+		return fmt.Errorf("no Load Balancer found for the specified destination")
+	}
+	if len(lb) == 1 {
+		return lb[0].SendMessageBlocking(message{
+			seqNum: lb[0].GetSeqNum(),
+			data:   protocol.L4LBUpdate(vip.As4()),
+		})
+	}
+	for _, l := range lb {
+		go func(l lbSender) {
+			if err := l.SendMessageBlocking(message{
+				seqNum: l.GetSeqNum(),
+				data:   protocol.L4LBUpdate(vip.As4()),
+			}); err != nil {
+				l.Logger().Error("Failed to send VIP update", "error", err)
+			}
+		}(l)
+	}
+	return nil
 }
