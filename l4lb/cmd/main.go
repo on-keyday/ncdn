@@ -42,6 +42,7 @@ var deststr = flag.String("dests", "", "Comma separated list of destination IP a
 var sharedKey = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation (TODO: move into secure place)")
 var pidFile = flag.String("pidFile", "/run/ncdn/l4lb.pid", "Path to PID file for l4lb process")
 var mtu = flag.Uint("mtu", 1500, "Maximum Transmission Unit (MTU) for the interface")
+var asn = flag.Uint("asn", 65000, "Autonomous System Number (ASN) for iBGP")
 
 func parseDest(deststr string) ([]l4lbdrv.DestinationEntry, error) {
 	commas := strings.Split(deststr, ",")
@@ -180,6 +181,11 @@ func main() {
 		log.Panicf("Failed to generate random bytes: %v", err)
 	}
 
+	defaultGW, err := util.GetDefaultGateway()
+	if err != nil {
+		log.Panicf("Failed to get default gateway: %v", err)
+	}
+
 	controlPlaneURL, err := url.Parse(*controlPlaneAddr)
 	if err != nil {
 		log.Panicf("Failed to parse control plane address %q: %v", *controlPlaneAddr, err)
@@ -189,7 +195,12 @@ func main() {
 	}
 	httpOrigin := *controlPlaneURL
 	httpOrigin.Scheme = "http"
-	log.Printf("Connecting to control plane at %s with origin %s", controlPlaneURL.String(), httpOrigin.String())
+
+	bgpServe, err := SetupIBGP(uint32(*asn), addr, defaultGW)
+	if err != nil {
+		log.Panicf("Failed to setup iBGP: %v", err)
+	}
+
 	firstEntry := l4lbdrv.DestinationEntry{
 		IPAddr:       addr,
 		HardwareAddr: hardAddr,
@@ -231,6 +242,7 @@ func main() {
 				Version:  websocket.ProtocolVersionHybi13,
 			})
 		}, counters.GetStat)
+	log.Printf("Connecting to control plane at %s with origin %s", controlPlaneURL.String(), httpOrigin.String())
 
 	updateDestsChan := make(chan *protocol.L4Lbl7Lbupdate, 1)
 	updateConfig := make(chan *protocol.Vipupdate, 1)
@@ -336,11 +348,19 @@ func main() {
 				})
 				slog.Error("Failed to update VIP", slog.Any("error", err))
 			} else {
-				retryConn.Send(&lbconn.LogMsg{
-					Level:   protocol.LogLevel_Info,
-					Message: "VIP updated successfully",
-				})
-				slog.Info("VIP updated successfully")
+				if err := bgpServe.UpdateVIP(netip.PrefixFrom(netip.AddrFrom4(update.VirtualAddress), int(update.Prefix))); err != nil {
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Error,
+						Message: fmt.Sprintf("Failed to update BGP VIP: %v", err),
+					})
+					slog.Error("Failed to update BGP VIP", slog.Any("error", err))
+				} else {
+					retryConn.Send(&lbconn.LogMsg{
+						Level:   protocol.LogLevel_Info,
+						Message: "VIP updated successfully",
+					})
+					slog.Info("VIP updated successfully")
+				}
 			}
 			continue
 		case cmd := <-cmdMgr.Output():

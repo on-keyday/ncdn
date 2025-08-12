@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+
+	"github.com/vishvananda/netlink"
 )
 
 func GetSelfIPv4Address(name string) (string, int, netip.Addr, net.HardwareAddr, error) {
@@ -43,4 +45,17 @@ func GetSelfIPv4Address(name string) (string, int, netip.Addr, net.HardwareAddr,
 		return "", 0, netip.Addr{}, nil, errors.New("no unique IPv4 address found for interface")
 	}
 	return iface.Name, iface.Index, netip.AddrFrom4([4]byte(ipv4Addrs[0].(*net.IPNet).IP.To4())), iface.HardwareAddr, nil
+}
+
+func GetDefaultGateway() (netip.Addr, error) {
+	routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	for _, route := range routes {
+		if route.Dst == nil {
+			return netip.AddrFrom4([4]byte(route.Gw.To4())), nil
+		}
+	}
+	return netip.Addr{}, nil
 }
