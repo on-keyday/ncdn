@@ -510,14 +510,14 @@ func (c *controller) UpdateVIP(dest *DestInfo, vip netip.Prefix) error {
 	if len(lb) == 1 {
 		return lb[0].SendMessageBlocking(message{
 			seqNum: lb[0].GetSeqNum(),
-			data:   protocol.L4LBUpdate(uint8(vip.Bits()), vip.Addr().As4()),
+			data:   protocol.VIPUpdate(uint8(vip.Bits()), vip.Addr().As4()),
 		})
 	}
 	for _, l := range lb {
 		go func(l lbSender) {
 			if err := l.SendMessageBlocking(message{
 				seqNum: l.GetSeqNum(),
-				data:   protocol.L4LBUpdate(uint8(vip.Bits()), vip.Addr().As4()),
+				data:   protocol.VIPUpdate(uint8(vip.Bits()), vip.Addr().As4()),
 			}); err != nil {
 				l.Logger().Error("Failed to send VIP update", "error", err)
 			}

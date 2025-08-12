@@ -18,7 +18,7 @@ enum ControlMessageType:
     l7lb_update # controller -> l7lb
     l4lb_l7lb_update # controller -> l4lb
     l4lb_hello # l4lb -> controller
-    l4lb_update # controller -> l4lb
+    vip_update # controller -> l4lb,l7lb
     key_share # controller -> l4lb,l7lb
     wasm_install # controller -> l7lb
     wasm_uninstall # controller -> l7lb
@@ -44,7 +44,7 @@ format ControlMessage:
         ControlMessageType.l7lb_update => l7lb_update :L7LBUpdate(input = input.subrange(header.len))
         ControlMessageType.l4lb_hello => l4lb_hello :L4LBHello(input = input.subrange(header.len))
         ControlMessageType.l4lb_l7lb_update => l4lb_l7lb_update :L4LBL7LBUpdate(input = input.subrange(header.len))
-        ControlMessageType.l4lb_update => l4lb_update :L4LBUpdate(input = input.subrange(header.len))
+        ControlMessageType.vip_update => vip_update :VIPUpdate(input = input.subrange(header.len))
         ControlMessageType.key_share => key_share :KeyShareInfo(input = input.subrange(header.len))
         ControlMessageType.wasm_install => wasm_install :WasmInstallInfo(input = input.subrange(header.len))
         ControlMessageType.wasm_uninstall => wasm_uninstall :WasmUninstallInfo(input = input.subrange(header.len))
@@ -127,7 +127,7 @@ format L4LBKeepAlive:
     ebpf_data :[ebpf_len]u8 # struct stat_counters, serialized by other system
 
 
-format L4LBUpdate:
+format VIPUpdate:
     virtual_address :[4]u8
     prefix :u8
 

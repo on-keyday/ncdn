@@ -289,15 +289,15 @@ func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
 	return msg
 }
 
-func L4LBUpdate(prefix uint8, virtual_address [4]byte) *ControlMessage {
+func VIPUpdate(prefix uint8, virtual_address [4]byte) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
 			Len:         uint16(5),
-			MessageType: ControlMessageType_L4LbUpdate,
+			MessageType: ControlMessageType_VipUpdate,
 		},
 	}
-	msg.SetL4LbUpdate(L4Lbupdate{
+	msg.SetVipUpdate(Vipupdate{
 		Prefix:         prefix,
 		VirtualAddress: virtual_address,
 	})

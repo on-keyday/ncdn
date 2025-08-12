@@ -234,7 +234,7 @@ func main() {
 		}, counters.GetStat)
 
 	updateDestsChan := make(chan *protocol.L4Lbl7Lbupdate, 1)
-	updateConfig := make(chan *protocol.L4Lbupdate, 1)
+	updateConfig := make(chan *protocol.Vipupdate, 1)
 
 	cmdMgr := remoteshell.NewManager()
 
@@ -250,7 +250,7 @@ func main() {
 			if l7lbUpdate := msg.L4LbL7LbUpdate(); l7lbUpdate != nil {
 				updateDestsChan <- l7lbUpdate
 				continue
-			} else if l4lbUpdate := msg.L4LbUpdate(); l4lbUpdate != nil {
+			} else if l4lbUpdate := msg.VipUpdate(); l4lbUpdate != nil {
 				updateConfig <- l4lbUpdate
 				continue
 			}

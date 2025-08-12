@@ -26,7 +26,7 @@ const (
 	ControlMessageType_L7LbUpdate     ControlMessageType = 9
 	ControlMessageType_L4LbL7LbUpdate ControlMessageType = 10
 	ControlMessageType_L4LbHello      ControlMessageType = 11
-	ControlMessageType_L4LbUpdate     ControlMessageType = 12
+	ControlMessageType_VipUpdate      ControlMessageType = 12
 	ControlMessageType_KeyShare       ControlMessageType = 13
 	ControlMessageType_WasmInstall    ControlMessageType = 14
 	ControlMessageType_WasmUninstall  ControlMessageType = 15
@@ -60,8 +60,8 @@ func (t ControlMessageType) String() string {
 		return "L4LbL7LbUpdate"
 	case ControlMessageType_L4LbHello:
 		return "L4LbHello"
-	case ControlMessageType_L4LbUpdate:
-		return "L4LbUpdate"
+	case ControlMessageType_VipUpdate:
+		return "VipUpdate"
 	case ControlMessageType_KeyShare:
 		return "KeyShare"
 	case ControlMessageType_WasmInstall:
@@ -251,7 +251,7 @@ type L7LbportInfo struct {
 	Disconnect         uint64
 	OriginResponseTime uint64
 }
-type L4Lbupdate struct {
+type Vipupdate struct {
 	VirtualAddress [4]uint8
 	Prefix         uint8
 }
@@ -360,7 +360,7 @@ type union_67_t struct {
 	L4LbL7LbUpdate L4Lbl7Lbupdate
 }
 type union_68_t struct {
-	L4LbUpdate L4Lbupdate
+	VipUpdate Vipupdate
 }
 type union_69_t struct {
 	KeyShare KeyShareInfo
@@ -1083,14 +1083,14 @@ func (t *L7LbportInfo) DecodeExact(d []byte) error {
 	}
 	return nil
 }
-func (t *L4Lbupdate) Visit(v VisitorJJRQX) {
+func (t *Vipupdate) Visit(v VisitorJJRQX) {
 	v.Visit(v, "VirtualAddress", &t.VirtualAddress)
 	v.Visit(v, "Prefix", &t.Prefix)
 }
-func (t *L4Lbupdate) MarshalJSON() ([]byte, error) {
+func (t *Vipupdate) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
-func (t *L4Lbupdate) Write(w io.Writer) (err error) {
+func (t *Vipupdate) Write(w io.Writer) (err error) {
 	if n, err := w.Write(t.VirtualAddress[:]); err != nil || n != len(t.VirtualAddress) {
 		return fmt.Errorf("encode VirtualAddress: %w", err)
 	}
@@ -1099,21 +1099,21 @@ func (t *L4Lbupdate) Write(w io.Writer) (err error) {
 	}
 	return nil
 }
-func (t *L4Lbupdate) Encode() ([]byte, error) {
+func (t *Vipupdate) Encode() ([]byte, error) {
 	w := bytes.NewBuffer(make([]byte, 0, 5))
 	if err := t.Write(w); err != nil {
 		return nil, err
 	}
 	return w.Bytes(), nil
 }
-func (t *L4Lbupdate) MustEncode() []byte {
+func (t *Vipupdate) MustEncode() []byte {
 	buf, err := t.Encode()
 	if err != nil {
 		panic(err)
 	}
 	return buf
 }
-func (t *L4Lbupdate) Read(r io.Reader) (err error) {
+func (t *Vipupdate) Read(r io.Reader) (err error) {
 	n_VirtualAddress, err := io.ReadFull(r, t.VirtualAddress[:])
 	if err != nil {
 		return fmt.Errorf("read VirtualAddress: expect %d bytes but read %d bytes: %w", 4, n_VirtualAddress, err)
@@ -1127,16 +1127,16 @@ func (t *L4Lbupdate) Read(r io.Reader) (err error) {
 	return nil
 }
 
-func (t *L4Lbupdate) Decode(d []byte) (int, error) {
+func (t *Vipupdate) Decode(d []byte) (int, error) {
 	r := bytes.NewReader(d)
 	err := t.Read(r)
 	return int(int(r.Size()) - r.Len()), err
 }
-func (t *L4Lbupdate) DecodeExact(d []byte) error {
+func (t *Vipupdate) DecodeExact(d []byte) error {
 	if n, err := t.Decode(d); err != nil {
 		return err
 	} else if n != len(d) {
-		return fmt.Errorf("decode L4Lbupdate: expect %d bytes but got %d bytes", len(d), n)
+		return fmt.Errorf("decode Vipupdate: expect %d bytes but got %d bytes", len(d), n)
 	}
 	return nil
 }
@@ -2547,7 +2547,7 @@ func (t *ControlMessage) CmdlineExit() *CommandExit {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -2583,7 +2583,7 @@ func (t *ControlMessage) SetCmdlineExit(v CommandExit) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -2619,7 +2619,7 @@ func (t *ControlMessage) CmdlineIn() *CmdlineIn {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -2651,7 +2651,7 @@ func (t *ControlMessage) SetCmdlineIn(v CmdlineIn) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -2683,7 +2683,7 @@ func (t *ControlMessage) CmdlineInstr() *CmdlineInstruction {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -2725,7 +2725,7 @@ func (t *ControlMessage) SetCmdlineInstr(v CmdlineInstruction) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -2767,7 +2767,7 @@ func (t *ControlMessage) CmdlineOut() *CmdlineOut {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -2801,7 +2801,7 @@ func (t *ControlMessage) SetCmdlineOut(v CmdlineOut) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -2835,7 +2835,7 @@ func (t *ControlMessage) CmdlineResize() *CmdlineResize {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -2873,7 +2873,7 @@ func (t *ControlMessage) SetCmdlineResize(v CmdlineResize) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -2911,7 +2911,7 @@ func (t *ControlMessage) Data() *[]uint8 {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -2957,7 +2957,7 @@ func (t *ControlMessage) SetData(v []uint8) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -3003,7 +3003,7 @@ func (t *ControlMessage) FileTransfer() *FileTransfer {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -3043,7 +3043,7 @@ func (t *ControlMessage) SetFileTransfer(v FileTransfer) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -3083,7 +3083,7 @@ func (t *ControlMessage) KeyShare() *KeyShareInfo {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		if _, ok := t.union60_.(*union_69_t); !ok {
@@ -3107,7 +3107,7 @@ func (t *ControlMessage) SetKeyShare(v KeyShareInfo) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		if _, ok := t.union60_.(*union_69_t); !ok {
@@ -3214,50 +3214,6 @@ func (t *ControlMessage) SetL4LbL7LbUpdate(v L4Lbl7Lbupdate) bool {
 	}
 	return false
 }
-func (t *ControlMessage) L4LbUpdate() *L4Lbupdate {
-	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
-		return nil
-	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
-		return nil
-	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
-		return nil
-	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
-		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
-		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
-		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
-		if _, ok := t.union60_.(*union_68_t); !ok {
-			return nil // not set
-		}
-		tmp := L4Lbupdate(t.union60_.(*union_68_t).L4LbUpdate)
-		return &tmp
-	}
-	return nil
-}
-func (t *ControlMessage) SetL4LbUpdate(v L4Lbupdate) bool {
-	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
-		return false
-	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
-		return false
-	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
-		return false
-	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
-		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
-		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
-		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
-		if _, ok := t.union60_.(*union_68_t); !ok {
-			t.union60_ = &union_68_t{}
-		}
-		t.union60_.(*union_68_t).L4LbUpdate = L4Lbupdate(v)
-		return true
-	}
-	return false
-}
 func (t *ControlMessage) L7LbHello() *L7Lbhello {
 	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
 		return nil
@@ -3355,7 +3311,7 @@ func (t *ControlMessage) LargeChunk() *LargeChunkHeader {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -3399,7 +3355,7 @@ func (t *ControlMessage) SetLargeChunk(v LargeChunkHeader) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -3443,7 +3399,7 @@ func (t *ControlMessage) Message() *Message {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -3473,7 +3429,7 @@ func (t *ControlMessage) SetMessage(v Message) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -3486,6 +3442,50 @@ func (t *ControlMessage) SetMessage(v Message) bool {
 			t.union60_ = &union_72_t{}
 		}
 		t.union60_.(*union_72_t).Message = Message(v)
+		return true
+	}
+	return false
+}
+func (t *ControlMessage) VipUpdate() *Vipupdate {
+	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
+		if _, ok := t.union60_.(*union_68_t); !ok {
+			return nil // not set
+		}
+		tmp := Vipupdate(t.union60_.(*union_68_t).VipUpdate)
+		return &tmp
+	}
+	return nil
+}
+func (t *ControlMessage) SetVipUpdate(v Vipupdate) bool {
+	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
+		if _, ok := t.union60_.(*union_68_t); !ok {
+			t.union60_ = &union_68_t{}
+		}
+		t.union60_.(*union_68_t).VipUpdate = Vipupdate(v)
 		return true
 	}
 	return false
@@ -3503,7 +3503,7 @@ func (t *ControlMessage) WasmInstall() *WasmInstallInfo {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -3529,7 +3529,7 @@ func (t *ControlMessage) SetWasmInstall(v WasmInstallInfo) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -3555,7 +3555,7 @@ func (t *ControlMessage) WasmUninstall() *WasmUninstallInfo {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
@@ -3583,7 +3583,7 @@ func (t *ControlMessage) SetWasmUninstall(v WasmUninstallInfo) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
-	} else if t.Header.MessageType == ControlMessageType_L4LbUpdate {
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
@@ -3611,12 +3611,12 @@ func (t *ControlMessage) Visit(v VisitorJJRQX) {
 	v.Visit(v, "L4LbHello", (t.L4LbHello()))
 	v.Visit(v, "L4LbKeepAlive", (t.L4LbKeepAlive()))
 	v.Visit(v, "L4LbL7LbUpdate", (t.L4LbL7LbUpdate()))
-	v.Visit(v, "L4LbUpdate", (t.L4LbUpdate()))
 	v.Visit(v, "L7LbHello", (t.L7LbHello()))
 	v.Visit(v, "L7LbKeepAlive", (t.L7LbKeepAlive()))
 	v.Visit(v, "L7LbUpdate", (t.L7LbUpdate()))
 	v.Visit(v, "LargeChunk", (t.LargeChunk()))
 	v.Visit(v, "Message", (t.Message()))
+	v.Visit(v, "VipUpdate", (t.VipUpdate()))
 	v.Visit(v, "WasmInstall", (t.WasmInstall()))
 	v.Visit(v, "WasmUninstall", (t.WasmUninstall()))
 }
@@ -3736,18 +3736,18 @@ func (t *ControlMessage) Write(w io.Writer) (err error) {
 			return err
 		}
 		w = old_buf_86_w
-	case (t.Header.MessageType == ControlMessageType_L4LbUpdate):
+	case (t.Header.MessageType == ControlMessageType_VipUpdate):
 		if _, ok := t.union60_.(*union_68_t); !ok {
 			return fmt.Errorf("encode t.union60_: union is not set to union_68_t")
 		}
 		new_buf_87 := bytes.NewBuffer(nil)
 		old_buf_87_w := w
 		w = new_buf_87
-		if err := t.union60_.(*union_68_t).L4LbUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode L4LbUpdate: %w", err)
+		if err := t.union60_.(*union_68_t).VipUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode VipUpdate: %w", err)
 		}
 		if new_buf_87.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L4LbUpdate: expect %d bytes but got %d bytes", new_buf_87.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode VipUpdate: expect %d bytes but got %d bytes", new_buf_87.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_87.WriteTo(old_buf_87_w)
 		if err != nil {
@@ -4063,19 +4063,19 @@ func (t *ControlMessage) Read(r io.Reader) (err error) {
 			return fmt.Errorf("read L4LbL7LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L4LbL7LbUpdate, sub_byte_len_L4LbL7LbUpdate-sub_byte_r_L4LbL7LbUpdate.(*io.LimitedReader).N)
 		}
 		r = tmp_old_r_L4LbL7LbUpdate_104
-	case (t.Header.MessageType == ControlMessageType_L4LbUpdate):
+	case (t.Header.MessageType == ControlMessageType_VipUpdate):
 		t.union60_ = &union_68_t{}
-		sub_byte_len_L4LbUpdate := int64(t.Header.Len)
-		sub_byte_r_L4LbUpdate := io.LimitReader(r, int64(sub_byte_len_L4LbUpdate))
-		tmp_old_r_L4LbUpdate_105 := r
-		r = sub_byte_r_L4LbUpdate
-		if err := t.union60_.(*union_68_t).L4LbUpdate.Read(r); err != nil {
-			return fmt.Errorf("read L4LbUpdate: %w", err)
+		sub_byte_len_VipUpdate := int64(t.Header.Len)
+		sub_byte_r_VipUpdate := io.LimitReader(r, int64(sub_byte_len_VipUpdate))
+		tmp_old_r_VipUpdate_105 := r
+		r = sub_byte_r_VipUpdate
+		if err := t.union60_.(*union_68_t).VipUpdate.Read(r); err != nil {
+			return fmt.Errorf("read VipUpdate: %w", err)
 		}
-		if sub_byte_r_L4LbUpdate.(*io.LimitedReader).N != 0 {
-			return fmt.Errorf("read L4LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L4LbUpdate, sub_byte_len_L4LbUpdate-sub_byte_r_L4LbUpdate.(*io.LimitedReader).N)
+		if sub_byte_r_VipUpdate.(*io.LimitedReader).N != 0 {
+			return fmt.Errorf("read VipUpdate: expect %d bytes but got %d bytes", sub_byte_len_VipUpdate, sub_byte_len_VipUpdate-sub_byte_r_VipUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L4LbUpdate_105
+		r = tmp_old_r_VipUpdate_105
 	case (t.Header.MessageType == ControlMessageType_KeyShare):
 		t.union60_ = &union_69_t{}
 		sub_byte_len_KeyShare := int64(t.Header.Len)
