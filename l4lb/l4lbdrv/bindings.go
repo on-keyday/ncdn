@@ -102,7 +102,7 @@ func BindBalancer(binPath, xdpcapHookPath, cryptoPinDirPath string) (*Bindings, 
 
 	if xdpcapHookPath != "" {
 		if _, err := os.Stat(xdpcapHookPath); !os.IsNotExist(err) {
-			slog.Warn("XdpcapHook path already exists, removing previous XdpcapHook",
+			slog.Warn("XdpcapHook path already exists",
 				slog.String("path", xdpcapHookPath))
 		} else {
 			/*
