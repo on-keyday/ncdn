@@ -496,8 +496,8 @@ func (c *controller) KillAll(typ LBType, serverID uint32) error {
 	})
 }
 
-func (c *controller) UpdateVIP(dest *DestInfo, vip netip.Addr) error {
-	if !vip.Is4() {
+func (c *controller) UpdateVIP(dest *DestInfo, vip netip.Prefix) error {
+	if !vip.Addr().Is4() {
 		return fmt.Errorf("invalid VIP address: %v", vip)
 	}
 	lb, err := c.lookupSender(dest)
@@ -510,14 +510,14 @@ func (c *controller) UpdateVIP(dest *DestInfo, vip netip.Addr) error {
 	if len(lb) == 1 {
 		return lb[0].SendMessageBlocking(message{
 			seqNum: lb[0].GetSeqNum(),
-			data:   protocol.L4LBUpdate(vip.As4()),
+			data:   protocol.L4LBUpdate(uint8(vip.Bits()), vip.Addr().As4()),
 		})
 	}
 	for _, l := range lb {
 		go func(l lbSender) {
 			if err := l.SendMessageBlocking(message{
 				seqNum: l.GetSeqNum(),
-				data:   protocol.L4LBUpdate(vip.As4()),
+				data:   protocol.L4LBUpdate(uint8(vip.Bits()), vip.Addr().As4()),
 			}); err != nil {
 				l.Logger().Error("Failed to send VIP update", "error", err)
 			}

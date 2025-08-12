@@ -569,7 +569,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						setContent("Usage: vipupdate <vip> <serverID(lbType:id1,id2,...)>...")
 					} else {
 						vipStr := parsedCmd[1]
-						vip, err := netip.ParseAddr(vipStr)
+						vip, err := netip.ParsePrefix(vipStr)
 						if err != nil {
 							setContent(fmt.Sprintf("Invalid VIP address: %v", err))
 							return finalUpdate()

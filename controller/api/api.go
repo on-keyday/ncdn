@@ -95,6 +95,6 @@ type UploadResponse struct {
 }
 
 type VIPUpdate struct {
-	VIP  netip.Addr       `json:"vip"`
+	VIP  netip.Prefix     `json:"vip"`
 	Dest control.DestInfo `json:"dests"`
 }

@@ -253,6 +253,7 @@ type L7LbportInfo struct {
 }
 type L4Lbupdate struct {
 	VirtualAddress [4]uint8
+	Prefix         uint8
 }
 type KeyShareInfo struct {
 	Type KeyType
@@ -1084,6 +1085,7 @@ func (t *L7LbportInfo) DecodeExact(d []byte) error {
 }
 func (t *L4Lbupdate) Visit(v VisitorJJRQX) {
 	v.Visit(v, "VirtualAddress", &t.VirtualAddress)
+	v.Visit(v, "Prefix", &t.Prefix)
 }
 func (t *L4Lbupdate) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
@@ -1092,10 +1094,13 @@ func (t *L4Lbupdate) Write(w io.Writer) (err error) {
 	if n, err := w.Write(t.VirtualAddress[:]); err != nil || n != len(t.VirtualAddress) {
 		return fmt.Errorf("encode VirtualAddress: %w", err)
 	}
+	if n, err := w.Write([]byte{byte(t.Prefix)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.Prefix: %w", err)
+	}
 	return nil
 }
 func (t *L4Lbupdate) Encode() ([]byte, error) {
-	w := bytes.NewBuffer(make([]byte, 0, 4))
+	w := bytes.NewBuffer(make([]byte, 0, 5))
 	if err := t.Write(w); err != nil {
 		return nil, err
 	}
@@ -1113,6 +1118,12 @@ func (t *L4Lbupdate) Read(r io.Reader) (err error) {
 	if err != nil {
 		return fmt.Errorf("read VirtualAddress: expect %d bytes but read %d bytes: %w", 4, n_VirtualAddress, err)
 	}
+	tmpPrefix := [1]byte{}
+	n_Prefix, err := io.ReadFull(r, tmpPrefix[:])
+	if err != nil {
+		return fmt.Errorf("read Prefix: expect 1 byte but read %d bytes: %w", n_Prefix, err)
+	}
+	t.Prefix = uint8(tmpPrefix[0])
 	return nil
 }
 

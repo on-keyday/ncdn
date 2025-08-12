@@ -129,6 +129,7 @@ format L4LBKeepAlive:
 
 format L4LBUpdate:
     virtual_address :[4]u8
+    prefix :u8
 
 enum KeyType:
     :u8
