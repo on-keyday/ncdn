@@ -1,25 +1,40 @@
 package vip
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
 	"os"
+	"time"
 
 	"github.com/vishvananda/netlink"
+	"github.com/yzp0n/ncdn/controller/protocol"
 )
 
-type VIPManager struct {
-	VIPDevice string
+type Remote struct {
+	Remote *protocol.L4LBData
+	Link   *netlink.Iptun
 }
 
-func NewVIPManager(dev string) (*VIPManager, error) {
-	link := &netlink.Iptun{}
+type VIPManager struct {
+	VIPDevice  string
+	RemoteList []*Remote
+	VIP        netip.Prefix
+	LocalAddr  netip.Addr
+	PhyDev     int
+}
+
+func NewVIPManager(dev string, localAddr netip.Addr, phyDevIndex int) (*VIPManager, error) {
+	link := &netlink.Dummy{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: dev,
+		},
+	}
 	link.Name = dev
-	link.Remote
-	err = netlink.LinkAdd(link)
+	err := netlink.LinkAdd(link)
 	if err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
@@ -29,7 +44,45 @@ func NewVIPManager(dev string) (*VIPManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &VIPManager{VIPDevice: dev}, nil
+	return &VIPManager{VIPDevice: dev, LocalAddr: localAddr, PhyDev: phyDevIndex}, nil
+}
+
+func (m *VIPManager) UpdateRemote(remotes []*protocol.L4LBData, logger *slog.Logger) error {
+	m.RemoteList = make([]*Remote, len(remotes))
+	for i, remote := range remotes {
+		hexMac := hex.EncodeToString(remote.MacAddress[:])
+		ipTun := &netlink.Iptun{
+			LinkAttrs: netlink.LinkAttrs{
+				Name:        hexMac,
+				ParentIndex: m.PhyDev,
+			},
+			Local:  m.LocalAddr.AsSlice(),
+			Remote: remote.Address[:],
+		}
+		if err := netlink.LinkAdd(ipTun); err != nil {
+			if !errors.Is(err, os.ErrExist) {
+				return fmt.Errorf("failed to add iptun link %s: %w", hexMac, err)
+			}
+			existingLink, err := netlink.LinkByName(hexMac)
+			if err != nil {
+				return fmt.Errorf("failed to find existing iptun link %s: %w", hexMac, err)
+			}
+			// delete and recreate
+			if err := netlink.LinkDel(existingLink); err != nil {
+				return fmt.Errorf("failed to delete existing iptun link %s: %w", hexMac, err)
+			}
+			time.Sleep(100 * time.Millisecond) // Give some time for the link to be removed
+			if err := netlink.LinkAdd(ipTun); err != nil {
+				return fmt.Errorf("failed to recreate iptun link %s: %w", hexMac, err)
+			}
+		}
+		m.RemoteList[i] = &Remote{
+			Remote: remote,
+			Link:   ipTun,
+		}
+	}
+	logger.Info("Updated remote list", "count", len(m.RemoteList))
+	return nil
 }
 
 func (m *VIPManager) UpdateVIP(vip netip.Prefix, logger *slog.Logger) error {
@@ -68,4 +121,7 @@ func (m *VIPManager) UpdateVIP(vip netip.Prefix, logger *slog.Logger) error {
 		return fmt.Errorf("failed to add VIP %s to device %s: %w", vip, m.VIPDevice, err)
 	}
 
+	m.VIP = vip
+	logger.Info("VIP updated", "vip", vip, "dev", m.VIPDevice)
+	return nil
 }
