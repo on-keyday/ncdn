@@ -14,20 +14,21 @@ set +x
 
 cd ${SRC_DIR}/l4lb
 
-dests=""
+#dests=""
 
 # for ns in LB C0 C1; do
-for ns in LB C0 C1; do
-    ip4=$(sudo ip netns exec ${ns} ip -json -f inet a show net0 | jq '.[].addr_info[].local' -r)
-    mac=$(sudo ip netns exec ${ns} cat /sys/class/net/net0/address)
+# for ns in LB C0 C1; do
+#     ip4=$(sudo ip netns exec ${ns} ip -json -f inet a show net0 | jq '.[].addr_info[].local' -r)
+#     mac=$(sudo ip netns exec ${ns} cat /sys/class/net/net0/address)
 
-    dests="${dests}${ip4};${mac},"
-done
+#     dests="${dests}${ip4};${mac},"
+# done
 
-echo ${dests}
+# echo ${dests}
 
 # TODO: move address
-controlPlaneAddr="ws://192.168.88.30:8080"
+controlPlaneAddr="${CONTROL_PLANE_ADDRESS:-ws://192.168.88.30:8080}"
 
-sudo ip -n LB tunn del ipip0 || echo "no ipip0. good" # in case it exists from a `nolb.sh` run
-sudo ip netns exec LB bash -c "mkdir -p /sys/fs/bpf && mount -t bpf bpf /sys/fs/bpf && ${BIN_DIR}/l4lb -xdpcapHookPath=\"\" -dests=\"${dests}\" -controlPlane ${controlPlaneAddr}" 
+#sudo ip -n LB tunn del ipip0 || echo "no ipip0. good" # in case it exists from a `nolb.sh` run
+#sudo ip netns exec LB bash -c "mkdir -p /sys/fs/bpf && mount -t bpf bpf /sys/fs/bpf && ${BIN_DIR}/l4lb -xdpcapHookPath=\"\" -dests=\"${dests}\" -controlPlane ${controlPlaneAddr}" 
+${BIN_DIR}/l4lb -controlPlane ${controlPlaneAddr}

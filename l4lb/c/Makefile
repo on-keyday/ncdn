@@ -12,10 +12,10 @@ all: lb.o dummy.o init_crypto.o
 .SUFFIXES: .o .ll .c .h
 
 .c.ll:
-	clang-20 ${CFLAGS} -emit-llvm -c -o $@ $<
+	clang-19 ${CFLAGS} -emit-llvm -c -o $@ $<
 
 .ll.o:
-	llc-20 -march=bpf -filetype=obj -o $@ $<
+	llc-19 -march=bpf -filetype=obj -o $@ $<
 ifeq (${NCDN_STRIP},1)
 	llvm-strip -g $@
 endif
