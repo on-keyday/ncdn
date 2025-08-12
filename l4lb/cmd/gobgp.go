@@ -1,15 +1,6 @@
 package main
 
-import (
-	"context"
-	"net/netip"
-
-	gobgpapi "github.com/osrg/gobgp/api"
-	"github.com/osrg/gobgp/pkg/server"
-	"google.golang.org/protobuf/protoadapt"
-	"google.golang.org/protobuf/types/known/anypb"
-)
-
+/*
 type BGPManager struct {
 	Server *server.BgpServer
 	VIP    netip.Prefix
@@ -99,3 +90,4 @@ func (b *BGPManager) UpdateVIP(vip netip.Prefix) error {
 	b.VIP = vip
 	return err
 }
+*/
