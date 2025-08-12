@@ -34,11 +34,23 @@ func InitCrypto(binPath string, cryptoMap string, sharedKey []byte) error {
 		return fmt.Errorf("failed to read spec %q: %w", binPath, err)
 	}
 
+	var cryptoMapExists bool
+	var cryptoMapPass string
+
+	if _, exists := os.Stat(cryptoMap); !os.IsNotExist(exists) {
+		spec.Maps["__crypto_ctx_map"].Pinning = ebpf.PinByName
+		cryptoMapExists = true
+		cryptoMapPass = cryptoMap
+	}
+
 	var bindings CryptoInitBinding
 	if err := spec.LoadAndAssign(&bindings, &ebpf.CollectionOptions{
 		Programs: ebpf.ProgramOptions{
 			LogLevel:     0,
 			LogSizeStart: 1 * 1024 * 1024,
+		},
+		Maps: ebpf.MapOptions{
+			PinPath: cryptoMapPass,
 		},
 	}); err != nil {
 		var ve *ebpf.VerifierError
@@ -63,11 +75,15 @@ func InitCrypto(binPath string, cryptoMap string, sharedKey []byte) error {
 		return fmt.Errorf("failed to test crypto init: %w", err)
 	}
 
-	err = bindings.CryptoCtxMap.Pin(cryptoMap)
-	if err != nil {
-		return fmt.Errorf("failed to pin crypto context map %q: %w", cryptoMap, err)
+	if !cryptoMapExists {
+		err = bindings.CryptoCtxMap.Pin(cryptoMap)
+		if err != nil {
+			return fmt.Errorf("failed to pin crypto context map %q: %w", cryptoMap, err)
+		}
+		slog.Info("Crypto context map pinned", slog.String("path", cryptoMap))
+	} else {
+		slog.Info("Crypto context map already exists, using existing map", slog.String("path", cryptoMap))
 	}
-	slog.Info("Crypto context map pinned", slog.String("path", cryptoMap))
 
 	if err := bindings.CryptoInit.Close(); err != nil {
 		return fmt.Errorf("failed to close crypto init program: %w", err)

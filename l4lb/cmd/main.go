@@ -233,7 +233,8 @@ func main() {
 			})
 		}, counters.GetStat)
 
-	updateChan := make(chan *protocol.L4Lbl7Lbupdate, 1)
+	updateDestsChan := make(chan *protocol.L4Lbl7Lbupdate, 1)
+	updateConfig := make(chan *protocol.L4Lbupdate, 1)
 
 	cmdMgr := remoteshell.NewManager()
 
@@ -247,7 +248,10 @@ func main() {
 				return // this is fatal, we cannot continue without a connection
 			}
 			if l7lbUpdate := msg.L4LbL7LbUpdate(); l7lbUpdate != nil {
-				updateChan <- l7lbUpdate
+				updateDestsChan <- l7lbUpdate
+				continue
+			} else if l4lbUpdate := msg.L4LbUpdate(); l4lbUpdate != nil {
+				updateConfig <- l4lbUpdate
 				continue
 			}
 			if handled, err := remoteshell.DispatchMessage(cmdMgr, msg); err != nil {
@@ -299,7 +303,7 @@ func main() {
 				counters.Set(counter)
 			}
 			continue
-		case update := <-updateChan:
+		case update := <-updateDestsChan:
 			slog.Info("Received L7 load balancer update", slog.Any("update", update.Info))
 			var destEntries []l4lbdrv.DestinationEntry
 			destEntries = append(destEntries, firstEntry) // first is self address
@@ -310,7 +314,7 @@ func main() {
 					ServerID:     dest.ServerId,
 				})
 			}
-			if err := lb.UpdateConfig(destEntries); err != nil {
+			if err := lb.UpdateDestinations(destEntries); err != nil {
 				retryConn.Send(&lbconn.LogMsg{
 					Level:   protocol.LogLevel_Error,
 					Message: fmt.Sprintf("Failed to update load balancer configuration: %v", err),
@@ -322,6 +326,22 @@ func main() {
 					Message: "Load balancer configuration updated successfully",
 				})
 				slog.Info("Load balancer configuration updated successfully")
+			}
+			continue
+		case update := <-updateConfig:
+			slog.Info("Received L4 load balancer update", slog.Any("update", update))
+			if err := lb.UpdateVIP(netip.AddrFrom4(update.VirtualAddress)); err != nil {
+				retryConn.Send(&lbconn.LogMsg{
+					Level:   protocol.LogLevel_Error,
+					Message: fmt.Sprintf("Failed to update VIP: %v", err),
+				})
+				slog.Error("Failed to update VIP", slog.Any("error", err))
+			} else {
+				retryConn.Send(&lbconn.LogMsg{
+					Level:   protocol.LogLevel_Info,
+					Message: "VIP updated successfully",
+				})
+				slog.Info("VIP updated successfully")
 			}
 			continue
 		case cmd := <-cmdMgr.Output():
