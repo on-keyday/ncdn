@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"os"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"github.com/yzp0n/ncdn/popcache/cache"
 	lbconnid "github.com/yzp0n/ncdn/popcache/connid"
 	"github.com/yzp0n/ncdn/popcache/edge"
+	"github.com/yzp0n/ncdn/popcache/vip"
 	"github.com/yzp0n/ncdn/tool/util"
 	"github.com/yzp0n/ncdn/types"
 	"golang.org/x/net/http2"
@@ -123,7 +125,7 @@ func main() {
 		log.Fatalf("Failed to parse origin URL %q: %v", *originURLStr, err)
 	}
 
-	_, addr, hardAddr, err := util.GetSelfIPv4Address(*interfaceName)
+	devName, devIndex, addr, hardAddr, err := util.GetSelfIPv4Address(*interfaceName)
 	if err != nil {
 		log.Fatalf("Failed to get IPv4 address for interface %s: %v", *interfaceName, err)
 	}
@@ -171,6 +173,10 @@ func main() {
 
 	cmdMgr := remoteshell.NewManager()
 	chunkedMap := chunk.NewChunkMap()
+	vipmgr, err := vip.NewVIPManager(devName, addr, devIndex)
+	if err != nil {
+		log.Fatalf("Failed to create VIP manager: %v", err)
+	}
 
 	go func() {
 		for {
@@ -227,6 +233,38 @@ func main() {
 						retryConn.Send(&lbconn.LogMsg{
 							Level:   protocol.LogLevel_Info,
 							Message: fmt.Sprintf("WASM module %d unregistered successfully", wasm.Id),
+						})
+					}
+				} else if vipUpdate := chunked.Msg.VipUpdate(); vipUpdate != nil {
+					if err := vipmgr.UpdateVIP(netip.PrefixFrom(netip.AddrFrom4(vipUpdate.VirtualAddress), int(vipUpdate.Prefix)), slog.Default()); err != nil {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Error,
+							Message: fmt.Sprintf("Failed to update VIP: %v", err),
+						})
+					} else {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Info,
+							Message: fmt.Sprintf("VIP %s updated successfully", netip.PrefixFrom(netip.AddrFrom4(vipUpdate.VirtualAddress), int(vipUpdate.Prefix))),
+						})
+					}
+				} else if l7l4update := chunked.Msg.L7LbL4LbUpdate(); l7l4update != nil {
+					var remoteList []*protocol.L4LBData
+					for _, r := range l7l4update.Info {
+						remoteList = append(remoteList, &protocol.L4LBData{
+							Address:    r.Address,
+							MacAddress: r.MacAddress,
+							ServerID:   r.ServerId,
+						})
+					}
+					if err := vipmgr.UpdateRemote(remoteList, slog.Default()); err != nil {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Error,
+							Message: fmt.Sprintf("Failed to update remote list: %v", err),
+						})
+					} else {
+						retryConn.Send(&lbconn.LogMsg{
+							Level:   protocol.LogLevel_Info,
+							Message: fmt.Sprintf("Remote list updated successfully with %d entries", len(remoteList)),
 						})
 					}
 				} else {

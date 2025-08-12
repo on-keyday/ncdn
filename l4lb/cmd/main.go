@@ -165,7 +165,7 @@ func main() {
 	//if err != nil {
 	//	log.Panicf("Failed to parse dest string: %v", err)
 	//}
-	ifname, addr, hardAddr, err := util.GetSelfIPv4Address(*xdpif)
+	ifname, _, addr, hardAddr, err := util.GetSelfIPv4Address(*xdpif)
 	if err != nil {
 		log.Panicf("Failed to get IPv4 address for interface %s: %v", *xdpif, err)
 	}
