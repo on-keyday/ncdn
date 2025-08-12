@@ -40,7 +40,7 @@ func InitCrypto(binPath string, cryptoMap, cryptoMapDir string, sharedKey []byte
 	if _, exists := os.Stat(cryptoMap); !os.IsNotExist(exists) {
 		spec.Maps["__crypto_ctx_map"].Pinning = ebpf.PinByName
 		cryptoMapExists = true
-		cryptoMapPass = cryptoMap
+		cryptoMapPass = cryptoMapDir
 	}
 
 	var bindings CryptoInitBinding
