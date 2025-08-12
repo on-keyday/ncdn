@@ -47,6 +47,7 @@ var originURLStr = flag.String("originURL", "http://localhost:8888", "Origin ser
 var secureListenAddr = flag.String("listenAddr", ":8889", "Address to listen on")
 var httpListenAddr = flag.String("insecureListenAddr", ":8890", "HTTP server address to listen on")
 var nodeId = flag.String("nodeId", "unknown_node", "Name of the node")
+var interfaceName = flag.String("interface", "", "Network interface name to use for IPv4 address (default: first non-loopback interface)")
 var lbNodeId = flag.Uint("lbNodeId", 0, "LB node ID (if 0, derived from nodeId)")
 var certFile = flag.String("certFile", "ca/cert.pem", "Path to the TLS certificate file")
 var keyFile = flag.String("keyFile", "ca/key.pem", "Path to the TLS key file")
@@ -113,20 +114,6 @@ func (s *appStat) GetStat() (*protocol.L7UpdateInfo, error) {
 	return &protocol.L7UpdateInfo{}, nil
 }
 
-func getNonLoopbackIfaces() ([]net.Interface, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
-	}
-	var nonLoopback []net.Interface
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagLoopback == 0 {
-			nonLoopback = append(nonLoopback, iface)
-		}
-	}
-	return nonLoopback, nil
-}
-
 func main() {
 	flag.Parse()
 	log.Printf("QUIC_GO_LOG_LEVEL=%s", os.Getenv("QUIC_GO_LOG_LEVEL"))
@@ -136,14 +123,9 @@ func main() {
 		log.Fatalf("Failed to parse origin URL %q: %v", *originURLStr, err)
 	}
 
-	ifaces, err := getNonLoopbackIfaces()
+	addr, hardAddr, err := util.GetSelfIPv4Address(*interfaceName)
 	if err != nil {
-		log.Fatalf("Failed to get network interfaces: %v", err)
-	}
-
-	addrs, err := ifaces[0].Addrs()
-	if err != nil {
-		log.Fatalf("Failed to get addresses: %v", err)
+		log.Fatalf("Failed to get IPv4 address for interface %s: %v", *interfaceName, err)
 	}
 
 	controlPlaneURL, err := url.Parse(*controlPlaneAddr)
@@ -177,8 +159,8 @@ func main() {
 	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectL7LB,
 		&protocol.L7LBData{
 			ServerID:   serverID,
-			Address:    [4]byte(addrs[0].(*net.IPNet).IP.To4()),
-			MacAddress: [6]byte(ifaces[0].HardwareAddr),
+			Address:    [4]byte(addr.As4()),
+			MacAddress: [6]byte(hardAddr),
 		}, 20*time.Second, func() (transport.Connection, error) {
 			return wstransport.Connect(context.Background(), &websocket.Config{
 				Location: controlPlaneURL,

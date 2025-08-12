@@ -161,9 +161,13 @@ func main() {
 		log.Panicf("MTU must not exceed 65535 bytes, got %d", *mtu)
 	}
 
-	dests, err := parseDest(*deststr)
+	//dests, err := parseDest(*deststr)
+	//if err != nil {
+	//	log.Panicf("Failed to parse dest string: %v", err)
+	//}
+	addr, hardAddr, err := util.GetSelfIPv4Address(*xdpif)
 	if err != nil {
-		log.Panicf("Failed to parse dest string: %v", err)
+		log.Panicf("Failed to get IPv4 address for interface %s: %v", *xdpif, err)
 	}
 
 	derivedKey, err := util.DeriveKey([]byte(*sharedKey), "quic-lb")
@@ -186,7 +190,11 @@ func main() {
 	httpOrigin := *controlPlaneURL
 	httpOrigin.Scheme = "http"
 	log.Printf("Connecting to control plane at %s with origin %s", controlPlaneURL.String(), httpOrigin.String())
-
+	firstEntry := l4lbdrv.DestinationEntry{
+		IPAddr:       addr,
+		HardwareAddr: hardAddr,
+		ServerID:     uint32(1), // TODO: Make this configurable
+	}
 	cfg := &l4lbdrv.Config{
 		BinPath:        *lbBin,
 		CryptoBin:      *cryptoBin,
@@ -194,7 +202,7 @@ func main() {
 		XdpCapHookPath: *xdpcapHookPath,
 		InterfaceName:  *xdpif,
 		VIP:            netip.MustParseAddr(*vip),
-		Dests:          dests,
+		Dests:          []l4lbdrv.DestinationEntry{firstEntry},
 		SharedKey:      derivedKey,
 		MTU:            uint16(*mtu),
 		RoutingRandom:  random,
@@ -215,8 +223,8 @@ func main() {
 		&protocol.L4LBData{
 			ServerID:       uint32(1), // TODO: Make this configurable
 			VirtualAddress: netip.MustParseAddr(*vip).As4(),
-			Address:        dests[0].IPAddr.As4(),
-			MacAddress:     [6]byte(dests[0].HardwareAddr),
+			Address:        addr.As4(),
+			MacAddress:     [6]byte(hardAddr),
 		}, 20*time.Second, func() (transport.Connection, error) {
 			return wstransport.Connect(context.Background(), &websocket.Config{
 				Location: controlPlaneURL,
@@ -294,7 +302,7 @@ func main() {
 		case update := <-updateChan:
 			slog.Info("Received L7 load balancer update", slog.Any("update", update.Info))
 			var destEntries []l4lbdrv.DestinationEntry
-			destEntries = append(destEntries, dests[0]) // first is self address
+			destEntries = append(destEntries, firstEntry) // first is self address
 			for _, dest := range update.Info {
 				destEntries = append(destEntries, l4lbdrv.DestinationEntry{
 					IPAddr:       netip.AddrFrom4(dest.Address),
