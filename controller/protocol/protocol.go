@@ -293,7 +293,7 @@ func L4LBUpdate(virtual_address [4]byte) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(4 + 4),
+			Len:         uint16(4),
 			MessageType: ControlMessageType_L4LbUpdate,
 		},
 	}
