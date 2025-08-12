@@ -185,6 +185,7 @@ func main() {
 	if err != nil {
 		log.Panicf("Failed to get default gateway: %v", err)
 	}
+	_ = defaultGW // TODO: Use default gateway in iBGP setup
 
 	controlPlaneURL, err := url.Parse(*controlPlaneAddr)
 	if err != nil {
@@ -196,10 +197,10 @@ func main() {
 	httpOrigin := *controlPlaneURL
 	httpOrigin.Scheme = "http"
 
-	bgpServe, err := SetupIBGP(uint32(*asn), addr, defaultGW)
-	if err != nil {
-		log.Panicf("Failed to setup iBGP: %v", err)
-	}
+	//bgpServe, err := SetupIBGP(uint32(*asn), addr, defaultGW)
+	//if err != nil {
+	//	log.Panicf("Failed to setup iBGP: %v", err)
+	//}
 
 	firstEntry := l4lbdrv.DestinationEntry{
 		IPAddr:       addr,
@@ -348,19 +349,19 @@ func main() {
 				})
 				slog.Error("Failed to update VIP", slog.Any("error", err))
 			} else {
-				if err := bgpServe.UpdateVIP(netip.PrefixFrom(netip.AddrFrom4(update.VirtualAddress), int(update.Prefix))); err != nil {
+				/*if err := bgpServe.UpdateVIP(netip.PrefixFrom(netip.AddrFrom4(update.VirtualAddress), int(update.Prefix))); err != nil {
 					retryConn.Send(&lbconn.LogMsg{
 						Level:   protocol.LogLevel_Error,
 						Message: fmt.Sprintf("Failed to update BGP VIP: %v", err),
 					})
 					slog.Error("Failed to update BGP VIP", slog.Any("error", err))
-				} else {
-					retryConn.Send(&lbconn.LogMsg{
-						Level:   protocol.LogLevel_Info,
-						Message: "VIP updated successfully",
-					})
-					slog.Info("VIP updated successfully")
-				}
+				} else {*/
+				retryConn.Send(&lbconn.LogMsg{
+					Level:   protocol.LogLevel_Info,
+					Message: "VIP updated successfully",
+				})
+				slog.Info("VIP updated successfully")
+				//}
 			}
 			continue
 		case cmd := <-cmdMgr.Output():
