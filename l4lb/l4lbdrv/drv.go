@@ -65,7 +65,7 @@ func New(cfg *Config) (*L4LB, error) {
 			return nil, fmt.Errorf("Failed to get absolute path for %s: %w", cfg.CryptoBin, err)
 		}
 	}
-	err = InitCrypto(aCryptoBin, filepath.Join(cryptoPinDirPath, "__crypto_ctx_map"), cfg.SharedKey)
+	err = InitCrypto(aCryptoBin, filepath.Join(cryptoPinDirPath, "__crypto_ctx_map"), cryptoPinDirPath, cfg.SharedKey)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to init crypto: %w", err)
 	}

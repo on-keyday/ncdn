@@ -14,7 +14,7 @@ type CryptoInitBinding struct {
 	CryptoCtxMap *ebpf.Map     `ebpf:"__crypto_ctx_map"`
 }
 
-func InitCrypto(binPath string, cryptoMap string, sharedKey []byte) error {
+func InitCrypto(binPath string, cryptoMap, cryptoMapDir string, sharedKey []byte) error {
 	m, err := ReadDWARFStructs(binPath)
 	if err != nil {
 		return fmt.Errorf("ReadDWARFStructs(%q): %w", binPath, err)
