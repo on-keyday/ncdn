@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -46,6 +47,7 @@ type Controller interface {
 	Status() *ControllerStatus
 	KillAll(typ LBType, serverID uint32) error
 	Command(typ LBType, serverID uint32, cmdline string, enablePty bool) (CommandLine, error)
+	UpdateVIP(dest *DestInfo, vip netip.Addr) error
 }
 
 func (c *controller) Status() *ControllerStatus {

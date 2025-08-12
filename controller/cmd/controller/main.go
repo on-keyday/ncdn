@@ -39,6 +39,7 @@ func main() {
 		fileSender:  make(chan fileSendRequest, 10),
 		wasmSender:  make(chan wasmDeployRequest, 10),
 		wasmRemover: make(chan wasmRemoveRequest, 10),
+		vipSender:   make(chan api.VIPUpdate, 10),
 	}
 	p := tea.NewProgram(initialModel(c))
 	go func() {
@@ -185,6 +186,36 @@ func main() {
 		}
 	}()
 	go func() {
+		for req := range c.vipSender {
+			func(req api.VIPUpdate) {
+				vip := req.VIP
+				serverIDs := req.Dest.DestEntries
+				if !vip.IsValid() {
+					p.Send(errMsg(fmt.Errorf("invalid VIP address: %v", vip)))
+					return
+				}
+				jsonData, err := json.Marshal(req)
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to marshal VIP update info: %w", err)))
+					return
+				}
+				updateURL := fmt.Sprintf("%s/vip/update", *controlPlane)
+				p.Send(logUpdate(fmt.Sprintf("Updating VIP to %s for servers %v at %s", vip, serverIDs, updateURL)))
+				resp, err := http.Post(updateURL, "application/json", strings.NewReader(string(jsonData)))
+				if err != nil {
+					p.Send(errMsg(fmt.Errorf("failed to update VIP %s: %w", vip, err)))
+					return
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusAccepted {
+					p.Send(errMsg(fmt.Errorf("failed to update VIP %s, status: %s", vip, resp.Status)))
+					return
+				}
+				p.Send(logUpdate(fmt.Sprintf("VIP %s notified successfully for servers %v", vip, serverIDs)))
+			}(req)
+		}
+	}()
+	go func() {
 		p.Send(logUpdate("Connecting to control plane..."))
 		for {
 			logStream, err := http.Get(cplaneURL.String() + "/logs")
@@ -272,6 +303,7 @@ type channels struct {
 	fileSender  chan fileSendRequest
 	wasmSender  chan wasmDeployRequest
 	wasmRemover chan wasmRemoveRequest
+	vipSender   chan api.VIPUpdate
 }
 
 type model struct {
@@ -529,6 +561,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							wasmRemover <- wasmRemoveRequest{
 								wasmID: uint32(wasmIDUint),
 								dests:  serverIDs,
+							}
+						}()
+					}
+				case "vipupdate":
+					if len(parsedCmd) < 3 {
+						setContent("Usage: vipupdate <vip> <serverID(lbType:id1,id2,...)>...")
+					} else {
+						vipStr := parsedCmd[1]
+						vip, err := netip.ParseAddr(vipStr)
+						if err != nil {
+							setContent(fmt.Sprintf("Invalid VIP address: %v", err))
+							return finalUpdate()
+						}
+						serverIDs, err := parseServerIDs(parsedCmd[2:])
+						if err != nil {
+							setContent(fmt.Sprintf("Error parsing server IDs: %v", err))
+							return finalUpdate()
+						}
+						setContent(fmt.Sprintf("Updating VIP to %s for servers %v", vip, serverIDs))
+						// Here you would implement the actual VIP update logic
+						vipSender := m.c.vipSender
+						go func() {
+							vipSender <- api.VIPUpdate{
+								VIP: vip,
+								Dest: control.DestInfo{
+									DestEntries: serverIDs,
+								},
 							}
 						}()
 					}

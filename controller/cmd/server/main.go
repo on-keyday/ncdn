@@ -257,6 +257,18 @@ func main() {
 		}
 		w.WriteHeader(http.StatusAccepted)
 	})
+	http.HandleFunc("POST /vip/update", func(w http.ResponseWriter, r *http.Request) {
+		var update api.VIPUpdate
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+			http.Error(w, "Failed to decode request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := controller.UpdateVIP(&update.Dest, update.VIP); err != nil {
+			http.Error(w, "Failed to update VIP: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
 	if err := controller.Run(ctx, lis); err != nil {
 		log.Fatalf("Controller run failed: %v", err)
 	}

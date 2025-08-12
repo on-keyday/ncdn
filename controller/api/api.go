@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/netip"
 	"sync"
 	"time"
 
@@ -91,4 +92,9 @@ type WasmUninstallBody struct {
 
 type UploadResponse struct {
 	ID uint64 `json:"id"`
+}
+
+type VIPUpdate struct {
+	VIP  netip.Addr       `json:"vip"`
+	Dest control.DestInfo `json:"dests"`
 }

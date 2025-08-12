@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"slices"
 	"sync"
 
@@ -493,4 +494,17 @@ func (c *controller) KillAll(typ LBType, serverID uint32) error {
 		seqNum: lb.GetSeqNum(),
 		data:   protocol.CommandLineInstruction(0, protocol.CmdInstructionType_KillAll, 0),
 	})
+}
+
+func (c *controller) UpdateVIP(dest *DestInfo, vip netip.Addr) error {
+	if !vip.Is4() {
+		return fmt.Errorf("invalid VIP address: %v", vip)
+	}
+	lb, err := c.lookupSender(dest)
+	if err != nil {
+		return fmt.Errorf("failed to lookup sender: %w", err)
+	}
+	return c.sendToLB(lb, func(chunkInfo protocol.ChunkInfo) *protocol.ControlMessage {
+		return protocol.L4LBUpdate(vip.As4())
+	}, nil)
 }
