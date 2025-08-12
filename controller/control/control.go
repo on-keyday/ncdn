@@ -307,7 +307,7 @@ func (c *controller) Run(ctx context.Context, lis transport.Listener) error {
 			c.logger.Error("Failed to close listener", "error", err)
 		}
 	}()
-	c.logger.Info("Controller started, waiting for connections")
+	c.logger.Info("Controller started, waiting for connections", "addr", lis.LocalAddr())
 	for {
 		conn, err := lis.Accept()
 		if err != nil {

@@ -19,4 +19,5 @@ type Connection interface {
 type Listener interface {
 	Accept() (Connection, error)
 	Close() error
+	LocalAddr() string
 }

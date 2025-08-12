@@ -156,6 +156,13 @@ func NewWebSocketListener(addr string, tlsConf *tls.Config) (*WebSocketListener,
 	return listener, nil
 }
 
+func (l *WebSocketListener) LocalAddr() string {
+	if l.httpServer == nil || l.httpServer.Addr == "" {
+		return "unknown"
+	}
+	return l.httpServer.Addr
+}
+
 // Accept waits for and returns the next connection.
 func (l *WebSocketListener) Accept() (transport.Connection, error) {
 	conn, ok := <-l.connChan
