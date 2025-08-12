@@ -51,8 +51,8 @@ var httpListenAddr = flag.String("insecureListenAddr", ":8890", "HTTP server add
 var nodeId = flag.String("nodeId", "unknown_node", "Name of the node")
 var interfaceName = flag.String("interface", "", "Network interface name to use for IPv4 address (default: first non-loopback interface)")
 var lbNodeId = flag.Uint("lbNodeId", 0, "LB node ID (if 0, derived from nodeId)")
-var certFile = flag.String("certFile", "ca/cert.pem", "Path to the TLS certificate file")
-var keyFile = flag.String("keyFile", "ca/key.pem", "Path to the TLS key file")
+var certFile = flag.String("certFile", "", "Path to the TLS certificate file")
+var keyFile = flag.String("keyFile", "", "Path to the TLS key file")
 var sharedSecret = flag.String("sharedSecret", "shared_secret", "Shared secret for QUIC LB connection ID generation(TODO: move into secure place)")
 
 type ObservedPacketConn struct {
