@@ -95,10 +95,9 @@ func (l *L7LBWithStat) Clone() *L7LBWithStat {
 }
 
 type L4LBData struct {
-	ServerID       uint32
-	VirtualAddress [4]byte
-	Address        [4]byte
-	MacAddress     [6]byte
+	ServerID   uint32
+	Address    [4]byte
+	MacAddress [6]byte
 }
 
 type L4LBWithStat struct {
@@ -109,10 +108,9 @@ type L4LBWithStat struct {
 func (l *L4LBWithStat) Clone() *L4LBWithStat {
 	clone := &L4LBWithStat{
 		Data: L4LBData{
-			ServerID:       l.Data.ServerID,
-			VirtualAddress: l.Data.VirtualAddress,
-			Address:        l.Data.Address,
-			MacAddress:     l.Data.MacAddress,
+			ServerID:   l.Data.ServerID,
+			Address:    l.Data.Address,
+			MacAddress: l.Data.MacAddress,
 		},
 		EbpfData: make([]byte, len(l.EbpfData)),
 	}
@@ -136,10 +134,9 @@ func L4LBHelloToControlState(hello *L4Lbhello) *L4LBControlState {
 	return &L4LBControlState{
 		Data: &L4LBWithStat{
 			Data: L4LBData{
-				ServerID:       info.ServerId,
-				VirtualAddress: info.VirtualAddress,
-				Address:        info.Address,
-				MacAddress:     info.MacAddress,
+				ServerID:   info.ServerId,
+				Address:    info.Address,
+				MacAddress: info.MacAddress,
 			},
 			EbpfData: make([]byte, 0), // Placeholder, actual data should be filled
 		},
@@ -263,6 +260,31 @@ func L4L7LBUpdate(info []*L7LBData) *ControlMessage {
 	return msg
 }
 
+func L7L4LBUpdate(info []*L4LBData) *ControlMessage {
+	msg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         uint16(1),
+			MessageType: ControlMessageType_L4LbL7LbUpdate,
+		},
+	}
+	var l7lbInfo []L4Lbinfo
+	for _, v := range info {
+		l7lbInfo = append(l7lbInfo, L4Lbinfo{
+			Address:    v.Address,
+			MacAddress: v.MacAddress,
+			ServerId:   v.ServerID,
+		})
+		msg.Header.Len += uint16(4 + 4 + 6)
+	}
+	msg.SetL7LbL4LbUpdate(L7Lbl4Lbupdate{
+		Len:  uint8(len(info)),
+		Info: l7lbInfo,
+	})
+	return msg
+
+}
+
 const machineInfoLen = 1 + 8 + 8
 
 func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
@@ -275,10 +297,9 @@ func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
 	}
 	msg.SetL4LbHello(L4Lbhello{
 		Info: L4Lbinfo{
-			ServerId:       data.ServerID,
-			VirtualAddress: data.VirtualAddress,
-			Address:        data.Address,
-			MacAddress:     data.MacAddress,
+			ServerId:   data.ServerID,
+			Address:    data.Address,
+			MacAddress: data.MacAddress,
 		},
 		Machine: MachineInfo{
 			CpuCount:    machine.CPUCount,

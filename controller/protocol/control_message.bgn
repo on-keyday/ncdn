@@ -17,6 +17,7 @@ enum ControlMessageType:
     l7lb_hello # l7lb -> controller
     l7lb_update # controller -> l7lb
     l4lb_l7lb_update # controller -> l4lb
+    l7lb_l4lb_update # controller -> l7lb
     l4lb_hello # l4lb -> controller
     vip_update # controller -> l4lb,l7lb
     key_share # controller -> l4lb,l7lb
@@ -44,6 +45,7 @@ format ControlMessage:
         ControlMessageType.l7lb_update => l7lb_update :L7LBUpdate(input = input.subrange(header.len))
         ControlMessageType.l4lb_hello => l4lb_hello :L4LBHello(input = input.subrange(header.len))
         ControlMessageType.l4lb_l7lb_update => l4lb_l7lb_update :L4LBL7LBUpdate(input = input.subrange(header.len))
+        ControlMessageType.l7lb_l4lb_update => l7lb_l4lb_update :L7LBL4LBUpdate(input = input.subrange(header.len))
         ControlMessageType.vip_update => vip_update :VIPUpdate(input = input.subrange(header.len))
         ControlMessageType.key_share => key_share :KeyShareInfo(input = input.subrange(header.len))
         ControlMessageType.wasm_install => wasm_install :WasmInstallInfo(input = input.subrange(header.len))
@@ -80,7 +82,6 @@ format L4LBHello:
 
 format L4LBInfo:
     server_id :u32
-    virtual_address :[4]u8
     address :[4]u8
     mac_address :[6]u8
 
@@ -91,6 +92,10 @@ format L7LBUpdate:
 format L4LBL7LBUpdate:
     len :u8
     info :[len]L7LBInfo
+
+format L7LBL4LBUpdate:
+    len :u8
+    info :[len]L4LBInfo
 
 format KeepAliveInfo:
     next_period :u64 # nano sec

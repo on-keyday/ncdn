@@ -18,5 +18,6 @@ originAddr="${ORIGIN_ADDRESS:-http://192.168.88.30:8888/}"
 NODE_ID="${NODE_ID:-C0}"
 VIP_ADDR="${VIP_ADDR:-192.0.2.10:8888}"
 
+ip addr add ${VIP_ADDR} dev lo || true
 
 ${BIN_DIR}/popcache -controlPlane ${controlPlaneAddr} -originURL ${originAddr} -nodeId ${NODE_ID} -listenAddr ${VIP_ADDR} -certFile ${CA_DIR}/certs/${CA_SERIAL}/server.crt -keyFile ${CA_DIR}/private/${CA_SERIAL}/server.key

@@ -347,6 +347,15 @@ func sendL4L7LBUpdate(lbConn *L4LB, data []*protocol.L7LBData, seqNum uint64) {
 	}
 }
 
+func sendL7L4LBUpdate(lbConn *L7LB, data []*protocol.L4LBData, seqNum uint64) {
+	if err := lbConn.SendMessage(message{
+		seqNum: seqNum,
+		data:   protocol.L7L4LBUpdate(data),
+	}); err != nil {
+		lbConn.logger.Error("Failed to send L7L4LBUpdate message", "error", err)
+	}
+}
+
 func readControlMessage(conn transport.Connection) (*protocol.ControlMessage, int, error) {
 	data, err := conn.Receive()
 	if err != nil {
@@ -580,7 +589,7 @@ func (c *controller) handleL7LB(l7lb *L7LB) {
 			l7generation = c.l7lbList.generation
 			l4lblist = c.l4lblist.Clone()
 		})
-		l7lb.logger.Info("L7LB disconnected")
+		l7lb.logger.Info("L7LB disconnected", "remote_addr", l7lb.conn.RemoteAddr())
 		for _, l4lb := range l4lblist.list {
 			sendL4L7LBUpdate(l4lb, data, l7generation)
 		}
@@ -598,9 +607,22 @@ func (c *controller) handleL4LB(l4lb *L4LB) {
 		}
 		return 0, fmt.Errorf("unexpected message for L4LB: %v", msg.Header.MessageType)
 	}, func() {
+		var data []*protocol.L4LBData
+		var l7lblist *l7list
+		var l4generation uint64
 		c.withLock(func() {
 			c.l4lblist.Remove(l4lb) // Remove the L4LB from the list
+			for _, v := range c.l4lblist.list {
+				data = append(data, &v.data.data.Data.Data)
+			}
+			c.l4lblist.generation = c.msgSeqNum
+			c.msgSeqNum++
+			l4generation = c.l4lblist.generation
+			l7lblist = c.l7lbList.Clone()
 		})
 		l4lb.logger.Info("L4LB disconnected", "remote_addr", l4lb.conn.RemoteAddr())
+		for _, l7lb := range l7lblist.list {
+			sendL7L4LBUpdate(l7lb, data, l4generation) // Notify L7LBs about the L4LB disconnection
+		}
 	})
 }

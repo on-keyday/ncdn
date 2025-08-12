@@ -221,10 +221,9 @@ func main() {
 
 	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectL4LB,
 		&protocol.L4LBData{
-			ServerID:       uint32(1), // TODO: Make this configurable
-			VirtualAddress: netip.MustParseAddr(*vip).As4(),
-			Address:        addr.As4(),
-			MacAddress:     [6]byte(hardAddr),
+			ServerID:   uint32(1), // TODO: Make this configurable
+			Address:    addr.As4(),
+			MacAddress: [6]byte(hardAddr),
 		}, 20*time.Second, func() (transport.Connection, error) {
 			return wstransport.Connect(context.Background(), &websocket.Config{
 				Location: controlPlaneURL,
