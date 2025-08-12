@@ -484,6 +484,30 @@ func main() {
 		reverseProxy.ServeHTTP(w, r)
 	})
 
+	log.Printf("Listening on HTTP %s...", *httpListenAddr)
+	httpServ := &http.Server{
+		Addr:    *httpListenAddr,
+		Handler: mux,
+		ConnState: func(conn net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				log.Printf("New HTTP connection from %s", conn.RemoteAddr())
+			case http.StateClosed:
+				log.Printf("HTTP connection closed from %s", conn.RemoteAddr())
+			}
+		},
+	}
+	go func() {
+		if err := httpServ.ListenAndServe(); err != nil {
+			log.Fatalf("Failed to start HTTP server: %v", err)
+		}
+	}()
+	if *certFile == "" || *keyFile == "" {
+		for {
+			time.Sleep(10 * time.Second)
+		}
+	}
+
 	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 	if err != nil {
 		log.Fatalf("Failed to load TLS certificate and key: %v", err)
@@ -570,20 +594,8 @@ func main() {
 		}
 	}()
 
-	log.Printf("Listening on HTTP %s...", *httpListenAddr)
-	httpServ := &http.Server{
-		Addr:    *httpListenAddr,
-		Handler: mux,
-		ConnState: func(conn net.Conn, state http.ConnState) {
-			switch state {
-			case http.StateNew:
-				log.Printf("New HTTP connection from %s", conn.RemoteAddr())
-			case http.StateClosed:
-				log.Printf("HTTP connection closed from %s", conn.RemoteAddr())
-			}
-		},
+	for {
+		time.Sleep(10 * time.Second)
 	}
-	if err := httpServ.ListenAndServe(); err != nil {
-		log.Fatalf("Failed to start HTTP server: %v", err)
-	}
+
 }
