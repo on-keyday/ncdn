@@ -27,6 +27,10 @@ type VIPManager struct {
 	PhyDev     int
 }
 
+func DisableRPFilter(ifName string) error {
+	return os.WriteFile(fmt.Sprintf("/proc/sys/net/ipv4/conf/%s/rp_filter", ifName), []byte("0"), 0644)
+}
+
 func NewVIPManager(dev string, localAddr netip.Addr, phyDevIndex int) (*VIPManager, error) {
 	link := &netlink.Dummy{
 		LinkAttrs: netlink.LinkAttrs{
@@ -43,6 +47,9 @@ func NewVIPManager(dev string, localAddr netip.Addr, phyDevIndex int) (*VIPManag
 	err = netlink.LinkSetUp(link)
 	if err != nil {
 		return nil, err
+	}
+	if err := DisableRPFilter(dev); err != nil {
+		return nil, fmt.Errorf("failed to disable rp_filter on %s: %w", dev, err)
 	}
 	return &VIPManager{VIPDevice: dev, LocalAddr: localAddr, PhyDev: phyDevIndex}, nil
 }
@@ -75,6 +82,12 @@ func (m *VIPManager) UpdateRemote(remotes []*protocol.L4LBData, logger *slog.Log
 			if err := netlink.LinkAdd(ipTun); err != nil {
 				return fmt.Errorf("failed to recreate iptun link %s: %w", hexMac, err)
 			}
+		}
+		if err := DisableRPFilter(hexMac); err != nil {
+			return fmt.Errorf("failed to disable rp_filter on %s: %w", hexMac, err)
+		}
+		if err := netlink.LinkSetUp(ipTun); err != nil {
+			return fmt.Errorf("failed to set up iptun link %s: %w", hexMac, err)
 		}
 		m.RemoteList[i] = &Remote{
 			Remote: remote,
