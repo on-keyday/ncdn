@@ -17,7 +17,7 @@ func TestCrypto(t *testing.T) {
 		return b
 	}
 	key := mustDecodeHex("8f95f09245765f80256934e50c66207f")
-	err := l4lbdrv.InitCrypto("/mnt/ncdn/l4lb/c/init_crypto.o", "/sys/fs/bpf/__crypto_ctx_map", key)
+	err := l4lbdrv.InitCrypto("/mnt/ncdn/l4lb/c/init_crypto.o", "/sys/fs/bpf/__crypto_ctx_map", "/sys/fs/bpf/", key)
 	if err != nil {
 		t.Fatalf("Failed to initialize crypto: %v", err)
 	}

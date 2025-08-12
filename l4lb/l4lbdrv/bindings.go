@@ -101,14 +101,20 @@ func BindBalancer(binPath, xdpcapHookPath, cryptoPinDirPath string) (*Bindings, 
 	}
 
 	if xdpcapHookPath != "" {
-		/*
-			if err := os.RemoveAll(xdpcapHookPath); err != nil {
-				return nil, fmt.Errorf("Failed to rm previous XdpcapHook at %s: %w", xdpcapHookPath, err)
+		if _, err := os.Stat(xdpcapHookPath); !os.IsNotExist(err) {
+			slog.Warn("XdpcapHook path already exists, removing previous XdpcapHook",
+				slog.String("path", xdpcapHookPath))
+		} else {
+			/*
+				if err := os.RemoveAll(xdpcapHookPath); err != nil {
+					return nil, fmt.Errorf("Failed to rm previous XdpcapHook at %s: %w", xdpcapHookPath, err)
+				}
+			*/
+			if err := bindings.XdpcapHook.Pin(xdpcapHookPath); err != nil {
+				return nil, fmt.Errorf("Failed to pin XdpcapHook: %w", err)
 			}
-		*/
-		if err := bindings.XdpcapHook.Pin(xdpcapHookPath); err != nil {
-			return nil, fmt.Errorf("Failed to pin XdpcapHook: %w", err)
 		}
+		slog.Info("XdpcapHook pinned", slog.String("path", xdpcapHookPath))
 	}
 
 	return &bindings, nil
