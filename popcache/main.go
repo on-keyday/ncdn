@@ -123,7 +123,7 @@ func main() {
 		log.Fatalf("Failed to parse origin URL %q: %v", *originURLStr, err)
 	}
 
-	addr, hardAddr, err := util.GetSelfIPv4Address(*interfaceName)
+	_, addr, hardAddr, err := util.GetSelfIPv4Address(*interfaceName)
 	if err != nil {
 		log.Fatalf("Failed to get IPv4 address for interface %s: %v", *interfaceName, err)
 	}

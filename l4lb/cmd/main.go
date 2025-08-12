@@ -165,7 +165,7 @@ func main() {
 	//if err != nil {
 	//	log.Panicf("Failed to parse dest string: %v", err)
 	//}
-	addr, hardAddr, err := util.GetSelfIPv4Address(*xdpif)
+	ifname, addr, hardAddr, err := util.GetSelfIPv4Address(*xdpif)
 	if err != nil {
 		log.Panicf("Failed to get IPv4 address for interface %s: %v", *xdpif, err)
 	}
@@ -200,7 +200,7 @@ func main() {
 		CryptoBin:      *cryptoBin,
 		EBPFPinDir:     "/sys/fs/bpf/",
 		XdpCapHookPath: *xdpcapHookPath,
-		InterfaceName:  *xdpif,
+		InterfaceName:  ifname,
 		VIP:            netip.MustParseAddr(*vip),
 		Dests:          []l4lbdrv.DestinationEntry{firstEntry},
 		SharedKey:      derivedKey,
