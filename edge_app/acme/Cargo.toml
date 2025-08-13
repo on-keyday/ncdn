@@ -1,0 +1,14 @@
+# Cargo.toml
+
+[package]
+name = "acme"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# デバッグ出力用
+log = "0.4"
+edge_api = { path = "../api" }
