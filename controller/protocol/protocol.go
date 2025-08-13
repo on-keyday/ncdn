@@ -291,7 +291,7 @@ func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         machineInfoLen + uint16(4+4+4+6),
+			Len:         machineInfoLen + uint16(4+4+6),
 			MessageType: ControlMessageType_L4LbHello,
 		},
 	}
