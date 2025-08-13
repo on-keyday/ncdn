@@ -623,7 +623,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rows = append(rows, table.Row{
 				"L4",
 				fmt.Sprintf("%d", lb.Data.Data.ServerID),
-				netip.AddrFrom4(lb.Data.Data.Address).String(),
+				lb.Data.Data.Address.String(),
 				time.Duration(lb.Stat.Uptime).String(),
 				fmt.Sprintf("%.2f", lb.Stat.LoadAvg),
 			})
@@ -632,7 +632,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rows = append(rows, table.Row{
 				"L7",
 				fmt.Sprintf("%d", lb.Data.Data.ServerID),
-				netip.AddrFrom4(lb.Data.Data.Address).String(),
+				lb.Data.Data.Address.String(),
 				time.Duration(lb.Stat.Uptime).String(),
 				fmt.Sprintf("%.2f", lb.Stat.LoadAvg),
 			})

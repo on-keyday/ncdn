@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"net/netip"
 	"time"
 )
 
@@ -53,7 +54,7 @@ func (d *DataWithStat[T, U]) Update(machine *MachineStat, lb U) {
 
 type L7LBData struct {
 	ServerID   uint32
-	Address    [4]byte
+	Address    netip.Addr
 	MacAddress [6]byte
 	Ports      []uint16
 }
@@ -96,7 +97,7 @@ func (l *L7LBWithStat) Clone() *L7LBWithStat {
 
 type L4LBData struct {
 	ServerID   uint32
-	Address    [4]byte
+	Address    netip.Addr
 	MacAddress [6]byte
 }
 
@@ -126,6 +127,25 @@ type L4UpdateInfo struct {
 	EbpfData []byte
 }
 
+func ConverToAddress(addr netip.Addr) Address {
+	addrV := Address{}
+	if addr.Is4() {
+		addrV.SetIsV6(false)
+		addrV.SetAddrV4(addr.As4())
+	} else {
+		addrV.SetIsV6(true)
+		addrV.SetAddrV6(addr.As16())
+	}
+	return addrV
+}
+
+func IPFromAddress(addrV Address) netip.Addr {
+	if addrV.IsV6() {
+		return netip.AddrFrom16(*addrV.AddrV6())
+	}
+	return netip.AddrFrom4(*addrV.AddrV4())
+}
+
 type L4LBControlState = DataWithStat[*L4LBWithStat, *L4UpdateInfo]
 
 func L4LBHelloToControlState(hello *L4Lbhello) *L4LBControlState {
@@ -135,7 +155,7 @@ func L4LBHelloToControlState(hello *L4Lbhello) *L4LBControlState {
 		Data: &L4LBWithStat{
 			Data: L4LBData{
 				ServerID:   info.ServerId,
-				Address:    info.Address,
+				Address:    IPFromAddress(info.Address),
 				MacAddress: info.MacAddress,
 			},
 			EbpfData: make([]byte, 0), // Placeholder, actual data should be filled
@@ -176,7 +196,7 @@ func L7LBHelloToControlState(hello *L7Lbhello) *L7LBControlState {
 		Data: &L7LBWithStat{
 			Data: L7LBData{
 				ServerID:   info.ServerId,
-				Address:    info.Address,
+				Address:    IPFromAddress(info.Address),
 				MacAddress: info.MacAddress,
 				Ports:      info.Port,
 			},
@@ -210,7 +230,7 @@ func L7LBHello(lb *L7LBData, machine *MachineData) *ControlMessage {
 			DiskTotal:   machine.DiskTotal,
 		},
 		Info: L7Lbinfo{
-			Address:    lb.Address,
+			Address:    ConverToAddress(lb.Address),
 			MacAddress: lb.MacAddress,
 			PortLen:    uint8(len(lb.Ports)),
 			Port:       lb.Ports,
@@ -245,7 +265,7 @@ func L4L7LBUpdate(info []*L7LBData) *ControlMessage {
 	var l7lbInfo []L7Lbinfo
 	for _, v := range info {
 		l7lbInfo = append(l7lbInfo, L7Lbinfo{
-			Address:    v.Address,
+			Address:    ConverToAddress(v.Address),
 			MacAddress: v.MacAddress,
 			PortLen:    uint8(len(v.Ports)),
 			Port:       v.Ports,
@@ -271,7 +291,7 @@ func L7L4LBUpdate(info []*L4LBData) *ControlMessage {
 	var l7lbInfo []L4Lbinfo
 	for _, v := range info {
 		l7lbInfo = append(l7lbInfo, L4Lbinfo{
-			Address:    v.Address,
+			Address:    ConverToAddress(v.Address),
 			MacAddress: v.MacAddress,
 			ServerId:   v.ServerID,
 		})
@@ -298,7 +318,7 @@ func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
 	msg.SetL4LbHello(L4Lbhello{
 		Info: L4Lbinfo{
 			ServerId:   data.ServerID,
-			Address:    data.Address,
+			Address:    ConverToAddress(data.Address),
 			MacAddress: data.MacAddress,
 		},
 		Machine: MachineInfo{
@@ -310,7 +330,7 @@ func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
 	return msg
 }
 
-func VIPUpdate(prefix uint8, virtual_address [4]byte) *ControlMessage {
+func VIPUpdate(virtual_address netip.Prefix) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
@@ -319,8 +339,8 @@ func VIPUpdate(prefix uint8, virtual_address [4]byte) *ControlMessage {
 		},
 	}
 	msg.SetVipUpdate(Vipupdate{
-		Prefix:         prefix,
-		VirtualAddress: virtual_address,
+		Prefix:         uint8(virtual_address.Bits()),
+		VirtualAddress: ConverToAddress(virtual_address.Addr()),
 	})
 	return msg
 }

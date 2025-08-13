@@ -234,7 +234,7 @@ func main() {
 	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectL4LB,
 		&protocol.L4LBData{
 			ServerID:   uint32(1), // TODO: Make this configurable
-			Address:    addr.As4(),
+			Address:    addr,
 			MacAddress: [6]byte(hardAddr),
 		}, 20*time.Second, func() (transport.Connection, error) {
 			return wstransport.Connect(context.Background(), &websocket.Config{
@@ -321,7 +321,7 @@ func main() {
 			destEntries = append(destEntries, firstEntry) // first is self address
 			for _, dest := range update.Info {
 				destEntries = append(destEntries, l4lbdrv.DestinationEntry{
-					IPAddr:       netip.AddrFrom4(dest.Address),
+					IPAddr:       protocol.IPFromAddress(dest.Address),
 					HardwareAddr: net.HardwareAddr(dest.MacAddress[:]),
 					ServerID:     dest.ServerId,
 				})
@@ -342,7 +342,7 @@ func main() {
 			continue
 		case update := <-updateConfig:
 			slog.Info("Received L4 load balancer update", slog.Any("update", update))
-			if err := lb.UpdateVIP(netip.AddrFrom4(update.VirtualAddress)); err != nil {
+			if err := lb.UpdateVIP(protocol.IPFromAddress(update.VirtualAddress)); err != nil {
 				retryConn.Send(&lbconn.LogMsg{
 					Level:   protocol.LogLevel_Error,
 					Message: fmt.Sprintf("Failed to update VIP: %v", err),

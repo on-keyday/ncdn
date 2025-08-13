@@ -64,7 +64,7 @@ func (m *VIPManager) UpdateRemote(remotes []*protocol.L4LBData, logger *slog.Log
 				ParentIndex: m.PhyDev,
 			},
 			Local:  m.LocalAddr.AsSlice(),
-			Remote: remote.Address[:],
+			Remote: remote.Address.AsSlice(),
 		}
 		if err := netlink.LinkAdd(ipTun); err != nil {
 			if !errors.Is(err, os.ErrExist) {

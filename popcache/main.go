@@ -107,7 +107,6 @@ func (l *ObservedListener) Addr() net.Addr {
 }
 */
 
-
 ///var edgeApp []byte
 
 type appStat struct{}
@@ -162,7 +161,7 @@ func main() {
 	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectL7LB,
 		&protocol.L7LBData{
 			ServerID:   serverID,
-			Address:    [4]byte(addr.As4()),
+			Address:    addr,
 			MacAddress: [6]byte(hardAddr),
 		}, 20*time.Second, func() (transport.Connection, error) {
 			return wstransport.Connect(context.Background(), &websocket.Config{
@@ -237,7 +236,7 @@ func main() {
 						})
 					}
 				} else if vipUpdate := chunked.Msg.VipUpdate(); vipUpdate != nil {
-					if err := vipmgr.UpdateVIP(netip.PrefixFrom(netip.AddrFrom4(vipUpdate.VirtualAddress), int(vipUpdate.Prefix)), slog.Default()); err != nil {
+					if err := vipmgr.UpdateVIP(netip.PrefixFrom(protocol.IPFromAddress(vipUpdate.VirtualAddress), int(vipUpdate.Prefix)), slog.Default()); err != nil {
 						retryConn.Send(&lbconn.LogMsg{
 							Level:   protocol.LogLevel_Error,
 							Message: fmt.Sprintf("Failed to update VIP: %v", err),
@@ -245,14 +244,14 @@ func main() {
 					} else {
 						retryConn.Send(&lbconn.LogMsg{
 							Level:   protocol.LogLevel_Info,
-							Message: fmt.Sprintf("VIP %s updated successfully", netip.PrefixFrom(netip.AddrFrom4(vipUpdate.VirtualAddress), int(vipUpdate.Prefix))),
+							Message: fmt.Sprintf("VIP %s updated successfully", netip.PrefixFrom(protocol.IPFromAddress(vipUpdate.VirtualAddress), int(vipUpdate.Prefix))),
 						})
 					}
 				} else if l7l4update := chunked.Msg.L7LbL4LbUpdate(); l7l4update != nil {
 					var remoteList []*protocol.L4LBData
 					for _, r := range l7l4update.Info {
 						remoteList = append(remoteList, &protocol.L4LBData{
-							Address:    r.Address,
+							Address:    protocol.IPFromAddress(r.Address),
 							MacAddress: r.MacAddress,
 							ServerID:   r.ServerId,
 						})

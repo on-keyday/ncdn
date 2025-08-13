@@ -69,9 +69,17 @@ format L7LBHello:
     machine :MachineInfo
     info :L7LBInfo
 
+format Address:
+    is_v6 :u1
+    reserved :u7
+    if is_v6 == 1:
+        addr_v6 :[16]u8
+    else:
+        addr_v4 :[4]u8
+
 format L7LBInfo: # currently l4lb can interpret ipv4 only
     server_id :u32 # hashed value, for consistensy hash
-    address :[4]u8
+    address :Address
     mac_address :[6]u8
     port_len :u8
     port :[port_len]u16
@@ -82,7 +90,7 @@ format L4LBHello:
 
 format L4LBInfo:
     server_id :u32
-    address :[4]u8
+    address :Address
     mac_address :[6]u8
 
 
@@ -133,7 +141,7 @@ format L4LBKeepAlive:
 
 
 format VIPUpdate:
-    virtual_address :[4]u8
+    virtual_address :Address
     prefix :u8
 
 enum KeyType:
