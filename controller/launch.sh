@@ -7,6 +7,6 @@ go build -o ./secrets/console ./controller/cmd/console
 #sudo ip netns exec O ./secrets/c-plane &
 ./secrets/c-plane &
 CPLANE_PID=$!
-trap "sudo kill $CPLANE_PID" EXIT
+trap "kill $CPLANE_PID" EXIT
 #sudo ip netns exec O ./secrets/controller 
 ./secrets/controller 
