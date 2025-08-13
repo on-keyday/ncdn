@@ -23,4 +23,4 @@ vipInsecure="${VIP_ADDR}:80"
 
 #ip addr add ${VIP_ADDR} dev lo || true
 
-${BIN_DIR}/popcache -controlPlane ${controlPlaneAddr} -originURL ${originAddr} -nodeId ${NODE_ID} -listenAddr ${vipSecure} -insecureListenAddr ${vipInsecure} -certFile secrets/fullchain.pem -keyFile secrets/privkey.key
+${BIN_DIR}/popcache -controlPlane ${controlPlaneAddr} -originURL ${originAddr} -nodeId ${NODE_ID} -listenAddr ${vipSecure} -insecureListenAddr ${vipInsecure} -certFile secrets/fullchain.pem -keyFile secrets/privkey.pem
