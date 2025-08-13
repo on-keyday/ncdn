@@ -124,7 +124,7 @@ func main() {
 		log.Fatalf("Failed to parse origin URL %q: %v", *originURLStr, err)
 	}
 
-	devName, devIndex, addr, hardAddr, err := util.GetSelfIPv4Address(*interfaceName)
+	_, devIndex, addr, hardAddr, err := util.GetSelfIPv4Address(*interfaceName)
 	if err != nil {
 		log.Fatalf("Failed to get IPv4 address for interface %s: %v", *interfaceName, err)
 	}
@@ -173,7 +173,7 @@ func main() {
 
 	cmdMgr := remoteshell.NewManager()
 	chunkedMap := chunk.NewChunkMap()
-	vipmgr, err := vip.NewVIPManager(devName, addr, devIndex)
+	vipmgr, err := vip.NewVIPManager(addr, devIndex)
 	if err != nil {
 		log.Fatalf("Failed to create VIP manager: %v", err)
 	}

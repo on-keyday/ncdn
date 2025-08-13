@@ -31,27 +31,11 @@ func DisableRPFilter(ifName string) error {
 	return os.WriteFile(fmt.Sprintf("/proc/sys/net/ipv4/conf/%s/rp_filter", ifName), []byte("0"), 0644)
 }
 
-func NewVIPManager(dev string, localAddr netip.Addr, phyDevIndex int) (*VIPManager, error) {
-	link := &netlink.Dummy{
-		LinkAttrs: netlink.LinkAttrs{
-			Name: dev,
-		},
+func NewVIPManager(localAddr netip.Addr, phyDevIndex int) (*VIPManager, error) {
+	if err := DisableRPFilter("lo"); err != nil {
+		return nil, fmt.Errorf("failed to disable rp_filter on %s: %w", "lo", err)
 	}
-	link.Name = dev
-	err := netlink.LinkAdd(link)
-	if err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			return nil, err
-		}
-	}
-	err = netlink.LinkSetUp(link)
-	if err != nil {
-		return nil, err
-	}
-	if err := DisableRPFilter(dev); err != nil {
-		return nil, fmt.Errorf("failed to disable rp_filter on %s: %w", dev, err)
-	}
-	return &VIPManager{VIPDevice: dev, LocalAddr: localAddr, PhyDev: phyDevIndex}, nil
+	return &VIPManager{VIPDevice: "lo", LocalAddr: localAddr, PhyDev: phyDevIndex}, nil
 }
 
 func (m *VIPManager) UpdateRemote(remotes []*protocol.L4LBData, logger *slog.Logger) error {
