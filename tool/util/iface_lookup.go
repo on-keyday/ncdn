@@ -41,8 +41,8 @@ func GetSelfIPv4Address(name string) (string, int, netip.Addr, net.HardwareAddr,
 			ipv4Addrs = append(ipv4Addrs, addr)
 		}
 	}
-	if len(ipv4Addrs) != 1 {
-		return "", 0, netip.Addr{}, nil, errors.New("no unique IPv4 address found for interface")
+	if len(ipv4Addrs) == 0 {
+		return "", 0, netip.Addr{}, nil, errors.New("no IPv4 address found for interface")
 	}
 	return iface.Name, iface.Index, netip.AddrFrom4([4]byte(ipv4Addrs[0].(*net.IPNet).IP.To4())), iface.HardwareAddr, nil
 }
