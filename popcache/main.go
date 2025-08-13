@@ -107,7 +107,7 @@ func (l *ObservedListener) Addr() net.Addr {
 }
 */
 
-//go:embed wasm/edge_app.wasm
+
 ///var edgeApp []byte
 
 type appStat struct{}
