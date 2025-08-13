@@ -219,7 +219,7 @@ func L7LBHello(lb *L7LBData, machine *MachineData) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         machineInfoLen + uint16(4+4+6+1+len(lb.Ports)*2),
+			Len:         machineInfoLen + uint16(4+1+len(lb.Address.AsSlice())+6+1+len(lb.Ports)*2),
 			MessageType: ControlMessageType_L7LbHello,
 		},
 	}
@@ -271,7 +271,7 @@ func L4L7LBUpdate(info []*L7LBData) *ControlMessage {
 			Port:       v.Ports,
 			ServerId:   v.ServerID,
 		})
-		msg.Header.Len += uint16(4 + 4 + 6 + 1 + len(v.Ports)*2)
+		msg.Header.Len += uint16(4 + 1 + len(v.Address.AsSlice()) + 6 + 1 + len(v.Ports)*2)
 	}
 	msg.SetL4LbL7LbUpdate(L4Lbl7Lbupdate{
 		Len:  uint8(len(info)),
@@ -295,7 +295,7 @@ func L7L4LBUpdate(info []*L4LBData) *ControlMessage {
 			MacAddress: v.MacAddress,
 			ServerId:   v.ServerID,
 		})
-		msg.Header.Len += uint16(4 + 4 + 6)
+		msg.Header.Len += uint16(1 + len(v.Address.AsSlice()) + 4 + 6)
 	}
 	msg.SetL7LbL4LbUpdate(L7Lbl4Lbupdate{
 		Len:  uint8(len(info)),
@@ -311,7 +311,7 @@ func L4LBHello(data *L4LBData, machine *MachineData) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         machineInfoLen + uint16(4+4+6),
+			Len:         machineInfoLen + uint16(4+1+len(data.Address.AsSlice())+6),
 			MessageType: ControlMessageType_L4LbHello,
 		},
 	}
@@ -334,7 +334,7 @@ func VIPUpdate(virtual_address netip.Prefix) *ControlMessage {
 	msg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(5),
+			Len:         uint16(2 + len(virtual_address.Addr().AsSlice())),
 			MessageType: ControlMessageType_VipUpdate,
 		},
 	}
