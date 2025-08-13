@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"net/netip"
+	"os"
+	"path"
 	"strings"
 
 	"github.com/yzp0n/ncdn/httprps"
@@ -124,8 +126,8 @@ func serveJson(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.Parse()
-
-	geolocInfo, err := geoloc.FetchGeoLocation("/tmp/geoloc.json")
+	tmpDir := os.TempDir()
+	geolocInfo, err := geoloc.FetchGeoLocation(path.Join(tmpDir, "geoloc.json"))
 	if err != nil {
 		log.Fatalf("Failed to fetch GeoLocation: %v", err)
 	}
