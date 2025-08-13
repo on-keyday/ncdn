@@ -21,7 +21,7 @@ import (
 
 var requestCount = flag.Int("requestCount", 1, "Number of requests to send")
 var serverAddress = flag.String("serverAddress", "localhost:4433", "Server address to connect to")
-var rootCA = flag.String("rootCA", "path/to/rootCA.pem", "Path to the root CA certificate")
+var rootCA = flag.String("rootCA", "", "Path to the root CA certificate")
 var parallelRequests = flag.Bool("parallel", false, "Send requests in parallel")
 var metricsFile = flag.String("metricsFile", "metrics.json", "File to save metrics")
 var parallelLimit = flag.Int("parallelLimit", 0, "Maximum number of parallel requests (0 for no limit)")
