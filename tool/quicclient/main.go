@@ -67,14 +67,17 @@ func main() {
 	fmt.Println("Starting QUIC LB client...")
 	fmt.Println("Request Count:", *requestCount)
 	fmt.Println("Server Address:", *serverAddress)
-	fmt.Println("Root CA Path:", *rootCA)
-	rootCertPool := x509.NewCertPool()
-	rootCABytes, err := os.ReadFile(*rootCA)
-	if err != nil {
-		panic(err)
-	}
-	if !rootCertPool.AppendCertsFromPEM(rootCABytes) {
-		panic("Failed to append root CA")
+	var rootCertPool *x509.CertPool
+	if *rootCA != "" {
+		fmt.Println("Root CA Path:", *rootCA)
+		rootCertPool = x509.NewCertPool()
+		rootCABytes, err := os.ReadFile(*rootCA)
+		if err != nil {
+			panic(err)
+		}
+		if !rootCertPool.AppendCertsFromPEM(rootCABytes) {
+			panic("Failed to append root CA")
+		}
 	}
 	var client *http.Client
 	switch *mode {
