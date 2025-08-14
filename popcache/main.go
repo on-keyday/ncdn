@@ -424,9 +424,11 @@ func main() {
 			return
 		}
 		if routing == edge.Routing_Deny {
+			respHdr := w.Header()
+			respHdr.Set("Content-Type", "text/plain; charset=utf-8")
 			resp := &http.Response{
 				StatusCode: http.StatusForbidden,
-				Header:     http.Header{"Content-Type": []string{"text/plain"}},
+				Header:     respHdr,
 				Body:       io.NopCloser(bytes.NewBufferString("Access denied by edge function")),
 			}
 			handleResponse(resp)

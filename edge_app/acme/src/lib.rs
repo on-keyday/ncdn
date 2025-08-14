@@ -1,33 +1,35 @@
 use edge_api::api::{self, edge::DiffKind};
-// 1. ホストからデータを受け取るためのバッファを確保
-const BUF_SIZE: usize = 2048;
 
 #[no_mangle]
 pub extern "C" fn on_request() {
-    api::init_logger(log::LevelFilter::Info);
-
-    let mut buffer = vec![0u8; BUF_SIZE];
-
+    let mut buffer = vec![0u8; 2048];
     let req = match api::get_request(&mut buffer) {
-        Ok(req_info) => {
-            req_info
+        Ok(req) => {
+            req
         }
         Err(err) => {
             log::error!("[Acme] Failed to decode request info: {}", err);
             return;
         }
     };
-
-    const REQ_TOKEN : &str = "request_token"; 
-
-    if req.path() == format!("/.well-known/acme-challenge/{}", REQ_TOKEN) {
-        const TOKEN: &str = "token.thumbprint"; // Replace with actual token logic
+    if !req.is_tls() {
+        let host = req.host();
+        let path = req.path();
+        let location = format!("https://{}{}", host, path);
+        let redirect_text = format!("Redirecting to {}", location);
+        log::info!("[Acme] Redirecting to {}", location);
         api::ChangeSet::new()
-            .request_routing(api::Routing::deny)// not to go origin
-            .status(200)
-            .response_field(DiffKind::replace, "Content-Type", "text/plain")
-            .response_body(TOKEN.as_bytes())
-            .apply().expect("Failed to create response changes");
-        log::info!("[Acme] Responding with token");
+            .request_routing(api::Routing::deny)
+            .status(302)
+            .location(&location)
+            .response_body(&redirect_text.as_bytes())
+            .apply().expect("Failed to create request changes");
     }
+}
+
+#[no_mangle]
+pub extern "C" fn on_response() {
+    api::ChangeSet::new().
+        response_field(api::DiffKind::replace,"Alt-Svc","h3=\":443\"")
+        .apply().expect("Failed to create response changes");
 }
