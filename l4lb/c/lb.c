@@ -514,7 +514,7 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
       uint8_t rotation = QUICLB_CONNECTION_ID_CONFIG_ROTATION(conn_id_bytes[0]);
       if(rotation == 7) {
         debugk("%s: rotation is 7, handle with original routing info", context);
-        return handle_initial(hash_server_id(config, (uint8_t*)&src_ip, src_port, conn_id_bytes[5/*nonce pos*/]), config, c, context);
+        return handle_initial(hash_server_id(config, src_ip, src_port, conn_id_bytes[5/*nonce pos*/]), config, c, context);
       }
       int err = connection_id_decrypt(output, conn_id_bytes, QUICLB_CONNECTION_ID_SIZE, false, context, c);
       if(err < 0) {
