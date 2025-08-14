@@ -745,7 +745,7 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
           }
         }
         else {
-          if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+          if(data + sizeofLinkNetwork +
               sizeof(struct udphdr) + sizeof(struct quic_long_packet) + sizeof(struct quiclb_connection_id) > data_end) {
             ++c->quiclb_too_short_long_packet_total;
             EXIT(XDP_PASS);
@@ -761,7 +761,7 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
       } else {
         ++c->quiclb_short_packet_total;
         // Short header
-        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+        if(data + sizeofLinkNetwork +
               sizeof(struct udphdr) + sizeof(struct quic_short_packet) + sizeof(struct quiclb_connection_id) > data_end) {
           ++c->too_short_packet_total;
           EXIT(XDP_PASS);
