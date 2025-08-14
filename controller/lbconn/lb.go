@@ -130,7 +130,7 @@ func makeL7LBKeepAlive(t time.Duration, m *protocol.MachineStat, data *protocol.
 }
 
 func makeConsoleKeepAlive(t time.Duration, m *protocol.MachineStat, data struct{}) (*protocol.ControlMessage, error) {
-	return protocol.KeepAliveConsole(t), nil
+	return protocol.KeepAliveConsole(t, m), nil
 }
 
 func ConnectL4LB(logger *slog.Logger, conn transport.Connection, data *protocol.L4LBData, keepalive time.Duration, appStat func() (*protocol.L4UpdateInfo, error)) (*LBState[*protocol.L4LBData, *protocol.L4UpdateInfo], error) {
@@ -143,7 +143,7 @@ func ConnectL7LB(logger *slog.Logger, conn transport.Connection, data *protocol.
 
 func ConnectConsole(logger *slog.Logger, conn transport.Connection, data *protocol.ConsoleData, keepalive time.Duration, appStat func() (struct{}, error)) (*LBState[*protocol.ConsoleData, struct{}], error) {
 	return connectLB(logger, conn, func(data *protocol.ConsoleData, machine *protocol.MachineData) *protocol.ControlMessage {
-		return protocol.HelloConsole(data)
+		return protocol.HelloConsole(data, machine)
 	}, appStat, makeConsoleKeepAlive, data, keepalive)
 }
 

@@ -153,7 +153,7 @@ func (c *controller) lookupSender(dest *DestInfo, allowConsole bool) ([]lbSender
 					return
 				}
 				for _, consoleConn := range c.consoleList.list {
-					if slices.Contains(entry.ServerIDs, consoleConn.data.data.ServerID) {
+					if slices.Contains(entry.ServerIDs, consoleConn.data.data.Data.ServerID) {
 						lb = append(lb, consoleConn)
 					}
 				}
@@ -471,7 +471,7 @@ func (c *controller) Command(typ LBType, serverID uint32, cmdline string, enable
 		var console *ConsoleConn
 		c.withLock(func() {
 			for _, consoleConn := range c.consoleList.list {
-				if consoleConn.data.data.ServerID == serverID {
+				if consoleConn.data.data.Data.ServerID == serverID {
 					console = consoleConn
 					break
 				}

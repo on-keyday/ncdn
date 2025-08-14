@@ -19,7 +19,7 @@ import (
 type ControllerStatus struct {
 	L4LBData    []*protocol.L4LBControlState
 	L7LBData    []*protocol.L7LBControlState
-	ConsoleData []*protocol.ConsoleData
+	ConsoleData []*protocol.ConsoleControlState
 }
 
 type LBType string
@@ -73,7 +73,7 @@ func (c *controller) Status() *ControllerStatus {
 		})
 	}
 	for _, console := range consolelist.list {
-		console.data.WithLock(func(data *protocol.ConsoleData) {
+		console.data.WithLock(func(data *protocol.ConsoleControlState) {
 			s.ConsoleData = append(s.ConsoleData, data)
 		})
 	}
@@ -155,7 +155,7 @@ func (l *generationList[T]) Remove(item T) {
 
 type l7list = generationList[*L7LB]
 type l4list = generationList[*L4LB]
-type consolelist = generationList[*LBConn[protocol.ConsoleData]]
+type consolelist = generationList[*ConsoleConn]
 
 type controller struct {
 	lock        sync.Mutex
@@ -285,7 +285,7 @@ func (lb *LBConn[T]) GetSeqNum() uint64 {
 
 type L4LB = LBConn[protocol.L4LBControlState]
 type L7LB = LBConn[protocol.L7LBControlState]
-type ConsoleConn = LBConn[protocol.ConsoleData]
+type ConsoleConn = LBConn[protocol.ConsoleControlState]
 
 func (l *LBConn[T]) Close() error {
 	l.CloseChannel()
@@ -489,10 +489,10 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 		consoleData := msg.ConsoleHello()
 		var err error
 		console := NewLBConn(ctx, conn, protocol.ConsoleHelloToConsoleData(consoleData),
-			c.logger.With("type", "Console", "server_id", consoleData.ServerId, "remote_addr", conn.RemoteAddr()))
+			c.logger.With("type", "Console", "server_id", consoleData.Info.ServerId, "remote_addr", conn.RemoteAddr()))
 		c.withLock(func() {
 			for _, v := range c.consoleList.list {
-				if v.data.data.ServerID == console.data.data.ServerID {
+				if v.data.data.Data.ServerID == console.data.data.Data.ServerID {
 					err = errors.New("console with this ServerID already exists")
 					return
 				}
@@ -679,7 +679,10 @@ func (c *controller) handleConsole(console *ConsoleConn) {
 	handleLBConn(c, "Console", console, func(msg *protocol.ControlMessage) (time.Duration, error) {
 		kl := msg.ConsoleKeepalive()
 		if kl != nil {
-			return time.Duration(kl.NextPeriod), nil
+			console.data.WithLock(func(data *protocol.ConsoleControlState) {
+				protocol.UpdateConsoleWithKeepAlive(kl, data)
+			})
+			return time.Duration(kl.Info.NextPeriod), nil
 		}
 		return 0, fmt.Errorf("unexpected message for Console: %v", msg.Header.MessageType)
 	}, func() {

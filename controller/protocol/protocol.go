@@ -699,30 +699,76 @@ type ConsoleData struct {
 	MacAddress [6]byte
 }
 
-func ConsoleHelloToConsoleData(hello *ConsoleHello) *ConsoleData {
+func (c *ConsoleData) Clone() *ConsoleData {
 	return &ConsoleData{
-		ServerID: hello.ServerId,
-		Address:  IPFromAddress(hello.Address),
+		ServerID:   c.ServerID,
+		Address:    c.Address,
+		MacAddress: c.MacAddress,
 	}
 }
 
-func HelloConsole(data *ConsoleData) *ControlMessage {
+func (c *ConsoleData) Update(_ struct{}) {}
+
+type ConsoleControlState = DataWithStat[*ConsoleData, struct{}]
+
+func UpdateConsoleWithKeepAlive(kl *ConsoleKeepAlive, d *ConsoleControlState) {
+	d.Update(&MachineStat{
+		Uptime:        time.Duration(kl.Info.Uptime),
+		CPUUsages:     kl.Info.CpuUsage,
+		MemoryUsage:   kl.Info.MemoryUsage,
+		DiskUsage:     kl.Info.DiskUsage,
+		IOUtilization: kl.Info.IoUtilization,
+		LoadAvg:       kl.Info.LoadAvg,
+		DiskSwap:      kl.Info.DiskSwap,
+	}, struct{}{})
+}
+
+func ConsoleHelloToConsoleData(hello *ConsoleHello) *ConsoleControlState {
+	info := &hello.Info
+	machine := &hello.Machine
+	return &ConsoleControlState{
+		Data: &ConsoleData{
+			ServerID:   info.ServerId,
+			Address:    IPFromAddress(info.Address),
+			MacAddress: info.MacAddress,
+		},
+		Stat: &MachineStat{
+			CPUUsages:     make([]float64, machine.CpuCount),
+			MemoryUsage:   0,
+			DiskUsage:     0,
+			IOUtilization: 0, // Placeholder, actual value should be calculated
+			DiskSwap:      0, // Placeholder, actual value should be calculated
+			LoadAvg:       0, // Placeholder, actual value should be calculated
+		},
+		MemoryTotal: machine.MemoryTotal,
+		DiskTotal:   machine.DiskTotal,
+	}
+}
+
+func HelloConsole(data *ConsoleData, m *MachineData) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(4 + 1 + len(data.Address.AsSlice()) + 6), // 4 bytes for serverID + 1 byte for is_v6 + addr length
+			Len:         uint16(machineInfoLen + 4 + 1 + len(data.Address.AsSlice()) + 6), // 4 bytes for serverID + 1 byte for is_v6 + addr length
 			MessageType: ControlMessageType_ConsoleHello,
 		},
 	}
 	controlMsg.SetConsoleHello(ConsoleHello{
-		ServerId:   data.ServerID,
-		Address:    ConvertToAddress(data.Address),
-		MacAddress: data.MacAddress,
+		Machine: MachineInfo{
+			CpuCount:    uint8(m.CPUCount),
+			MemoryTotal: m.MemoryTotal,
+			DiskTotal:   m.DiskTotal,
+		},
+		Info: ConsoleInfo{
+			ServerId:   data.ServerID,
+			Address:    ConvertToAddress(data.Address),
+			MacAddress: data.MacAddress,
+		},
 	})
 	return controlMsg
 }
 
-func KeepAliveConsole(nextPeriod time.Duration) *ControlMessage {
+func KeepAliveConsole(nextPeriod time.Duration, stat *MachineStat) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
@@ -731,7 +777,17 @@ func KeepAliveConsole(nextPeriod time.Duration) *ControlMessage {
 		},
 	}
 	controlMsg.SetConsoleKeepalive(ConsoleKeepAlive{
-		NextPeriod: uint64(nextPeriod),
+		Info: KeepAliveInfo{
+			NextPeriod:    uint64(nextPeriod),
+			Uptime:        uint64(stat.Uptime),
+			CpuLen:        uint8(len(stat.CPUUsages)),
+			CpuUsage:      stat.CPUUsages,
+			MemoryUsage:   uint64(stat.MemoryUsage),
+			DiskUsage:     uint64(stat.DiskUsage),
+			IoUtilization: stat.IOUtilization,
+			LoadAvg:       stat.LoadAvg,
+			DiskSwap:      stat.DiskSwap,
+		},
 	})
 	return controlMsg
 }

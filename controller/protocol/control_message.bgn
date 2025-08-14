@@ -73,13 +73,17 @@ format L7LBHello:
     machine :MachineInfo
     info :L7LBInfo
 
-format ConsoleHello:
+format ConsoleInfo:
     server_id :u32
     address :Address
     mac_address :[6]u8
 
+format ConsoleHello:
+    machine :MachineInfo
+    info :ConsoleInfo
+
 format ConsoleKeepAlive:
-    next_period :u64
+    info :KeepAliveInfo
 
 
 format Address:

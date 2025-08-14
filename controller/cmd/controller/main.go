@@ -614,6 +614,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statView.SetRows([]table.Row{
 			{"L4 Load Balancers", fmt.Sprintf("%d", len(msg.stat.L4LBData))},
 			{"L7 Load Balancers", fmt.Sprintf("%d", len(msg.stat.L7LBData))},
+			{"Console Only", fmt.Sprintf("%d", len(msg.stat.ConsoleData))},
 			{"Uptime", msg.uptime.String()},
 		})
 		m.statView.SetHeight(5)
@@ -635,6 +636,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				lb.Data.Data.Address.String(),
 				time.Duration(lb.Stat.Uptime).String(),
 				fmt.Sprintf("%.2f", lb.Stat.LoadAvg),
+			})
+		}
+		for _, console := range msg.stat.ConsoleData {
+			rows = append(rows, table.Row{
+				"Console",
+				fmt.Sprintf("%d", console.Data.ServerID),
+				console.Data.Address.String(),
+				time.Duration(console.Stat.Uptime).String(),
+				fmt.Sprintf("%.2f", console.Stat.LoadAvg),
 			})
 		}
 		m.connectionEntries.SetRows(rows)
