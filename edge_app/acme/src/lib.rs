@@ -14,7 +14,11 @@ pub extern "C" fn on_request() {
     };
     if !req.is_tls() {
         let host = req.host();
-        let path = req.path();
+        let path = if req.path() == "/" {
+            "/index.html"
+        } else {
+            req.path()
+        };
         let location = format!("https://{}{}", host, path);
         let redirect_text = format!("Redirecting to {}", location);
         log::info!("[Acme] Redirecting to {}", location);
