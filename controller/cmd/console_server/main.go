@@ -21,6 +21,7 @@ import (
 )
 
 var controlPlaneAddress = flag.String("control-plane", "ws://localhost:8080/", "Control plane address")
+var serverID = flag.Uint("server-id", 1, "Server ID")
 
 func main() {
 	flag.Parse()
@@ -43,7 +44,7 @@ func main() {
 	}
 	retryConn := lbconn.ConnectRetriable(slog.Default(), 5*time.Second, lbconn.ConnectConsole,
 		&protocol.ConsoleData{
-			ServerID:   uint32(1), // TODO: Make this configurable
+			ServerID:   uint32(*serverID),
 			Address:    addr,
 			MacAddress: [6]byte(hardAddr),
 		}, 20*time.Second, func() (transport.Connection, error) {
