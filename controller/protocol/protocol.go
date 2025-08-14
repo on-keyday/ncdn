@@ -772,7 +772,7 @@ func KeepAliveConsole(nextPeriod time.Duration, stat *MachineStat) *ControlMessa
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(8), // 8 bytes for nextPeriod
+			Len:         calcKeepAliveInfoLen(stat),
 			MessageType: ControlMessageType_ConsoleKeepalive,
 		},
 	}
