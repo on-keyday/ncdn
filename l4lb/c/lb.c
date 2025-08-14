@@ -724,7 +724,7 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
         ++c->quiclb_long_packet_total;
         // Long header
         /*RFC 9000 says least 8 byte for initial dst connection id so this least 1 byte requirements for destionation connection id is always satisfied*/
-        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+        if(data + sizeofLinkNetwork +
               sizeof(struct udphdr) + sizeof(struct quic_long_packet) + 1 > data_end) {
           ++c->quiclb_too_short_long_packet_total;
           EXIT(XDP_PASS);
@@ -936,8 +936,7 @@ int lb_main(struct xdp_md* ctx) {
 
   // make verifier happy - this is guaranteed by the `bpf_xdp_adjust_head`
   // success, but the verifier is not currently smart enough to know that.
-  if (ctx->data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
-          sizeof(struct iphdr) >
+  if (ctx->data + sizeof(struct ethhdr) + sizeof(struct iphdr) >
       ctx->data_end) {
     debugk("NOT REACHED!!!");
     EXIT(XDP_DROP);
