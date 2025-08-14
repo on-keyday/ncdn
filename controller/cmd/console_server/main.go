@@ -59,6 +59,14 @@ func main() {
 
 	chunkedMap := chunk.NewChunkMap()
 
+	go func() {
+		for r := range cmdMgr.Output() {
+			if err := retryConn.SendCommandline(r); err != nil {
+				slog.Error("Failed to send command line", slog.String("error", err.Error()))
+			}
+		}
+	}()
+
 	for {
 		msg, err := retryConn.Receive()
 		if err != nil {
