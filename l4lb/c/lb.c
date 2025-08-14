@@ -704,7 +704,7 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
       ++c->rx_packet_total;
       c->rx_total_size += data_end - data;
 
-      if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+      if(data + sizeofLinkNetwork +
             sizeof(struct udphdr) + 1 /*for QUIC first byte*/ > data_end) {
         ++c->too_short_packet_total;
         EXIT(XDP_PASS);
