@@ -406,12 +406,12 @@ __always_inline uint32_t fnv1a_hash(const void* data, size_t size) {
 }
 
 
-__always_inline uint32_t hash_server_id(struct lb_config* config,uint32_t src_ip,uint16_t src_port, uint8_t connid_first) {
+__always_inline uint32_t hash_server_id(struct lb_config* config,uint8_t* src_ip,uint16_t src_port, uint8_t connid_first) {
     uint8_t buffer[7 + 4];
-    buffer[0] = (src_ip >> 24) & 0xFF; // first byte of src_ip
-    buffer[1] = (src_ip >> 16) & 0xFF; // second byte of src_ip
-    buffer[2] = (src_ip >> 8) & 0xFF;  // third byte of src_ip
-    buffer[3] = src_ip & 0xFF;         // fourth byte of src_ip
+    buffer[0] = (src_ip[0]);
+    buffer[1] = (src_ip[1]);
+    buffer[2] = (src_ip[2]);
+    buffer[3] = (src_ip[3]);
     buffer[4] = (src_port >> 8) & 0xFF; // first byte of src_port
     buffer[5] = src_port & 0xFF;        // second byte of src_port
     buffer[6] = connid_first;           // first byte of connection id
@@ -495,7 +495,7 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
                                                struct lb_config* config,
                                                struct stat_counters* c,
                                                const char* context,
-                                               uint32_t src_ip,
+                                               uint8_t* src_ip,
                                                uint16_t src_port
                                               ) {
     uint32_t* cached_server_id;
@@ -511,7 +511,7 @@ __always_inline struct destination_entry* handle_connection_id(struct quiclb_con
       uint8_t rotation = QUICLB_CONNECTION_ID_CONFIG_ROTATION(conn_id_bytes[0]);
       if(rotation == 7) {
         debugk("%s: rotation is 7, handle with original routing info", context);
-        return handle_initial(hash_server_id(config, src_ip, src_port, conn_id_bytes[5/*nonce pos*/]), config, c, context);
+        return handle_initial(hash_server_id(config, (uint8_t*)&src_ip, src_port, conn_id_bytes[5/*nonce pos*/]), config, c, context);
       }
       int err = connection_id_decrypt(output, conn_id_bytes, QUICLB_CONNECTION_ID_SIZE, false, context, c);
       if(err < 0) {
@@ -660,6 +660,135 @@ __always_inline void send_mtu_exceeded(struct xdp_md* md,const struct lb_config*
     debugk("DEBUG: MTU exceeded response size adjusted from %d to %d", current_size, new_size);
 }
 
+__always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,struct destination_entry** dest,void* next_ptr,uint8_t* src_addr,size_t sizeofLinkNetwork,uint8_t protocol, struct lb_config* config,struct stat_counters* c) {
+  const void* data = (void*)(uint64_t)ctx->data;
+  const void* data_end = (void*)(uint64_t)ctx->data_end;
+  if (protocol == IPPROTO_TCP) {
+      // Now, we've verified that the packet is a TCP packet destined to the VIP.
+      // Record them in the stats as they are eligible for load balancing.
+      ++c->rx_packet_total;
+      ++c->tcp_packet_total;
+      c->rx_total_size += data_end - data;
+
+      if(data + sizeofLinkNetwork +
+            sizeof(struct tcphdr) > data_end) {
+        ++c->too_short_packet_total;
+        EXIT(XDP_PASS);
+      }
+
+      struct tcphdr* tcp = (struct tcphdr*)(next_ptr);
+
+      if(ether_type == htons(ETH_P_IP)) {
+        debugk("incoming packet: ip=%pI4 port=%u", src_addr, ntohs(tcp->source));
+      }
+      else if(ether_type == htons(ETH_P_IPV6)) {
+        debugk("incoming packet: ipv6=%pI6 port=%u", src_addr, ntohs(tcp->source));
+      } else {
+        debugk("ASSERTION FAILURE: ether_type %x is not supported", ether_type);
+        ++c->non_supported_proto_packet_total;
+        EXIT(XDP_PASS);
+      }
+
+      *dest = search_consistent_hash_based_destination(config, hash_server_id(config, src_addr, ntohs(tcp->source), 0x55));
+      if (!*dest) {
+        EXIT(XDP_DROP);
+      }
+  
+  }
+  else if(protocol == IPPROTO_UDP) {
+      // Now, we've verified that the packet is a UDP packet destined to the VIP.
+      // Record them in the stats as they are eligible for load balancing.
+      ++c->rx_packet_total;
+      c->rx_total_size += data_end - data;
+
+      if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+            sizeof(struct udphdr) + 1 /*for QUIC first byte*/ > data_end) {
+        ++c->too_short_packet_total;
+        EXIT(XDP_PASS);
+      }
+
+      // QUIC fixed bitとして0x40というのがあるがあれはgrease拡張等で自由に反転できてしまうため
+      // 判定として信用しちゃだめだと思われる see https://datatracker.ietf.org/doc/html/rfc9287
+      struct udphdr* udp = (struct udphdr*)(next_ptr);
+      if(config->quic_dest_port != 0) {
+        if(udp->dest != config->quic_dest_port) {
+          EXIT(XDP_PASS);
+        }
+      }
+      const char* quic_first_byte = (const char*)(udp + 1);
+      const int is_long_header = (quic_first_byte[0] & 0x80) == 0x80 ? 1 : 0;
+      if(is_long_header) {
+        ++c->quiclb_long_packet_total;
+        // Long header
+        /*RFC 9000 says least 8 byte for initial dst connection id so this least 1 byte requirements for destionation connection id is always satisfied*/
+        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+              sizeof(struct udphdr) + sizeof(struct quic_long_packet) + 1 > data_end) {
+          ++c->quiclb_too_short_long_packet_total;
+          EXIT(XDP_PASS);
+        }
+
+        struct quic_long_packet* quic = (struct quic_long_packet*)(udp + 1);
+        if(quic->dst_conn_id_len != QUICLB_CONNECTION_ID_SIZE) {
+          if(quic->dst_conn_id_len == 0) {
+            // This is a connection ID rotation packet, which we do not support.
+            ++c->quiclb_no_connection_id_total;
+            EXIT(XDP_PASS);
+          }
+          uint32_t server_id = hash_server_id(config, src_addr, ntohs(udp->source), ((const uint8_t*)(quic+1))[0]) + 1;
+          *dest = handle_initial(server_id, config, c, "long");
+          if (!dest) {
+            ++c->quiclb_no_dest_entry_total;
+            EXIT(XDP_DROP);
+          }
+        }
+        else {
+          if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+              sizeof(struct udphdr) + sizeof(struct quic_long_packet) + sizeof(struct quiclb_connection_id) > data_end) {
+            ++c->quiclb_too_short_long_packet_total;
+            EXIT(XDP_PASS);
+          }
+          struct quiclb_connection_id* conn_id =
+              (struct quiclb_connection_id*)(quic + 1);
+    
+          dest = handle_connection_id(conn_id, config,c, "long", src_addr, ntohs(udp->source));
+          if (!dest) {
+            EXIT(XDP_DROP);
+          }
+        }
+      } else {
+        ++c->quiclb_short_packet_total;
+        // Short header
+        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
+              sizeof(struct udphdr) + sizeof(struct quic_short_packet) + sizeof(struct quiclb_connection_id) > data_end) {
+          ++c->too_short_packet_total;
+          EXIT(XDP_PASS);
+        }
+
+        struct quic_short_packet* quic = (struct quic_short_packet*)(udp + 1);
+        struct quiclb_connection_id* conn_id =
+            (struct quiclb_connection_id*)(quic + 1);
+
+        dest = handle_connection_id(conn_id,config,c,"short", src_addr, ntohs(udp->source));
+
+        if (!dest) {
+          EXIT(XDP_DROP);
+        }
+      }
+      if(ether_type == htons(ETH_P_IP)) {
+        debugk("handled QUIC packet: ip=%pI4 port=%u form=%s", src_addr, ntohs(udp->source),
+              is_long_header ? "long" : "short");
+      }
+      else if(ether_type == htons(ETH_P_IPV6)) {
+        debugk("handled QUIC packet: ip=%pI6 port=%u form=%s", src_addr, ntohs(udp->source),
+              is_long_header ? "long" : "short");
+      }
+  } else {
+    ++c->non_supported_proto_packet_total;
+    EXIT(XDP_PASS);
+  }
+  return XDP_TX;
+}
+
 SEC("xdp")
 int lb_main(struct xdp_md* ctx) {
   
@@ -689,140 +818,54 @@ int lb_main(struct xdp_md* ctx) {
     EXIT(XDP_PASS);
   }
 
-  // Check if the packet is long enough to contain the headers we need.
-  if (data + sizeof(struct ethhdr) + sizeof(struct iphdr) >
-      data_end) {
+  if (data + sizeof(struct ethhdr) > data_end) {
     ++c->too_short_packet_total;
     EXIT(XDP_PASS);
   }
 
   struct ethhdr* eth = data;
-  struct iphdr* ip = (struct iphdr*)(eth + 1);
-
-  // Check if the packet is IPv4, has no IP options, is destined to the VIP,
-  // and is a TCP packet.
-  if (ip->version != 0x4) {
-    ++c->non_ipv4_packet_total;
-    EXIT(XDP_PASS);
-  }
-  if (ip->ihl != 0x5) {
-    ++c->ip_option_packet_total;
-    EXIT(XDP_PASS);
-  }
-  if (ip->daddr != config->vip_address) {
-    ++c->no_vip_match_total;
-    EXIT(XDP_PASS);
-  }
 
   struct destination_entry* dest;
-  if (ip->protocol == IPPROTO_TCP) {
-      // Now, we've verified that the packet is a TCP packet destined to the VIP.
-      // Record them in the stats as they are eligible for load balancing.
-      ++c->rx_packet_total;
-      ++c->tcp_packet_total;
-      c->rx_total_size += data_end - data;
 
-      if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
-            sizeof(struct tcphdr) > data_end) {
+  uint16_t total_len;
+
+  if(eth->h_proto == htons(ETH_P_IP)) {
+      // Check if the packet is long enough to contain the headers we need.
+      if (data + sizeof(struct ethhdr) + sizeof(struct iphdr) >
+          data_end) {
         ++c->too_short_packet_total;
         EXIT(XDP_PASS);
       }
+      struct iphdr* ip = (struct iphdr*)(eth + 1);
 
-      struct tcphdr* tcp = (struct tcphdr*)(ip + 1);
-
-      debugk("incoming packet: ip=%pI4 port=%u", &ip->saddr, ntohs(tcp->source));
-
-      dest = search_consistent_hash_based_destination(config, hash_server_id(config, ip->saddr, ntohs(tcp->source), 0x55));
-      if (!dest) {
-        EXIT(XDP_DROP);
+      // Check if the packet is IPv4, has no IP options, is destined to the VIP,
+      // and is a TCP packet.
+      if (ip->version != 0x4) {
+        ++c->non_ipv4_packet_total;
+        EXIT(XDP_PASS);
       }
-  
+      if (ip->ihl != 0x5) {
+        ++c->ip_option_packet_total;
+        EXIT(XDP_PASS);
+      }
+      if (ip->daddr != config->vip_address) {
+        ++c->no_vip_match_total;
+        EXIT(XDP_PASS);
+      }
+
+      int err = handle_transport(ctx, htons(ETH_P_IP), &dest,ip + 1,(uint8_t*)&ip->saddr, sizeof(struct ethhdr) + sizeof(struct iphdr), ip->protocol, config, c);
+      if(err != XDP_TX) {
+        return err; // if not XDP_TX, we should not continue
+      }
+      total_len = ntohs(ip->tot_len);
   }
-  else if(ip->protocol == IPPROTO_UDP) {
-      // Now, we've verified that the packet is a UDP packet destined to the VIP.
-      // Record them in the stats as they are eligible for load balancing.
-      ++c->rx_packet_total;
-      c->rx_total_size += data_end - data;
-
-      if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
-            sizeof(struct udphdr) + 1 /*for QUIC first byte*/ > data_end) {
-        ++c->too_short_packet_total;
-        EXIT(XDP_PASS);
-      }
-
-      // QUIC fixed bitとして0x40というのがあるがあれはgrease拡張等で自由に反転できてしまうため
-      // 判定として信用しちゃだめだと思われる see https://datatracker.ietf.org/doc/html/rfc9287
-      struct udphdr* udp = (struct udphdr*)(ip + 1);
-      if(config->quic_dest_port != 0) {
-        if(udp->dest != config->quic_dest_port) {
-          EXIT(XDP_PASS);
-        }
-      }
-      const char* quic_first_byte = (const char*)(udp + 1);
-      const int is_long_header = (quic_first_byte[0] & 0x80) == 0x80 ? 1 : 0;
-      if(is_long_header) {
-        ++c->quiclb_long_packet_total;
-        // Long header
-        /*RFC 9000 says least 8 byte for initial dst connection id so this least 1 byte requirements for destionation connection id is always satisfied*/
-        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
-              sizeof(struct udphdr) + sizeof(struct quic_long_packet) + 1 > data_end) {
-          ++c->quiclb_too_short_long_packet_total;
-          EXIT(XDP_PASS);
-        }
-
-        struct quic_long_packet* quic = (struct quic_long_packet*)(udp + 1);
-        if(quic->dst_conn_id_len != QUICLB_CONNECTION_ID_SIZE) {
-          if(quic->dst_conn_id_len == 0) {
-            // This is a connection ID rotation packet, which we do not support.
-            ++c->quiclb_no_connection_id_total;
-            EXIT(XDP_PASS);
-          }
-          uint32_t server_id = hash_server_id(config, ip->saddr, ntohs(udp->source), ((const uint8_t*)(quic+1))[0]) + 1;
-          dest = handle_initial(server_id, config, c, "long");
-          if (!dest) {
-            ++c->quiclb_no_dest_entry_total;
-            EXIT(XDP_DROP);
-          }
-        }
-        else {
-          if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
-              sizeof(struct udphdr) + sizeof(struct quic_long_packet) + sizeof(struct quiclb_connection_id) > data_end) {
-            ++c->quiclb_too_short_long_packet_total;
-            EXIT(XDP_PASS);
-          }
-          struct quiclb_connection_id* conn_id =
-              (struct quiclb_connection_id*)(quic + 1);
-     
-          dest = handle_connection_id(conn_id, config,c, "long", ip->saddr, ntohs(udp->source));
-          if (!dest) {
-            EXIT(XDP_DROP);
-          }
-        }
-      } else {
-        ++c->quiclb_short_packet_total;
-        // Short header
-        if(data + sizeof(struct ethhdr) + sizeof(struct iphdr) +
-              sizeof(struct udphdr) + sizeof(struct quic_short_packet) + sizeof(struct quiclb_connection_id) > data_end) {
-          ++c->too_short_packet_total;
-          EXIT(XDP_PASS);
-        }
-
-        struct quic_short_packet* quic = (struct quic_short_packet*)(udp + 1);
-        struct quiclb_connection_id* conn_id =
-            (struct quiclb_connection_id*)(quic + 1);
-
-        dest = handle_connection_id(conn_id,config,c,"short", ip->saddr, ntohs(udp->source));
-
-        if (!dest) {
-          EXIT(XDP_DROP);
-        }
-      }
-      debugk("handled QUIC packet: ip=%pI4 port=%u form=%s", &ip->saddr, ntohs(udp->source),
-             is_long_header ? "long" : "short");
-  } else {
+  else {
+    debugk("ASSERTION FAILURE: ether_type %x is not supported", eth->h_proto);
     ++c->non_supported_proto_packet_total;
-    EXIT(XDP_PASS);
+    return XDP_PASS; // not supported ether type, just pass the packet
   }
+
+
 
   debugk("dest ip=%pI4", &dest->ip_address);
   debugk("dest mac=%02x:%02x:%02x", dest->mac_address[0], dest->mac_address[1], dest->mac_address[2]);
@@ -869,14 +912,11 @@ int lb_main(struct xdp_md* ctx) {
   // Construct the IPIP header.
   struct iphdr* ip2 = (void*)(eth + 1);
 
-  ip = (void*)(ip2 + 1);
-  uint16_t iphdr_tot_len = ntohs(ip->tot_len); // FIXME - should be always fixed.
-
   ip2->version = 4;
   ip2->ihl = 0x5;
   ip2->tos = 0;
-  ip2->tot_len = htons(iphdr_tot_len + sizeof(struct iphdr));
-  ip2->id = ~ip->id;
+  ip2->tot_len = htons(total_len + sizeof(struct iphdr));
+  ip2->id = 0; // zeroed
   ip2->frag_off = htons(IP_DF);
   ip2->ttl = 64;
   ip2->protocol = IPPROTO_IPIP;
@@ -888,7 +928,7 @@ int lb_main(struct xdp_md* ctx) {
   compute_ip_checksum(ip2);
 
   // Drop padding of the original packet if needed
-  ssize_t padding = ETH_ZLEN - (sizeof(struct ethhdr) + iphdr_tot_len);
+  ssize_t padding = ETH_ZLEN - (sizeof(struct ethhdr) + total_len);
   if (padding > 0) {
     if (bpf_xdp_adjust_tail(ctx, -padding)) {
       ++c->failed_adjust_tail_total;
