@@ -12,32 +12,33 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:96
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:98
 )
 
-type StatCounters struct { // ../c/lb.c:32
-	RxPacketTotal                   uint64 // ../c/lb.c:33
-	RxTotalSize                     uint64 // ../c/lb.c:34
-	TooShortPacketTotal             uint64 // ../c/lb.c:36
-	NonIpv4PacketTotal              uint64 // ../c/lb.c:37
-	IpOptionPacketTotal             uint64 // ../c/lb.c:38
-	NonSupportedProtoPacketTotal    uint64 // ../c/lb.c:39
-	NoVipMatchTotal                 uint64 // ../c/lb.c:40
-	FailedAdjustHeadTotal           uint64 // ../c/lb.c:41
-	FailedAdjustTailTotal           uint64 // ../c/lb.c:42
-	TcpPacketTotal                  uint64 // ../c/lb.c:43
-	MtuExceededTotal                uint64 // ../c/lb.c:44
-	QuiclbNoDestPortMatchTotal      uint64 // ../c/lb.c:46
-	QuiclbShortPacketTotal          uint64 // ../c/lb.c:47
-	QuiclbLongPacketTotal           uint64 // ../c/lb.c:48
-	QuiclbInitialRoutingPacketTotal uint64 // ../c/lb.c:49
-	QuiclbTooShortLongPacketTotal   uint64 // ../c/lb.c:50
-	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:51
-	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:52
-	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:53
-	QuiclbEncryptSuccessCallTotal   uint64 // ../c/lb.c:54
-	QuiclbDecryptSuccessCallTotal   uint64 // ../c/lb.c:55
-	QuiclbConnidCacheHitTotal       uint64 // ../c/lb.c:56
+type StatCounters struct { // ../c/lb.c:33
+	RxPacketTotal                   uint64 // ../c/lb.c:34
+	RxTotalSize                     uint64 // ../c/lb.c:35
+	TooShortPacketTotal             uint64 // ../c/lb.c:37
+	NonIpv4PacketTotal              uint64 // ../c/lb.c:38
+	NonIpv6PacketTotal              uint64 // ../c/lb.c:39
+	IpOptionPacketTotal             uint64 // ../c/lb.c:40
+	NonSupportedProtoPacketTotal    uint64 // ../c/lb.c:41
+	NoVipMatchTotal                 uint64 // ../c/lb.c:42
+	FailedAdjustHeadTotal           uint64 // ../c/lb.c:43
+	FailedAdjustTailTotal           uint64 // ../c/lb.c:44
+	TcpPacketTotal                  uint64 // ../c/lb.c:45
+	MtuExceededTotal                uint64 // ../c/lb.c:46
+	QuiclbNoDestPortMatchTotal      uint64 // ../c/lb.c:48
+	QuiclbShortPacketTotal          uint64 // ../c/lb.c:49
+	QuiclbLongPacketTotal           uint64 // ../c/lb.c:50
+	QuiclbInitialRoutingPacketTotal uint64 // ../c/lb.c:51
+	QuiclbTooShortLongPacketTotal   uint64 // ../c/lb.c:52
+	QuiclbNoConnectionIdTotal       uint64 // ../c/lb.c:53
+	QuiclbNoDestEntryTotal          uint64 // ../c/lb.c:54
+	QuiclbInvalidCryptoContextTotal uint64 // ../c/lb.c:55
+	QuiclbEncryptSuccessCallTotal   uint64 // ../c/lb.c:56
+	QuiclbDecryptSuccessCallTotal   uint64 // ../c/lb.c:57
+	QuiclbConnidCacheHitTotal       uint64 // ../c/lb.c:58
 }
 
 func StatCountersAssertLayout(s *DWARFStruct) error {
@@ -73,6 +74,11 @@ func StatCountersAssertLayout(s *DWARFStruct) error {
 	doff = fs["non_ipv4_packet_total"].Offset
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go NonIpv4PacketTotal: %d, dwarf non_ipv4_packet_total: %d", goff, doff)
+	}
+	goff = unsafe.Offsetof(StatCounters{}.NonIpv6PacketTotal)
+	doff = fs["non_ipv6_packet_total"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go NonIpv6PacketTotal: %d, dwarf non_ipv6_packet_total: %d", goff, doff)
 	}
 	goff = unsafe.Offsetof(StatCounters{}.IpOptionPacketTotal)
 	doff = fs["ip_option_packet_total"].Offset
@@ -173,6 +179,7 @@ func (c *StatCounters) Add(other *StatCounters) {
 	c.RxTotalSize += other.RxTotalSize
 	c.TooShortPacketTotal += other.TooShortPacketTotal
 	c.NonIpv4PacketTotal += other.NonIpv4PacketTotal
+	c.NonIpv6PacketTotal += other.NonIpv6PacketTotal
 	c.IpOptionPacketTotal += other.IpOptionPacketTotal
 	c.NonSupportedProtoPacketTotal += other.NonSupportedProtoPacketTotal
 	c.NoVipMatchTotal += other.NoVipMatchTotal
@@ -207,6 +214,9 @@ func (c *StatCounters) String() string {
 	}
 	if c.NonIpv4PacketTotal != 0 {
 		buf.WriteString(fmt.Sprintf("NonIpv4PacketTotal=%d, ", c.NonIpv4PacketTotal))
+	}
+	if c.NonIpv6PacketTotal != 0 {
+		buf.WriteString(fmt.Sprintf("NonIpv6PacketTotal=%d, ", c.NonIpv6PacketTotal))
 	}
 	if c.IpOptionPacketTotal != 0 {
 		buf.WriteString(fmt.Sprintf("IpOptionPacketTotal=%d, ", c.IpOptionPacketTotal))
@@ -269,14 +279,14 @@ func (c *StatCounters) String() string {
 	return buf.String()
 }
 
-type LbConfig struct { // ../c/lb.c:69
-	VipAddress      uint32    // ../c/lb.c:70
-	NumDests        uint32    // ../c/lb.c:71
-	Mtu             uint16    // ../c/lb.c:72
-	QuicDestPort    uint16    // ../c/lb.c:73
-	Flags           uint32    // ../c/lb.c:74
-	ServerIdHashKey uint32    // ../c/lb.c:75
-	Vipv6Address    [16]uint8 // ../c/lb.c:76
+type LbConfig struct { // ../c/lb.c:71
+	VipAddress      uint32    // ../c/lb.c:72
+	NumDests        uint32    // ../c/lb.c:73
+	Mtu             uint16    // ../c/lb.c:74
+	QuicDestPort    uint16    // ../c/lb.c:75
+	Flags           uint32    // ../c/lb.c:76
+	ServerIdHashKey uint32    // ../c/lb.c:77
+	Vipv6Address    [16]uint8 // ../c/lb.c:78
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -332,10 +342,10 @@ func LbConfigAssertLayout(s *DWARFStruct) error {
 	return nil
 }
 
-type TestDecrypt struct { // ../c/lb.c:542
-	ConnectionId    [20]uint8 // ../c/lb.c:543
-	Len             uint8     // ../c/lb.c:544
-	IsShortServerId uint8     // ../c/lb.c:545
+type TestDecrypt struct { // ../c/lb.c:544
+	ConnectionId    [20]uint8 // ../c/lb.c:545
+	Len             uint8     // ../c/lb.c:546
+	IsShortServerId uint8     // ../c/lb.c:547
 }
 
 func TestDecryptAssertLayout(s *DWARFStruct) error {
