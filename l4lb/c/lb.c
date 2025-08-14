@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
+#include <netinet/ip6.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -35,6 +36,7 @@ struct stat_counters { /* go:Add,String */
 
   uint64_t too_short_packet_total; // HELP Number of packets dropped due to being too short.
   uint64_t non_ipv4_packet_total; // HELP Number of packets dropped due to their IP protocol version not v4.
+  uint64_t non_ipv6_packet_total; // HELP Number of packets dropped due to their IP protocol version not v6.
   uint64_t ip_option_packet_total; // HELP Number of packets dropped due to their IP header having options. (currently not supported)
   uint64_t non_supported_proto_packet_total; // HELP Number of packets dropped due to their protocol not being TCP.
   uint64_t no_vip_match_total; // HELP Number of packets dropped due to their dest IP address not matching any known VIP.
@@ -790,6 +792,15 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
   return XDP_TX;
 }
 
+__always_inline bool ipv6_addr_equal(const struct in6_addr* addr1, const struct in6_addr* addr2) {
+    for (int i = 0; i < 16; i++) {
+        if (addr1->s6_addr[i] != addr2->s6_addr[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 SEC("xdp")
 int lb_main(struct xdp_md* ctx) {
   
@@ -859,6 +870,36 @@ int lb_main(struct xdp_md* ctx) {
         return err; // if not XDP_TX, we should not continue
       }
       total_len = ntohs(ip->tot_len);
+  }
+  else if(eth->h_proto == htons(ETH_P_IPV6)) {
+      // Check if the packet is long enough to contain the headers we need.
+      if (data + sizeof(struct ethhdr) + sizeof(struct ipv6hdr)  >
+          data_end) {
+        ++c->too_short_packet_total;
+        EXIT(XDP_PASS);
+      }
+      struct ipv6hdr* ipv6 = (struct ipv6hdr*)(eth + 1);
+
+      // Check if the packet is IPv6, has no extension headers, is destined to the VIP,
+      // and is a UDP packet.
+      if (ipv6->version != 0x6) {
+        ++c->non_ipv6_packet_total;
+        EXIT(XDP_PASS);
+      }
+      if (ipv6->nexthdr != IPPROTO_TCP && ipv6->nexthdr != IPPROTO_UDP) {
+        ++c->non_supported_proto_packet_total;
+        EXIT(XDP_PASS);
+      }
+      if (!ipv6_addr_equal(&ipv6->daddr, config->vip_address_v6)) {
+        ++c->no_vip_match_total;
+        EXIT(XDP_PASS);
+      }
+
+      int err = handle_transport(ctx, htons(ETH_P_IPV6), &dest, ipv6 + 1, (uint8_t*)&ipv6->saddr, sizeof(struct ethhdr) + sizeof(struct ipv6hdr), ipv6->nexthdr, config, c);
+      if(err != XDP_TX) {
+        return err; // if not XDP_TX, we should not continue
+      }
+      total_len = ntohs(ipv6->payload_len) + sizeof(struct ipv6hdr);
   }
   else {
     debugk("ASSERTION FAILURE: ether_type %x is not supported", eth->h_proto);
