@@ -102,7 +102,7 @@ func sendWithChunk(lb lbSender, makeMsg func(protocol.ChunkInfo) *protocol.Contr
 	return nil
 }
 
-func (c *controller) lookupSender(dest *DestInfo) ([]lbSender, error) {
+func (c *controller) lookupSender(dest *DestInfo, allowConsole bool) ([]lbSender, error) {
 	var lb []lbSender
 	for _, entry := range dest.DestEntries {
 		if entry.Broadcast && len(entry.ServerIDs) > 0 {
@@ -141,6 +141,23 @@ func (c *controller) lookupSender(dest *DestInfo) ([]lbSender, error) {
 					}
 				}
 			})
+		case LBTypeConsole:
+			if !allowConsole {
+				return nil, fmt.Errorf("console not allowed for this operation")
+			}
+			c.withLock(func() {
+				if entry.Broadcast {
+					for _, consoleConn := range c.consoleList.list {
+						lb = append(lb, consoleConn)
+					}
+					return
+				}
+				for _, consoleConn := range c.consoleList.list {
+					if slices.Contains(entry.ServerIDs, consoleConn.data.data.ServerID) {
+						lb = append(lb, consoleConn)
+					}
+				}
+			})
 		default:
 			return nil, fmt.Errorf("unknown Load Balancer type: %v", entry.LBType)
 		}
@@ -171,7 +188,7 @@ func (c *controller) FileTransfer(dest *DestInfo, path string, permission uint16
 	if len(path) > 65535-8 { // 8 bytes for permission and file size
 		return errors.New("file path exceeds maximum length of 65535 bytes")
 	}
-	lb, err := c.lookupSender(dest)
+	lb, err := c.lookupSender(dest, true)
 	if err != nil {
 		return fmt.Errorf("failed to lookup sender: %w", err)
 	}
@@ -181,7 +198,7 @@ func (c *controller) FileTransfer(dest *DestInfo, path string, permission uint16
 }
 
 func (c *controller) WasmInstall(dest *DestInfo, id uint32, method, path string, file ReaderAtCloser) error {
-	lb, err := c.lookupSender(dest)
+	lb, err := c.lookupSender(dest, false)
 	if err != nil {
 		return fmt.Errorf("failed to lookup sender: %w", err)
 	}
@@ -191,7 +208,7 @@ func (c *controller) WasmInstall(dest *DestInfo, id uint32, method, path string,
 }
 
 func (c *controller) WasmUninstall(dest *DestInfo, id uint32) error {
-	lb, err := c.lookupSender(dest)
+	lb, err := c.lookupSender(dest, false)
 	if err != nil {
 		return fmt.Errorf("failed to lookup sender: %w", err)
 	}
@@ -450,6 +467,20 @@ func (c *controller) Command(typ LBType, serverID uint32, cmdline string, enable
 			return nil, fmt.Errorf("L4 Load Balancer with server ID %d not found", serverID)
 		}
 		lb = l4lb
+	case LBTypeConsole:
+		var console *ConsoleConn
+		c.withLock(func() {
+			for _, consoleConn := range c.consoleList.list {
+				if consoleConn.data.data.ServerID == serverID {
+					console = consoleConn
+					break
+				}
+			}
+		})
+		if console == nil {
+			return nil, fmt.Errorf("console with server ID %d not found", serverID)
+		}
+		lb = console
 	default:
 		return nil, fmt.Errorf("unknown Load Balancer type: %v", typ)
 	}
@@ -500,7 +531,7 @@ func (c *controller) UpdateVIP(dest *DestInfo, vip netip.Prefix) error {
 	if !vip.Addr().Is4() {
 		return fmt.Errorf("invalid VIP address: %v", vip)
 	}
-	lb, err := c.lookupSender(dest)
+	lb, err := c.lookupSender(dest, false)
 	if err != nil {
 		return fmt.Errorf("failed to lookup sender: %w", err)
 	}

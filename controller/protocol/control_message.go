@@ -14,25 +14,27 @@ import (
 type ControlMessageType uint8
 
 const (
-	ControlMessageType_CmdlineIn      ControlMessageType = 0
-	ControlMessageType_CmdlineOut     ControlMessageType = 1
-	ControlMessageType_CmdlineExit    ControlMessageType = 2
-	ControlMessageType_CmdlineInstr   ControlMessageType = 3
-	ControlMessageType_CmdlineResize  ControlMessageType = 4
-	ControlMessageType_FileTransfer   ControlMessageType = 5
-	ControlMessageType_L4LbKeepalive  ControlMessageType = 6
-	ControlMessageType_L7LbKeepalive  ControlMessageType = 7
-	ControlMessageType_L7LbHello      ControlMessageType = 8
-	ControlMessageType_L7LbUpdate     ControlMessageType = 9
-	ControlMessageType_L4LbL7LbUpdate ControlMessageType = 10
-	ControlMessageType_L7LbL4LbUpdate ControlMessageType = 11
-	ControlMessageType_L4LbHello      ControlMessageType = 12
-	ControlMessageType_VipUpdate      ControlMessageType = 13
-	ControlMessageType_KeyShare       ControlMessageType = 14
-	ControlMessageType_WasmInstall    ControlMessageType = 15
-	ControlMessageType_WasmUninstall  ControlMessageType = 16
-	ControlMessageType_Message        ControlMessageType = 17
-	ControlMessageType_LargeChunk     ControlMessageType = 18
+	ControlMessageType_CmdlineIn        ControlMessageType = 0
+	ControlMessageType_CmdlineOut       ControlMessageType = 1
+	ControlMessageType_CmdlineExit      ControlMessageType = 2
+	ControlMessageType_CmdlineInstr     ControlMessageType = 3
+	ControlMessageType_CmdlineResize    ControlMessageType = 4
+	ControlMessageType_FileTransfer     ControlMessageType = 5
+	ControlMessageType_L4LbKeepalive    ControlMessageType = 6
+	ControlMessageType_L7LbKeepalive    ControlMessageType = 7
+	ControlMessageType_L7LbHello        ControlMessageType = 8
+	ControlMessageType_L7LbUpdate       ControlMessageType = 9
+	ControlMessageType_L4LbL7LbUpdate   ControlMessageType = 10
+	ControlMessageType_L7LbL4LbUpdate   ControlMessageType = 11
+	ControlMessageType_L4LbHello        ControlMessageType = 12
+	ControlMessageType_VipUpdate        ControlMessageType = 13
+	ControlMessageType_KeyShare         ControlMessageType = 14
+	ControlMessageType_WasmInstall      ControlMessageType = 15
+	ControlMessageType_WasmUninstall    ControlMessageType = 16
+	ControlMessageType_Message          ControlMessageType = 17
+	ControlMessageType_LargeChunk       ControlMessageType = 18
+	ControlMessageType_ConsoleHello     ControlMessageType = 19
+	ControlMessageType_ConsoleKeepalive ControlMessageType = 20
 )
 
 func (t ControlMessageType) String() string {
@@ -75,6 +77,10 @@ func (t ControlMessageType) String() string {
 		return "Message"
 	case ControlMessageType_LargeChunk:
 		return "LargeChunk"
+	case ControlMessageType_ConsoleHello:
+		return "ConsoleHello"
+	case ControlMessageType_ConsoleKeepalive:
+		return "ConsoleKeepalive"
 	}
 	return fmt.Sprintf("ControlMessageType(%d)", t)
 }
@@ -218,18 +224,21 @@ type MachineInfo struct {
 	MemoryTotal uint64
 	DiskTotal   uint64
 }
-type union6_Address interface {
-	isunion5_()
+type ConsoleKeepAlive struct {
+	NextPeriod uint64
 }
-type union_7_t struct {
-	AddrV6 [16]uint8
+type union7_Address interface {
+	isunion6_()
 }
 type union_8_t struct {
+	AddrV6 [16]uint8
+}
+type union_9_t struct {
 	AddrV4 [4]uint8
 }
 type Address struct {
-	flags4  uint8
-	union5_ union6_Address
+	flags5  uint8
+	union6_ union7_Address
 }
 type L7Lbupdate struct {
 	ServerId uint32
@@ -283,15 +292,19 @@ type CmdlineResize struct {
 	Row       uint16
 }
 type ChunkInfo struct {
-	flags41 uint32
+	flags42 uint32
 }
 type CommandExit struct {
 	CmdlineId uint32
 	ExitCode  uint32
 }
 type LargeChunkHeader struct {
-	flags45  uint32
+	flags46  uint32
 	ChunkLen uint32
+}
+type ConsoleHello struct {
+	ServerId uint32
+	Address  Address
 }
 type L7Lbinfo struct {
 	ServerId   uint32
@@ -357,72 +370,78 @@ type L7LbkeepAlive struct {
 	PortLen     uint8
 	Ports       []L7LbportInfo
 }
-type union68_ControlMessage interface {
-	isunion67_()
-}
-type union_69_t struct {
-	L4LbKeepAlive L4LbkeepAlive
-}
-type union_70_t struct {
-	L7LbKeepAlive L7LbkeepAlive
+type union70_ControlMessage interface {
+	isunion69_()
 }
 type union_71_t struct {
-	L7LbHello L7Lbhello
+	L4LbKeepAlive L4LbkeepAlive
 }
 type union_72_t struct {
-	L7LbUpdate L7Lbupdate
+	L7LbKeepAlive L7LbkeepAlive
 }
 type union_73_t struct {
-	L4LbHello L4Lbhello
+	L7LbHello L7Lbhello
 }
 type union_74_t struct {
-	L4LbL7LbUpdate L4Lbl7Lbupdate
+	L7LbUpdate L7Lbupdate
 }
 type union_75_t struct {
-	L7LbL4LbUpdate L7Lbl4Lbupdate
+	L4LbHello L4Lbhello
 }
 type union_76_t struct {
-	VipUpdate Vipupdate
+	L4LbL7LbUpdate L4Lbl7Lbupdate
 }
 type union_77_t struct {
-	KeyShare KeyShareInfo
+	L7LbL4LbUpdate L7Lbl4Lbupdate
 }
 type union_78_t struct {
-	WasmInstall WasmInstallInfo
+	VipUpdate Vipupdate
 }
 type union_79_t struct {
-	WasmUninstall WasmUninstallInfo
+	KeyShare KeyShareInfo
 }
 type union_80_t struct {
-	Message Message
+	WasmInstall WasmInstallInfo
 }
 type union_81_t struct {
-	CmdlineIn CmdlineIn
+	WasmUninstall WasmUninstallInfo
 }
 type union_82_t struct {
-	CmdlineOut CmdlineOut
+	Message Message
 }
 type union_83_t struct {
-	CmdlineExit CommandExit
+	CmdlineIn CmdlineIn
 }
 type union_84_t struct {
-	CmdlineResize CmdlineResize
+	CmdlineOut CmdlineOut
 }
 type union_85_t struct {
-	FileTransfer FileTransfer
+	CmdlineExit CommandExit
 }
 type union_86_t struct {
-	CmdlineInstr CmdlineInstruction
+	CmdlineResize CmdlineResize
 }
 type union_87_t struct {
-	LargeChunk LargeChunkHeader
+	FileTransfer FileTransfer
 }
 type union_88_t struct {
+	CmdlineInstr CmdlineInstruction
+}
+type union_89_t struct {
+	LargeChunk LargeChunkHeader
+}
+type union_90_t struct {
+	ConsoleHello ConsoleHello
+}
+type union_91_t struct {
+	ConsoleKeepalive ConsoleKeepAlive
+}
+type union_92_t struct {
 	Data []uint8
 }
 type ControlMessage struct {
 	Header   ControlMessageHeader
-	union67_ union68_ControlMessage
+	union69_ union70_ControlMessage
 }
 
 func (t *ControlMessageHeader) Visit(v VisitorJJRQX) {
@@ -569,28 +588,79 @@ func (t *MachineInfo) DecodeExact(d []byte) error {
 	}
 	return nil
 }
+func (t *ConsoleKeepAlive) Visit(v VisitorJJRQX) {
+	v.Visit(v, "NextPeriod", &t.NextPeriod)
+}
+func (t *ConsoleKeepAlive) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJJRQXToMap(t))
+}
+func (t *ConsoleKeepAlive) Write(w io.Writer) (err error) {
+	tmp4 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp4[:], uint64(t.NextPeriod))
+	if n, err := w.Write(tmp4[:]); err != nil || n != 8 {
+		return fmt.Errorf("encode t.NextPeriod: %w", err)
+	}
+	return nil
+}
+func (t *ConsoleKeepAlive) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 8))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *ConsoleKeepAlive) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *ConsoleKeepAlive) Read(r io.Reader) (err error) {
+	tmpNextPeriod := [8]byte{}
+	n_NextPeriod, err := io.ReadFull(r, tmpNextPeriod[:])
+	if err != nil {
+		return fmt.Errorf("read NextPeriod: expect 8 bytes but read %d bytes: %w", n_NextPeriod, err)
+	}
+	t.NextPeriod = uint64(binary.BigEndian.Uint64(tmpNextPeriod[:]))
+	return nil
+}
+
+func (t *ConsoleKeepAlive) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *ConsoleKeepAlive) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode ConsoleKeepAlive: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
 func (t *Address) IsV6() bool {
-	return ((t.flags4 & 0x80) >> 7) == 1
+	return ((t.flags5 & 0x80) >> 7) == 1
 }
 func (t *Address) SetIsV6(v bool) {
 	if v {
-		t.flags4 |= uint8(0x80)
+		t.flags5 |= uint8(0x80)
 	} else {
-		t.flags4 &= ^uint8(0x80)
+		t.flags5 &= ^uint8(0x80)
 	}
 }
 func (t *Address) Reserved() uint8 {
-	return ((t.flags4 & 0x7f) >> 0)
+	return ((t.flags5 & 0x7f) >> 0)
 }
 func (t *Address) SetReserved(v uint8) bool {
 	if v > 127 {
 		return false
 	}
-	t.flags4 = (t.flags4 & ^uint8(0x7f)) | ((v & 0x7f) << 0)
+	t.flags5 = (t.flags5 & ^uint8(0x7f)) | ((v & 0x7f) << 0)
 	return true
 }
-func (t *union_7_t) isunion5_() {}
-func (t *union_8_t) isunion5_() {}
+func (t *union_8_t) isunion6_() {}
+func (t *union_9_t) isunion6_() {}
 func (t *Address) AddrV4() *[4]uint8 {
 	if true == ((func() uint8 {
 		if t.IsV6() {
@@ -601,10 +671,10 @@ func (t *Address) AddrV4() *[4]uint8 {
 	}()) == 1) {
 		return nil
 	} else if true {
-		if _, ok := t.union5_.(*union_8_t); !ok {
+		if _, ok := t.union6_.(*union_9_t); !ok {
 			return nil // not set
 		}
-		tmp := [4]uint8(t.union5_.(*union_8_t).AddrV4[:])
+		tmp := [4]uint8(t.union6_.(*union_9_t).AddrV4[:])
 		return &tmp
 	}
 	return nil
@@ -619,10 +689,10 @@ func (t *Address) SetAddrV4(v [4]uint8) bool {
 	}()) == 1) {
 		return false
 	} else if true {
-		if _, ok := t.union5_.(*union_8_t); !ok {
-			t.union5_ = &union_8_t{}
+		if _, ok := t.union6_.(*union_9_t); !ok {
+			t.union6_ = &union_9_t{}
 		}
-		t.union5_.(*union_8_t).AddrV4 = [4]uint8(v)
+		t.union6_.(*union_9_t).AddrV4 = [4]uint8(v)
 		return true
 	}
 	return false
@@ -635,10 +705,10 @@ func (t *Address) AddrV6() *[16]uint8 {
 			return 0
 		}
 	}()) == 1) {
-		if _, ok := t.union5_.(*union_7_t); !ok {
+		if _, ok := t.union6_.(*union_8_t); !ok {
 			return nil // not set
 		}
-		tmp := [16]uint8(t.union5_.(*union_7_t).AddrV6[:])
+		tmp := [16]uint8(t.union6_.(*union_8_t).AddrV6[:])
 		return &tmp
 	}
 	return nil
@@ -651,10 +721,10 @@ func (t *Address) SetAddrV6(v [16]uint8) bool {
 			return 0
 		}
 	}()) == 1) {
-		if _, ok := t.union5_.(*union_7_t); !ok {
-			t.union5_ = &union_7_t{}
+		if _, ok := t.union6_.(*union_8_t); !ok {
+			t.union6_ = &union_8_t{}
 		}
-		t.union5_.(*union_7_t).AddrV6 = [16]uint8(v)
+		t.union6_.(*union_8_t).AddrV6 = [16]uint8(v)
 		return true
 	}
 	return false
@@ -675,8 +745,8 @@ func (t *Address) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *Address) Write(w io.Writer) (err error) {
-	if n, err := w.Write([]byte{byte(t.flags4)}); err != nil || n != 1 {
-		return fmt.Errorf("encode t.flags4: %w", err)
+	if n, err := w.Write([]byte{byte(t.flags5)}); err != nil || n != 1 {
+		return fmt.Errorf("encode t.flags5: %w", err)
 	}
 	if (func() uint8 {
 		if t.IsV6() {
@@ -685,17 +755,17 @@ func (t *Address) Write(w io.Writer) (err error) {
 			return 0
 		}
 	}()) == 1 {
-		if _, ok := t.union5_.(*union_7_t); !ok {
-			return fmt.Errorf("encode t.union5_: union is not set to union_7_t")
+		if _, ok := t.union6_.(*union_8_t); !ok {
+			return fmt.Errorf("encode t.union6_: union is not set to union_8_t")
 		}
-		if n, err := w.Write(t.union5_.(*union_7_t).AddrV6[:]); err != nil || n != len(t.union5_.(*union_7_t).AddrV6) {
+		if n, err := w.Write(t.union6_.(*union_8_t).AddrV6[:]); err != nil || n != len(t.union6_.(*union_8_t).AddrV6) {
 			return fmt.Errorf("encode AddrV6: %w", err)
 		}
 	} else {
-		if _, ok := t.union5_.(*union_8_t); !ok {
-			return fmt.Errorf("encode t.union5_: union is not set to union_8_t")
+		if _, ok := t.union6_.(*union_9_t); !ok {
+			return fmt.Errorf("encode t.union6_: union is not set to union_9_t")
 		}
-		if n, err := w.Write(t.union5_.(*union_8_t).AddrV4[:]); err != nil || n != len(t.union5_.(*union_8_t).AddrV4) {
+		if n, err := w.Write(t.union6_.(*union_9_t).AddrV4[:]); err != nil || n != len(t.union6_.(*union_9_t).AddrV4) {
 			return fmt.Errorf("encode AddrV4: %w", err)
 		}
 	}
@@ -716,12 +786,12 @@ func (t *Address) MustEncode() []byte {
 	return buf
 }
 func (t *Address) Read(r io.Reader) (err error) {
-	tmpflags4 := [1]byte{}
-	n_flags4, err := io.ReadFull(r, tmpflags4[:])
+	tmpflags5 := [1]byte{}
+	n_flags5, err := io.ReadFull(r, tmpflags5[:])
 	if err != nil {
-		return fmt.Errorf("read flags4: expect 1 byte but read %d bytes: %w", n_flags4, err)
+		return fmt.Errorf("read flags5: expect 1 byte but read %d bytes: %w", n_flags5, err)
 	}
-	t.flags4 = uint8(tmpflags4[0])
+	t.flags5 = uint8(tmpflags5[0])
 	if (func() uint8 {
 		if t.IsV6() {
 			return 1
@@ -729,14 +799,14 @@ func (t *Address) Read(r io.Reader) (err error) {
 			return 0
 		}
 	}()) == 1 {
-		t.union5_ = &union_7_t{}
-		n_AddrV6, err := io.ReadFull(r, t.union5_.(*union_7_t).AddrV6[:])
+		t.union6_ = &union_8_t{}
+		n_AddrV6, err := io.ReadFull(r, t.union6_.(*union_8_t).AddrV6[:])
 		if err != nil {
 			return fmt.Errorf("read AddrV6: expect %d bytes but read %d bytes: %w", 16, n_AddrV6, err)
 		}
 	} else {
-		t.union5_ = &union_8_t{}
-		n_AddrV4, err := io.ReadFull(r, t.union5_.(*union_8_t).AddrV4[:])
+		t.union6_ = &union_9_t{}
+		n_AddrV4, err := io.ReadFull(r, t.union6_.(*union_9_t).AddrV4[:])
 		if err != nil {
 			return fmt.Errorf("read AddrV4: expect %d bytes but read %d bytes: %w", 4, n_AddrV4, err)
 		}
@@ -764,9 +834,9 @@ func (t *L7Lbupdate) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *L7Lbupdate) Write(w io.Writer) (err error) {
-	tmp9 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp9[:], uint32(t.ServerId))
-	if n, err := w.Write(tmp9[:]); err != nil || n != 4 {
+	tmp10 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp10[:], uint32(t.ServerId))
+	if n, err := w.Write(tmp10[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.ServerId: %w", err)
 	}
 	return nil
@@ -831,14 +901,14 @@ func (t *KeepAliveInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *KeepAliveInfo) Write(w io.Writer) (err error) {
-	tmp10 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp10[:], uint64(t.NextPeriod))
-	if n, err := w.Write(tmp10[:]); err != nil || n != 8 {
+	tmp11 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp11[:], uint64(t.NextPeriod))
+	if n, err := w.Write(tmp11[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.NextPeriod: %w", err)
 	}
-	tmp11 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp11[:], uint64(t.Uptime))
-	if n, err := w.Write(tmp11[:]); err != nil || n != 8 {
+	tmp12 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp12[:], uint64(t.Uptime))
+	if n, err := w.Write(tmp12[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.Uptime: %w", err)
 	}
 	if n, err := w.Write([]byte{byte(t.CpuLen)}); err != nil || n != 1 {
@@ -849,40 +919,40 @@ func (t *KeepAliveInfo) Write(w io.Writer) (err error) {
 		return fmt.Errorf("encode CpuUsage: expect %d but got %d for length", len_CpuUsage, len(t.CpuUsage))
 	}
 	for _, v := range t.CpuUsage {
-		tmp12 := math.Float64bits(v)
-		tmp13 := [8]byte{}
-		binary.LittleEndian.PutUint64(tmp13[:], uint64(tmp12))
-		if n, err := w.Write(tmp13[:]); err != nil || n != 8 {
-			return fmt.Errorf("encode tmp12: %w", err)
+		tmp13 := math.Float64bits(v)
+		tmp14 := [8]byte{}
+		binary.LittleEndian.PutUint64(tmp14[:], uint64(tmp13))
+		if n, err := w.Write(tmp14[:]); err != nil || n != 8 {
+			return fmt.Errorf("encode tmp13: %w", err)
 		}
 	}
-	tmp14 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp14[:], uint64(t.MemoryUsage))
-	if n, err := w.Write(tmp14[:]); err != nil || n != 8 {
+	tmp15 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp15[:], uint64(t.MemoryUsage))
+	if n, err := w.Write(tmp15[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.MemoryUsage: %w", err)
 	}
-	tmp15 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp15[:], uint64(t.DiskUsage))
-	if n, err := w.Write(tmp15[:]); err != nil || n != 8 {
+	tmp16 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp16[:], uint64(t.DiskUsage))
+	if n, err := w.Write(tmp16[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.DiskUsage: %w", err)
 	}
-	tmp16 := math.Float64bits(t.IoUtilization)
-	tmp17 := [8]byte{}
-	binary.LittleEndian.PutUint64(tmp17[:], uint64(tmp16))
-	if n, err := w.Write(tmp17[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode tmp16: %w", err)
+	tmp17 := math.Float64bits(t.IoUtilization)
+	tmp18 := [8]byte{}
+	binary.LittleEndian.PutUint64(tmp18[:], uint64(tmp17))
+	if n, err := w.Write(tmp18[:]); err != nil || n != 8 {
+		return fmt.Errorf("encode tmp17: %w", err)
 	}
-	tmp18 := math.Float64bits(t.LoadAvg)
-	tmp19 := [8]byte{}
-	binary.LittleEndian.PutUint64(tmp19[:], uint64(tmp18))
-	if n, err := w.Write(tmp19[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode tmp18: %w", err)
+	tmp19 := math.Float64bits(t.LoadAvg)
+	tmp20 := [8]byte{}
+	binary.LittleEndian.PutUint64(tmp20[:], uint64(tmp19))
+	if n, err := w.Write(tmp20[:]); err != nil || n != 8 {
+		return fmt.Errorf("encode tmp19: %w", err)
 	}
-	tmp20 := math.Float64bits(t.DiskSwap)
-	tmp21 := [8]byte{}
-	binary.LittleEndian.PutUint64(tmp21[:], uint64(tmp20))
-	if n, err := w.Write(tmp21[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode tmp20: %w", err)
+	tmp21 := math.Float64bits(t.DiskSwap)
+	tmp22 := [8]byte{}
+	binary.LittleEndian.PutUint64(tmp22[:], uint64(tmp21))
+	if n, err := w.Write(tmp22[:]); err != nil || n != 8 {
+		return fmt.Errorf("encode tmp21: %w", err)
 	}
 	return nil
 }
@@ -920,8 +990,8 @@ func (t *KeepAliveInfo) Read(r io.Reader) (err error) {
 	}
 	t.CpuLen = uint8(tmpCpuLen[0])
 	len_CpuUsage := int(t.CpuLen)
-	for i_22 := 0; i_22 < len_CpuUsage; i_22++ {
-		var tmp23_ float64
+	for i_23 := 0; i_23 < len_CpuUsage; i_23++ {
+		var tmp24_ float64
 		var tmp_CpuUsage uint64
 		tmpCpuUsage := [8]byte{}
 		n_CpuUsage, err := io.ReadFull(r, tmpCpuUsage[:])
@@ -929,8 +999,8 @@ func (t *KeepAliveInfo) Read(r io.Reader) (err error) {
 			return fmt.Errorf("read CpuUsage: expect 8 bytes but read %d bytes: %w", n_CpuUsage, err)
 		}
 		tmp_CpuUsage = uint64(binary.LittleEndian.Uint64(tmpCpuUsage[:]))
-		tmp23_ = math.Float64frombits(uint64(tmp_CpuUsage))
-		t.CpuUsage = append(t.CpuUsage, tmp23_)
+		tmp24_ = math.Float64frombits(uint64(tmp_CpuUsage))
+		t.CpuUsage = append(t.CpuUsage, tmp24_)
 	}
 	tmpMemoryUsage := [8]byte{}
 	n_MemoryUsage, err := io.ReadFull(r, tmpMemoryUsage[:])
@@ -997,40 +1067,40 @@ func (t *L7LbportInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *L7LbportInfo) Write(w io.Writer) (err error) {
-	tmp24 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp24[:], uint64(t.HandshakeFailure))
-	if n, err := w.Write(tmp24[:]); err != nil || n != 8 {
+	tmp25 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp25[:], uint64(t.HandshakeFailure))
+	if n, err := w.Write(tmp25[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.HandshakeFailure: %w", err)
 	}
-	tmp25 := math.Float64bits(t.Rps)
-	tmp26 := [8]byte{}
-	binary.LittleEndian.PutUint64(tmp26[:], uint64(tmp25))
-	if n, err := w.Write(tmp26[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode tmp25: %w", err)
-	}
+	tmp26 := math.Float64bits(t.Rps)
 	tmp27 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp27[:], uint64(t.Success))
+	binary.LittleEndian.PutUint64(tmp27[:], uint64(tmp26))
 	if n, err := w.Write(tmp27[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode t.Success: %w", err)
+		return fmt.Errorf("encode tmp26: %w", err)
 	}
 	tmp28 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp28[:], uint64(t.ClientFailure))
+	binary.BigEndian.PutUint64(tmp28[:], uint64(t.Success))
 	if n, err := w.Write(tmp28[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode t.ClientFailure: %w", err)
+		return fmt.Errorf("encode t.Success: %w", err)
 	}
 	tmp29 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp29[:], uint64(t.ServerFailure))
+	binary.BigEndian.PutUint64(tmp29[:], uint64(t.ClientFailure))
 	if n, err := w.Write(tmp29[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode t.ServerFailure: %w", err)
+		return fmt.Errorf("encode t.ClientFailure: %w", err)
 	}
 	tmp30 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp30[:], uint64(t.Disconnect))
+	binary.BigEndian.PutUint64(tmp30[:], uint64(t.ServerFailure))
 	if n, err := w.Write(tmp30[:]); err != nil || n != 8 {
-		return fmt.Errorf("encode t.Disconnect: %w", err)
+		return fmt.Errorf("encode t.ServerFailure: %w", err)
 	}
 	tmp31 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp31[:], uint64(t.OriginResponseTime))
+	binary.BigEndian.PutUint64(tmp31[:], uint64(t.Disconnect))
 	if n, err := w.Write(tmp31[:]); err != nil || n != 8 {
+		return fmt.Errorf("encode t.Disconnect: %w", err)
+	}
+	tmp32 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp32[:], uint64(t.OriginResponseTime))
+	if n, err := w.Write(tmp32[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.OriginResponseTime: %w", err)
 	}
 	return nil
@@ -1130,9 +1200,9 @@ func (t *KeyShareInfo) Write(w io.Writer) (err error) {
 	if n, err := w.Write([]byte{byte(t.Type)}); err != nil || n != 1 {
 		return fmt.Errorf("encode t.Type: %w", err)
 	}
-	tmp32 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp32[:], uint16(t.Len))
-	if n, err := w.Write(tmp32[:]); err != nil || n != 2 {
+	tmp33 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp33[:], uint16(t.Len))
+	if n, err := w.Write(tmp33[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Key := int(t.Len)
@@ -1205,9 +1275,9 @@ func (t *WasmUninstallInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *WasmUninstallInfo) Write(w io.Writer) (err error) {
-	tmp33 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp33[:], uint32(t.Id))
-	if n, err := w.Write(tmp33[:]); err != nil || n != 4 {
+	tmp34 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp34[:], uint32(t.Id))
+	if n, err := w.Write(tmp34[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.Id: %w", err)
 	}
 	return nil
@@ -1269,9 +1339,9 @@ func (t *Message) Write(w io.Writer) (err error) {
 	if n, err := w.Write([]byte{byte(t.Level)}); err != nil || n != 1 {
 		return fmt.Errorf("encode t.Level: %w", err)
 	}
-	tmp34 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp34[:], uint16(t.MsgLen))
-	if n, err := w.Write(tmp34[:]); err != nil || n != 2 {
+	tmp35 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp35[:], uint16(t.MsgLen))
+	if n, err := w.Write(tmp35[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.MsgLen: %w", err)
 	}
 	len_Msg := int(t.MsgLen)
@@ -1346,9 +1416,9 @@ func (t *CmdlineInstruction) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *CmdlineInstruction) Write(w io.Writer) (err error) {
-	tmp35 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp35[:], uint32(t.CmdlineId))
-	if n, err := w.Write(tmp35[:]); err != nil || n != 4 {
+	tmp36 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp36[:], uint32(t.CmdlineId))
+	if n, err := w.Write(tmp36[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.CmdlineId: %w", err)
 	}
 	if n, err := w.Write([]byte{byte(t.Instr)}); err != nil || n != 1 {
@@ -1425,14 +1495,14 @@ func (t *CmdlineIn) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *CmdlineIn) Write(w io.Writer) (err error) {
-	tmp36 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp36[:], uint32(t.CmdlineId))
-	if n, err := w.Write(tmp36[:]); err != nil || n != 4 {
+	tmp37 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp37[:], uint32(t.CmdlineId))
+	if n, err := w.Write(tmp37[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.CmdlineId: %w", err)
 	}
-	tmp37 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp37[:], uint16(t.Len))
-	if n, err := w.Write(tmp37[:]); err != nil || n != 2 {
+	tmp38 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp38[:], uint16(t.Len))
+	if n, err := w.Write(tmp38[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Len: %w", err)
 	}
 	len_Cmdline := int(t.Len)
@@ -1507,19 +1577,19 @@ func (t *CmdlineResize) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *CmdlineResize) Write(w io.Writer) (err error) {
-	tmp38 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp38[:], uint32(t.CmdlineId))
-	if n, err := w.Write(tmp38[:]); err != nil || n != 4 {
+	tmp39 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp39[:], uint32(t.CmdlineId))
+	if n, err := w.Write(tmp39[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.CmdlineId: %w", err)
 	}
-	tmp39 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp39[:], uint16(t.Col))
-	if n, err := w.Write(tmp39[:]); err != nil || n != 2 {
+	tmp40 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp40[:], uint16(t.Col))
+	if n, err := w.Write(tmp40[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Col: %w", err)
 	}
-	tmp40 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp40[:], uint16(t.Row))
-	if n, err := w.Write(tmp40[:]); err != nil || n != 2 {
+	tmp41 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp41[:], uint16(t.Row))
+	if n, err := w.Write(tmp41[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Row: %w", err)
 	}
 	return nil
@@ -1574,23 +1644,23 @@ func (t *CmdlineResize) DecodeExact(d []byte) error {
 	return nil
 }
 func (t *ChunkInfo) IsChunkd() bool {
-	return ((t.flags41 & 0x80000000) >> 31) == 1
+	return ((t.flags42 & 0x80000000) >> 31) == 1
 }
 func (t *ChunkInfo) SetIsChunkd(v bool) {
 	if v {
-		t.flags41 |= uint32(0x80000000)
+		t.flags42 |= uint32(0x80000000)
 	} else {
-		t.flags41 &= ^uint32(0x80000000)
+		t.flags42 &= ^uint32(0x80000000)
 	}
 }
 func (t *ChunkInfo) LenOrId() uint32 {
-	return ((t.flags41 & 0x7fffffff) >> 0)
+	return ((t.flags42 & 0x7fffffff) >> 0)
 }
 func (t *ChunkInfo) SetLenOrId(v uint32) bool {
 	if v > 2147483647 {
 		return false
 	}
-	t.flags41 = (t.flags41 & ^uint32(0x7fffffff)) | ((v & 0x7fffffff) << 0)
+	t.flags42 = (t.flags42 & ^uint32(0x7fffffff)) | ((v & 0x7fffffff) << 0)
 	return true
 }
 func (t *ChunkInfo) Visit(v VisitorJJRQX) {
@@ -1607,10 +1677,10 @@ func (t *ChunkInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *ChunkInfo) Write(w io.Writer) (err error) {
-	tmp42 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp42[:], uint32(t.flags41))
-	if n, err := w.Write(tmp42[:]); err != nil || n != 4 {
-		return fmt.Errorf("encode t.flags41: %w", err)
+	tmp43 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp43[:], uint32(t.flags42))
+	if n, err := w.Write(tmp43[:]); err != nil || n != 4 {
+		return fmt.Errorf("encode t.flags42: %w", err)
 	}
 	return nil
 }
@@ -1629,12 +1699,12 @@ func (t *ChunkInfo) MustEncode() []byte {
 	return buf
 }
 func (t *ChunkInfo) Read(r io.Reader) (err error) {
-	tmpflags41 := [4]byte{}
-	n_flags41, err := io.ReadFull(r, tmpflags41[:])
+	tmpflags42 := [4]byte{}
+	n_flags42, err := io.ReadFull(r, tmpflags42[:])
 	if err != nil {
-		return fmt.Errorf("read flags41: expect 4 bytes but read %d bytes: %w", n_flags41, err)
+		return fmt.Errorf("read flags42: expect 4 bytes but read %d bytes: %w", n_flags42, err)
 	}
-	t.flags41 = uint32(binary.BigEndian.Uint32(tmpflags41[:]))
+	t.flags42 = uint32(binary.BigEndian.Uint32(tmpflags42[:]))
 	return nil
 }
 
@@ -1659,14 +1729,14 @@ func (t *CommandExit) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *CommandExit) Write(w io.Writer) (err error) {
-	tmp43 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp43[:], uint32(t.CmdlineId))
-	if n, err := w.Write(tmp43[:]); err != nil || n != 4 {
+	tmp44 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp44[:], uint32(t.CmdlineId))
+	if n, err := w.Write(tmp44[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.CmdlineId: %w", err)
 	}
-	tmp44 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp44[:], uint32(t.ExitCode))
-	if n, err := w.Write(tmp44[:]); err != nil || n != 4 {
+	tmp45 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp45[:], uint32(t.ExitCode))
+	if n, err := w.Write(tmp45[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.ExitCode: %w", err)
 	}
 	return nil
@@ -1715,23 +1785,23 @@ func (t *CommandExit) DecodeExact(d []byte) error {
 	return nil
 }
 func (t *LargeChunkHeader) Eof() bool {
-	return ((t.flags45 & 0x80000000) >> 31) == 1
+	return ((t.flags46 & 0x80000000) >> 31) == 1
 }
 func (t *LargeChunkHeader) SetEof(v bool) {
 	if v {
-		t.flags45 |= uint32(0x80000000)
+		t.flags46 |= uint32(0x80000000)
 	} else {
-		t.flags45 &= ^uint32(0x80000000)
+		t.flags46 &= ^uint32(0x80000000)
 	}
 }
 func (t *LargeChunkHeader) ChunkId() uint32 {
-	return ((t.flags45 & 0x7fffffff) >> 0)
+	return ((t.flags46 & 0x7fffffff) >> 0)
 }
 func (t *LargeChunkHeader) SetChunkId(v uint32) bool {
 	if v > 2147483647 {
 		return false
 	}
-	t.flags45 = (t.flags45 & ^uint32(0x7fffffff)) | ((v & 0x7fffffff) << 0)
+	t.flags46 = (t.flags46 & ^uint32(0x7fffffff)) | ((v & 0x7fffffff) << 0)
 	return true
 }
 func (t *LargeChunkHeader) Visit(v VisitorJJRQX) {
@@ -1749,14 +1819,14 @@ func (t *LargeChunkHeader) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *LargeChunkHeader) Write(w io.Writer) (err error) {
-	tmp46 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp46[:], uint32(t.flags45))
-	if n, err := w.Write(tmp46[:]); err != nil || n != 4 {
-		return fmt.Errorf("encode t.flags45: %w", err)
-	}
 	tmp47 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp47[:], uint32(t.ChunkLen))
+	binary.BigEndian.PutUint32(tmp47[:], uint32(t.flags46))
 	if n, err := w.Write(tmp47[:]); err != nil || n != 4 {
+		return fmt.Errorf("encode t.flags46: %w", err)
+	}
+	tmp48 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp48[:], uint32(t.ChunkLen))
+	if n, err := w.Write(tmp48[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.ChunkLen: %w", err)
 	}
 	return nil
@@ -1776,12 +1846,12 @@ func (t *LargeChunkHeader) MustEncode() []byte {
 	return buf
 }
 func (t *LargeChunkHeader) Read(r io.Reader) (err error) {
-	tmpflags45 := [4]byte{}
-	n_flags45, err := io.ReadFull(r, tmpflags45[:])
+	tmpflags46 := [4]byte{}
+	n_flags46, err := io.ReadFull(r, tmpflags46[:])
 	if err != nil {
-		return fmt.Errorf("read flags45: expect 4 bytes but read %d bytes: %w", n_flags45, err)
+		return fmt.Errorf("read flags46: expect 4 bytes but read %d bytes: %w", n_flags46, err)
 	}
-	t.flags45 = uint32(binary.BigEndian.Uint32(tmpflags45[:]))
+	t.flags46 = uint32(binary.BigEndian.Uint32(tmpflags46[:]))
 	tmpChunkLen := [4]byte{}
 	n_ChunkLen, err := io.ReadFull(r, tmpChunkLen[:])
 	if err != nil {
@@ -1804,6 +1874,64 @@ func (t *LargeChunkHeader) DecodeExact(d []byte) error {
 	}
 	return nil
 }
+func (t *ConsoleHello) Visit(v VisitorJJRQX) {
+	v.Visit(v, "ServerId", &t.ServerId)
+	v.Visit(v, "Address", &t.Address)
+}
+func (t *ConsoleHello) MarshalJSON() ([]byte, error) {
+	return json.Marshal(VisitorJJRQXToMap(t))
+}
+func (t *ConsoleHello) Write(w io.Writer) (err error) {
+	tmp49 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp49[:], uint32(t.ServerId))
+	if n, err := w.Write(tmp49[:]); err != nil || n != 4 {
+		return fmt.Errorf("encode t.ServerId: %w", err)
+	}
+	if err := t.Address.Write(w); err != nil {
+		return fmt.Errorf("encode Address: %w", err)
+	}
+	return nil
+}
+func (t *ConsoleHello) Encode() ([]byte, error) {
+	w := bytes.NewBuffer(make([]byte, 0, 4))
+	if err := t.Write(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+func (t *ConsoleHello) MustEncode() []byte {
+	buf, err := t.Encode()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+func (t *ConsoleHello) Read(r io.Reader) (err error) {
+	tmpServerId := [4]byte{}
+	n_ServerId, err := io.ReadFull(r, tmpServerId[:])
+	if err != nil {
+		return fmt.Errorf("read ServerId: expect 4 bytes but read %d bytes: %w", n_ServerId, err)
+	}
+	t.ServerId = uint32(binary.BigEndian.Uint32(tmpServerId[:]))
+	if err := t.Address.Read(r); err != nil {
+		return fmt.Errorf("read Address: %w", err)
+	}
+	return nil
+}
+
+func (t *ConsoleHello) Decode(d []byte) (int, error) {
+	r := bytes.NewReader(d)
+	err := t.Read(r)
+	return int(int(r.Size()) - r.Len()), err
+}
+func (t *ConsoleHello) DecodeExact(d []byte) error {
+	if n, err := t.Decode(d); err != nil {
+		return err
+	} else if n != len(d) {
+		return fmt.Errorf("decode ConsoleHello: expect %d bytes but got %d bytes", len(d), n)
+	}
+	return nil
+}
 func (t *L7Lbinfo) SetPort(v []uint16) bool {
 	if len(v) > int(^uint8(0)) {
 		return false
@@ -1823,9 +1951,9 @@ func (t *L7Lbinfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *L7Lbinfo) Write(w io.Writer) (err error) {
-	tmp48 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp48[:], uint32(t.ServerId))
-	if n, err := w.Write(tmp48[:]); err != nil || n != 4 {
+	tmp50 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp50[:], uint32(t.ServerId))
+	if n, err := w.Write(tmp50[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.ServerId: %w", err)
 	}
 	if err := t.Address.Write(w); err != nil {
@@ -1842,9 +1970,9 @@ func (t *L7Lbinfo) Write(w io.Writer) (err error) {
 		return fmt.Errorf("encode Port: expect %d but got %d for length", len_Port, len(t.Port))
 	}
 	for _, v := range t.Port {
-		tmp49 := [2]byte{}
-		binary.BigEndian.PutUint16(tmp49[:], uint16(v))
-		if n, err := w.Write(tmp49[:]); err != nil || n != 2 {
+		tmp51 := [2]byte{}
+		binary.BigEndian.PutUint16(tmp51[:], uint16(v))
+		if n, err := w.Write(tmp51[:]); err != nil || n != 2 {
 			return fmt.Errorf("encode v: %w", err)
 		}
 	}
@@ -1885,15 +2013,15 @@ func (t *L7Lbinfo) Read(r io.Reader) (err error) {
 	}
 	t.PortLen = uint8(tmpPortLen[0])
 	len_Port := int(t.PortLen)
-	for i_50 := 0; i_50 < len_Port; i_50++ {
-		var tmp51_ uint16
+	for i_52 := 0; i_52 < len_Port; i_52++ {
+		var tmp53_ uint16
 		tmpPort := [2]byte{}
 		n_Port, err := io.ReadFull(r, tmpPort[:])
 		if err != nil {
 			return fmt.Errorf("read Port: expect 2 bytes but read %d bytes: %w", n_Port, err)
 		}
-		tmp51_ = uint16(binary.BigEndian.Uint16(tmpPort[:]))
-		t.Port = append(t.Port, tmp51_)
+		tmp53_ = uint16(binary.BigEndian.Uint16(tmpPort[:]))
+		t.Port = append(t.Port, tmp53_)
 	}
 	return nil
 }
@@ -1920,9 +2048,9 @@ func (t *L4Lbinfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *L4Lbinfo) Write(w io.Writer) (err error) {
-	tmp52 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp52[:], uint32(t.ServerId))
-	if n, err := w.Write(tmp52[:]); err != nil || n != 4 {
+	tmp54 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp54[:], uint32(t.ServerId))
+	if n, err := w.Write(tmp54[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.ServerId: %w", err)
 	}
 	if err := t.Address.Write(w); err != nil {
@@ -2029,12 +2157,12 @@ func (t *L4Lbl7Lbupdate) Read(r io.Reader) (err error) {
 	}
 	t.Len = uint8(tmpLen[0])
 	len_Info := int(t.Len)
-	for i_53 := 0; i_53 < len_Info; i_53++ {
-		var tmp54_ L7Lbinfo
-		if err := tmp54_.Read(r); err != nil {
+	for i_55 := 0; i_55 < len_Info; i_55++ {
+		var tmp56_ L7Lbinfo
+		if err := tmp56_.Read(r); err != nil {
 			return fmt.Errorf("read Info: %w", err)
 		}
-		t.Info = append(t.Info, tmp54_)
+		t.Info = append(t.Info, tmp56_)
 	}
 	return nil
 }
@@ -2104,12 +2232,12 @@ func (t *L7Lbl4Lbupdate) Read(r io.Reader) (err error) {
 	}
 	t.Len = uint8(tmpLen[0])
 	len_Info := int(t.Len)
-	for i_55 := 0; i_55 < len_Info; i_55++ {
-		var tmp56_ L4Lbinfo
-		if err := tmp56_.Read(r); err != nil {
+	for i_57 := 0; i_57 < len_Info; i_57++ {
+		var tmp58_ L4Lbinfo
+		if err := tmp58_.Read(r); err != nil {
 			return fmt.Errorf("read Info: %w", err)
 		}
-		t.Info = append(t.Info, tmp56_)
+		t.Info = append(t.Info, tmp58_)
 	}
 	return nil
 }
@@ -2294,9 +2422,9 @@ func (t *WasmInstallInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *WasmInstallInfo) Write(w io.Writer) (err error) {
-	tmp57 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp57[:], uint32(t.Id))
-	if n, err := w.Write(tmp57[:]); err != nil || n != 4 {
+	tmp59 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp59[:], uint32(t.Id))
+	if n, err := w.Write(tmp59[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.Id: %w", err)
 	}
 	if n, err := w.Write([]byte{byte(t.MethodLen)}); err != nil || n != 1 {
@@ -2309,9 +2437,9 @@ func (t *WasmInstallInfo) Write(w io.Writer) (err error) {
 	if n, err := w.Write(t.Method); err != nil || n != len(t.Method) {
 		return fmt.Errorf("encode Method: %w", err)
 	}
-	tmp58 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp58[:], uint16(t.PathLen))
-	if n, err := w.Write(tmp58[:]); err != nil || n != 2 {
+	tmp60 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp60[:], uint16(t.PathLen))
+	if n, err := w.Write(tmp60[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.PathLen: %w", err)
 	}
 	len_Path := int(t.PathLen)
@@ -2409,9 +2537,9 @@ func (t *CmdlineOut) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *CmdlineOut) Write(w io.Writer) (err error) {
-	tmp59 := [4]byte{}
-	binary.BigEndian.PutUint32(tmp59[:], uint32(t.CmdlineId))
-	if n, err := w.Write(tmp59[:]); err != nil || n != 4 {
+	tmp61 := [4]byte{}
+	binary.BigEndian.PutUint32(tmp61[:], uint32(t.CmdlineId))
+	if n, err := w.Write(tmp61[:]); err != nil || n != 4 {
 		return fmt.Errorf("encode t.CmdlineId: %w", err)
 	}
 	if n, err := w.Write([]byte{byte(t.OutputType)}); err != nil || n != 1 {
@@ -2486,9 +2614,9 @@ func (t *FileTransfer) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
 }
 func (t *FileTransfer) Write(w io.Writer) (err error) {
-	tmp60 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp60[:], uint16(t.PathLen))
-	if n, err := w.Write(tmp60[:]); err != nil || n != 2 {
+	tmp62 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp62[:], uint16(t.PathLen))
+	if n, err := w.Write(tmp62[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.PathLen: %w", err)
 	}
 	len_Path := int(t.PathLen)
@@ -2498,9 +2626,9 @@ func (t *FileTransfer) Write(w io.Writer) (err error) {
 	if n, err := w.Write(t.Path); err != nil || n != len(t.Path) {
 		return fmt.Errorf("encode Path: %w", err)
 	}
-	tmp61 := [2]byte{}
-	binary.BigEndian.PutUint16(tmp61[:], uint16(t.Permission))
-	if n, err := w.Write(tmp61[:]); err != nil || n != 2 {
+	tmp63 := [2]byte{}
+	binary.BigEndian.PutUint16(tmp63[:], uint16(t.Permission))
+	if n, err := w.Write(tmp63[:]); err != nil || n != 2 {
 		return fmt.Errorf("encode t.Permission: %w", err)
 	}
 	if err := t.ChunkInfo.Write(w); err != nil {
@@ -2694,19 +2822,19 @@ func (t *L7LbkeepAlive) Write(w io.Writer) (err error) {
 	if err := t.Info.Write(w); err != nil {
 		return fmt.Errorf("encode Info: %w", err)
 	}
-	tmp62 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp62[:], uint64(t.Throughput))
-	if n, err := w.Write(tmp62[:]); err != nil || n != 8 {
+	tmp64 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp64[:], uint64(t.Throughput))
+	if n, err := w.Write(tmp64[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.Throughput: %w", err)
 	}
-	tmp63 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp63[:], uint64(t.DropCount))
-	if n, err := w.Write(tmp63[:]); err != nil || n != 8 {
+	tmp65 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp65[:], uint64(t.DropCount))
+	if n, err := w.Write(tmp65[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.DropCount: %w", err)
 	}
-	tmp64 := [8]byte{}
-	binary.BigEndian.PutUint64(tmp64[:], uint64(t.PacketTotal))
-	if n, err := w.Write(tmp64[:]); err != nil || n != 8 {
+	tmp66 := [8]byte{}
+	binary.BigEndian.PutUint64(tmp66[:], uint64(t.PacketTotal))
+	if n, err := w.Write(tmp66[:]); err != nil || n != 8 {
 		return fmt.Errorf("encode t.PacketTotal: %w", err)
 	}
 	if n, err := w.Write([]byte{byte(t.PortLen)}); err != nil || n != 1 {
@@ -2766,12 +2894,12 @@ func (t *L7LbkeepAlive) Read(r io.Reader) (err error) {
 	}
 	t.PortLen = uint8(tmpPortLen[0])
 	len_Ports := int(t.PortLen)
-	for i_65 := 0; i_65 < len_Ports; i_65++ {
-		var tmp66_ L7LbportInfo
-		if err := tmp66_.Read(r); err != nil {
+	for i_67 := 0; i_67 < len_Ports; i_67++ {
+		var tmp68_ L7LbportInfo
+		if err := tmp68_.Read(r); err != nil {
 			return fmt.Errorf("read Ports: %w", err)
 		}
-		t.Ports = append(t.Ports, tmp66_)
+		t.Ports = append(t.Ports, tmp68_)
 	}
 	return nil
 }
@@ -2789,26 +2917,28 @@ func (t *L7LbkeepAlive) DecodeExact(d []byte) error {
 	}
 	return nil
 }
-func (t *union_69_t) isunion67_() {}
-func (t *union_70_t) isunion67_() {}
-func (t *union_71_t) isunion67_() {}
-func (t *union_72_t) isunion67_() {}
-func (t *union_73_t) isunion67_() {}
-func (t *union_74_t) isunion67_() {}
-func (t *union_75_t) isunion67_() {}
-func (t *union_76_t) isunion67_() {}
-func (t *union_77_t) isunion67_() {}
-func (t *union_78_t) isunion67_() {}
-func (t *union_79_t) isunion67_() {}
-func (t *union_80_t) isunion67_() {}
-func (t *union_81_t) isunion67_() {}
-func (t *union_82_t) isunion67_() {}
-func (t *union_83_t) isunion67_() {}
-func (t *union_84_t) isunion67_() {}
-func (t *union_85_t) isunion67_() {}
-func (t *union_86_t) isunion67_() {}
-func (t *union_87_t) isunion67_() {}
-func (t *union_88_t) isunion67_() {}
+func (t *union_71_t) isunion69_() {}
+func (t *union_72_t) isunion69_() {}
+func (t *union_73_t) isunion69_() {}
+func (t *union_74_t) isunion69_() {}
+func (t *union_75_t) isunion69_() {}
+func (t *union_76_t) isunion69_() {}
+func (t *union_77_t) isunion69_() {}
+func (t *union_78_t) isunion69_() {}
+func (t *union_79_t) isunion69_() {}
+func (t *union_80_t) isunion69_() {}
+func (t *union_81_t) isunion69_() {}
+func (t *union_82_t) isunion69_() {}
+func (t *union_83_t) isunion69_() {}
+func (t *union_84_t) isunion69_() {}
+func (t *union_85_t) isunion69_() {}
+func (t *union_86_t) isunion69_() {}
+func (t *union_87_t) isunion69_() {}
+func (t *union_88_t) isunion69_() {}
+func (t *union_89_t) isunion69_() {}
+func (t *union_90_t) isunion69_() {}
+func (t *union_91_t) isunion69_() {}
+func (t *union_92_t) isunion69_() {}
 func (t *ControlMessage) CmdlineExit() *CommandExit {
 	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
 		return nil
@@ -2839,10 +2969,10 @@ func (t *ControlMessage) CmdlineExit() *CommandExit {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
-		if _, ok := t.union67_.(*union_83_t); !ok {
+		if _, ok := t.union69_.(*union_85_t); !ok {
 			return nil // not set
 		}
-		tmp := CommandExit(t.union67_.(*union_83_t).CmdlineExit)
+		tmp := CommandExit(t.union69_.(*union_85_t).CmdlineExit)
 		return &tmp
 	}
 	return nil
@@ -2877,10 +3007,10 @@ func (t *ControlMessage) SetCmdlineExit(v CommandExit) bool {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
-		if _, ok := t.union67_.(*union_83_t); !ok {
-			t.union67_ = &union_83_t{}
+		if _, ok := t.union69_.(*union_85_t); !ok {
+			t.union69_ = &union_85_t{}
 		}
-		t.union67_.(*union_83_t).CmdlineExit = CommandExit(v)
+		t.union69_.(*union_85_t).CmdlineExit = CommandExit(v)
 		return true
 	}
 	return false
@@ -2911,10 +3041,10 @@ func (t *ControlMessage) CmdlineIn() *CmdlineIn {
 	} else if t.Header.MessageType == ControlMessageType_Message {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
-		if _, ok := t.union67_.(*union_81_t); !ok {
+		if _, ok := t.union69_.(*union_83_t); !ok {
 			return nil // not set
 		}
-		tmp := CmdlineIn(t.union67_.(*union_81_t).CmdlineIn)
+		tmp := CmdlineIn(t.union69_.(*union_83_t).CmdlineIn)
 		return &tmp
 	}
 	return nil
@@ -2945,10 +3075,10 @@ func (t *ControlMessage) SetCmdlineIn(v CmdlineIn) bool {
 	} else if t.Header.MessageType == ControlMessageType_Message {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
-		if _, ok := t.union67_.(*union_81_t); !ok {
-			t.union67_ = &union_81_t{}
+		if _, ok := t.union69_.(*union_83_t); !ok {
+			t.union69_ = &union_83_t{}
 		}
-		t.union67_.(*union_81_t).CmdlineIn = CmdlineIn(v)
+		t.union69_.(*union_83_t).CmdlineIn = CmdlineIn(v)
 		return true
 	}
 	return false
@@ -2989,10 +3119,10 @@ func (t *ControlMessage) CmdlineInstr() *CmdlineInstruction {
 	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
-		if _, ok := t.union67_.(*union_86_t); !ok {
+		if _, ok := t.union69_.(*union_88_t); !ok {
 			return nil // not set
 		}
-		tmp := CmdlineInstruction(t.union67_.(*union_86_t).CmdlineInstr)
+		tmp := CmdlineInstruction(t.union69_.(*union_88_t).CmdlineInstr)
 		return &tmp
 	}
 	return nil
@@ -3033,10 +3163,10 @@ func (t *ControlMessage) SetCmdlineInstr(v CmdlineInstruction) bool {
 	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
-		if _, ok := t.union67_.(*union_86_t); !ok {
-			t.union67_ = &union_86_t{}
+		if _, ok := t.union69_.(*union_88_t); !ok {
+			t.union69_ = &union_88_t{}
 		}
-		t.union67_.(*union_86_t).CmdlineInstr = CmdlineInstruction(v)
+		t.union69_.(*union_88_t).CmdlineInstr = CmdlineInstruction(v)
 		return true
 	}
 	return false
@@ -3069,10 +3199,10 @@ func (t *ControlMessage) CmdlineOut() *CmdlineOut {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
-		if _, ok := t.union67_.(*union_82_t); !ok {
+		if _, ok := t.union69_.(*union_84_t); !ok {
 			return nil // not set
 		}
-		tmp := CmdlineOut(t.union67_.(*union_82_t).CmdlineOut)
+		tmp := CmdlineOut(t.union69_.(*union_84_t).CmdlineOut)
 		return &tmp
 	}
 	return nil
@@ -3105,10 +3235,10 @@ func (t *ControlMessage) SetCmdlineOut(v CmdlineOut) bool {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
-		if _, ok := t.union67_.(*union_82_t); !ok {
-			t.union67_ = &union_82_t{}
+		if _, ok := t.union69_.(*union_84_t); !ok {
+			t.union69_ = &union_84_t{}
 		}
-		t.union67_.(*union_82_t).CmdlineOut = CmdlineOut(v)
+		t.union69_.(*union_84_t).CmdlineOut = CmdlineOut(v)
 		return true
 	}
 	return false
@@ -3145,10 +3275,10 @@ func (t *ControlMessage) CmdlineResize() *CmdlineResize {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
-		if _, ok := t.union67_.(*union_84_t); !ok {
+		if _, ok := t.union69_.(*union_86_t); !ok {
 			return nil // not set
 		}
-		tmp := CmdlineResize(t.union67_.(*union_84_t).CmdlineResize)
+		tmp := CmdlineResize(t.union69_.(*union_86_t).CmdlineResize)
 		return &tmp
 	}
 	return nil
@@ -3185,10 +3315,206 @@ func (t *ControlMessage) SetCmdlineResize(v CmdlineResize) bool {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
-		if _, ok := t.union67_.(*union_84_t); !ok {
-			t.union67_ = &union_84_t{}
+		if _, ok := t.union69_.(*union_86_t); !ok {
+			t.union69_ = &union_86_t{}
 		}
-		t.union67_.(*union_84_t).CmdlineResize = CmdlineResize(v)
+		t.union69_.(*union_86_t).CmdlineResize = CmdlineResize(v)
+		return true
+	}
+	return false
+}
+func (t *ControlMessage) ConsoleHello() *ConsoleHello {
+	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_Message {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_ConsoleHello {
+		if _, ok := t.union69_.(*union_90_t); !ok {
+			return nil // not set
+		}
+		tmp := ConsoleHello(t.union69_.(*union_90_t).ConsoleHello)
+		return &tmp
+	}
+	return nil
+}
+func (t *ControlMessage) SetConsoleHello(v ConsoleHello) bool {
+	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_Message {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_ConsoleHello {
+		if _, ok := t.union69_.(*union_90_t); !ok {
+			t.union69_ = &union_90_t{}
+		}
+		t.union69_.(*union_90_t).ConsoleHello = ConsoleHello(v)
+		return true
+	}
+	return false
+}
+func (t *ControlMessage) ConsoleKeepalive() *ConsoleKeepAlive {
+	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_Message {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_ConsoleHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_ConsoleKeepalive {
+		if _, ok := t.union69_.(*union_91_t); !ok {
+			return nil // not set
+		}
+		tmp := ConsoleKeepAlive(t.union69_.(*union_91_t).ConsoleKeepalive)
+		return &tmp
+	}
+	return nil
+}
+func (t *ControlMessage) SetConsoleKeepalive(v ConsoleKeepAlive) bool {
+	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_KeyShare {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_Message {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineIn {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineOut {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineExit {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_ConsoleHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_ConsoleKeepalive {
+		if _, ok := t.union69_.(*union_91_t); !ok {
+			t.union69_ = &union_91_t{}
+		}
+		t.union69_.(*union_91_t).ConsoleKeepalive = ConsoleKeepAlive(v)
 		return true
 	}
 	return false
@@ -3232,11 +3558,15 @@ func (t *ControlMessage) Data() *[]uint8 {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
 		return nil
+	} else if t.Header.MessageType == ControlMessageType_ConsoleHello {
+		return nil
+	} else if t.Header.MessageType == ControlMessageType_ConsoleKeepalive {
+		return nil
 	} else if true {
-		if _, ok := t.union67_.(*union_88_t); !ok {
+		if _, ok := t.union69_.(*union_92_t); !ok {
 			return nil // not set
 		}
-		tmp := []uint8(t.union67_.(*union_88_t).Data)
+		tmp := []uint8(t.union69_.(*union_92_t).Data)
 		return &tmp
 	}
 	return nil
@@ -3280,11 +3610,15 @@ func (t *ControlMessage) SetData(v []uint8) bool {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
 		return false
+	} else if t.Header.MessageType == ControlMessageType_ConsoleHello {
+		return false
+	} else if t.Header.MessageType == ControlMessageType_ConsoleKeepalive {
+		return false
 	} else if true {
-		if _, ok := t.union67_.(*union_88_t); !ok {
-			t.union67_ = &union_88_t{}
+		if _, ok := t.union69_.(*union_92_t); !ok {
+			t.union69_ = &union_92_t{}
 		}
-		t.union67_.(*union_88_t).Data = []uint8(v)
+		t.union69_.(*union_92_t).Data = []uint8(v)
 		return true
 	}
 	return false
@@ -3323,10 +3657,10 @@ func (t *ControlMessage) FileTransfer() *FileTransfer {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
-		if _, ok := t.union67_.(*union_85_t); !ok {
+		if _, ok := t.union69_.(*union_87_t); !ok {
 			return nil // not set
 		}
-		tmp := FileTransfer(t.union67_.(*union_85_t).FileTransfer)
+		tmp := FileTransfer(t.union69_.(*union_87_t).FileTransfer)
 		return &tmp
 	}
 	return nil
@@ -3365,10 +3699,10 @@ func (t *ControlMessage) SetFileTransfer(v FileTransfer) bool {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineResize {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_FileTransfer {
-		if _, ok := t.union67_.(*union_85_t); !ok {
-			t.union67_ = &union_85_t{}
+		if _, ok := t.union69_.(*union_87_t); !ok {
+			t.union69_ = &union_87_t{}
 		}
-		t.union67_.(*union_85_t).FileTransfer = FileTransfer(v)
+		t.union69_.(*union_87_t).FileTransfer = FileTransfer(v)
 		return true
 	}
 	return false
@@ -3391,10 +3725,10 @@ func (t *ControlMessage) KeyShare() *KeyShareInfo {
 	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
-		if _, ok := t.union67_.(*union_77_t); !ok {
+		if _, ok := t.union69_.(*union_79_t); !ok {
 			return nil // not set
 		}
-		tmp := KeyShareInfo(t.union67_.(*union_77_t).KeyShare)
+		tmp := KeyShareInfo(t.union69_.(*union_79_t).KeyShare)
 		return &tmp
 	}
 	return nil
@@ -3417,10 +3751,10 @@ func (t *ControlMessage) SetKeyShare(v KeyShareInfo) bool {
 	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
-		if _, ok := t.union67_.(*union_77_t); !ok {
-			t.union67_ = &union_77_t{}
+		if _, ok := t.union69_.(*union_79_t); !ok {
+			t.union69_ = &union_79_t{}
 		}
-		t.union67_.(*union_77_t).KeyShare = KeyShareInfo(v)
+		t.union69_.(*union_79_t).KeyShare = KeyShareInfo(v)
 		return true
 	}
 	return false
@@ -3435,10 +3769,10 @@ func (t *ControlMessage) L4LbHello() *L4Lbhello {
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
-		if _, ok := t.union67_.(*union_73_t); !ok {
+		if _, ok := t.union69_.(*union_75_t); !ok {
 			return nil // not set
 		}
-		tmp := L4Lbhello(t.union67_.(*union_73_t).L4LbHello)
+		tmp := L4Lbhello(t.union69_.(*union_75_t).L4LbHello)
 		return &tmp
 	}
 	return nil
@@ -3453,30 +3787,30 @@ func (t *ControlMessage) SetL4LbHello(v L4Lbhello) bool {
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
-		if _, ok := t.union67_.(*union_73_t); !ok {
-			t.union67_ = &union_73_t{}
+		if _, ok := t.union69_.(*union_75_t); !ok {
+			t.union69_ = &union_75_t{}
 		}
-		t.union67_.(*union_73_t).L4LbHello = L4Lbhello(v)
+		t.union69_.(*union_75_t).L4LbHello = L4Lbhello(v)
 		return true
 	}
 	return false
 }
 func (t *ControlMessage) L4LbKeepAlive() *L4LbkeepAlive {
 	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
-		if _, ok := t.union67_.(*union_69_t); !ok {
+		if _, ok := t.union69_.(*union_71_t); !ok {
 			return nil // not set
 		}
-		tmp := L4LbkeepAlive(t.union67_.(*union_69_t).L4LbKeepAlive)
+		tmp := L4LbkeepAlive(t.union69_.(*union_71_t).L4LbKeepAlive)
 		return &tmp
 	}
 	return nil
 }
 func (t *ControlMessage) SetL4LbKeepAlive(v L4LbkeepAlive) bool {
 	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
-		if _, ok := t.union67_.(*union_69_t); !ok {
-			t.union67_ = &union_69_t{}
+		if _, ok := t.union69_.(*union_71_t); !ok {
+			t.union69_ = &union_71_t{}
 		}
-		t.union67_.(*union_69_t).L4LbKeepAlive = L4LbkeepAlive(v)
+		t.union69_.(*union_71_t).L4LbKeepAlive = L4LbkeepAlive(v)
 		return true
 	}
 	return false
@@ -3493,10 +3827,10 @@ func (t *ControlMessage) L4LbL7LbUpdate() *L4Lbl7Lbupdate {
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
-		if _, ok := t.union67_.(*union_74_t); !ok {
+		if _, ok := t.union69_.(*union_76_t); !ok {
 			return nil // not set
 		}
-		tmp := L4Lbl7Lbupdate(t.union67_.(*union_74_t).L4LbL7LbUpdate)
+		tmp := L4Lbl7Lbupdate(t.union69_.(*union_76_t).L4LbL7LbUpdate)
 		return &tmp
 	}
 	return nil
@@ -3513,10 +3847,10 @@ func (t *ControlMessage) SetL4LbL7LbUpdate(v L4Lbl7Lbupdate) bool {
 	} else if t.Header.MessageType == ControlMessageType_L4LbHello {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
-		if _, ok := t.union67_.(*union_74_t); !ok {
-			t.union67_ = &union_74_t{}
+		if _, ok := t.union69_.(*union_76_t); !ok {
+			t.union69_ = &union_76_t{}
 		}
-		t.union67_.(*union_74_t).L4LbL7LbUpdate = L4Lbl7Lbupdate(v)
+		t.union69_.(*union_76_t).L4LbL7LbUpdate = L4Lbl7Lbupdate(v)
 		return true
 	}
 	return false
@@ -3527,10 +3861,10 @@ func (t *ControlMessage) L7LbHello() *L7Lbhello {
 	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
-		if _, ok := t.union67_.(*union_71_t); !ok {
+		if _, ok := t.union69_.(*union_73_t); !ok {
 			return nil // not set
 		}
-		tmp := L7Lbhello(t.union67_.(*union_71_t).L7LbHello)
+		tmp := L7Lbhello(t.union69_.(*union_73_t).L7LbHello)
 		return &tmp
 	}
 	return nil
@@ -3541,10 +3875,10 @@ func (t *ControlMessage) SetL7LbHello(v L7Lbhello) bool {
 	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
-		if _, ok := t.union67_.(*union_71_t); !ok {
-			t.union67_ = &union_71_t{}
+		if _, ok := t.union69_.(*union_73_t); !ok {
+			t.union69_ = &union_73_t{}
 		}
-		t.union67_.(*union_71_t).L7LbHello = L7Lbhello(v)
+		t.union69_.(*union_73_t).L7LbHello = L7Lbhello(v)
 		return true
 	}
 	return false
@@ -3553,10 +3887,10 @@ func (t *ControlMessage) L7LbKeepAlive() *L7LbkeepAlive {
 	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
-		if _, ok := t.union67_.(*union_70_t); !ok {
+		if _, ok := t.union69_.(*union_72_t); !ok {
 			return nil // not set
 		}
-		tmp := L7LbkeepAlive(t.union67_.(*union_70_t).L7LbKeepAlive)
+		tmp := L7LbkeepAlive(t.union69_.(*union_72_t).L7LbKeepAlive)
 		return &tmp
 	}
 	return nil
@@ -3565,10 +3899,10 @@ func (t *ControlMessage) SetL7LbKeepAlive(v L7LbkeepAlive) bool {
 	if t.Header.MessageType == ControlMessageType_L4LbKeepalive {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L7LbKeepalive {
-		if _, ok := t.union67_.(*union_70_t); !ok {
-			t.union67_ = &union_70_t{}
+		if _, ok := t.union69_.(*union_72_t); !ok {
+			t.union69_ = &union_72_t{}
 		}
-		t.union67_.(*union_70_t).L7LbKeepAlive = L7LbkeepAlive(v)
+		t.union69_.(*union_72_t).L7LbKeepAlive = L7LbkeepAlive(v)
 		return true
 	}
 	return false
@@ -3587,10 +3921,10 @@ func (t *ControlMessage) L7LbL4LbUpdate() *L7Lbl4Lbupdate {
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
-		if _, ok := t.union67_.(*union_75_t); !ok {
+		if _, ok := t.union69_.(*union_77_t); !ok {
 			return nil // not set
 		}
-		tmp := L7Lbl4Lbupdate(t.union67_.(*union_75_t).L7LbL4LbUpdate)
+		tmp := L7Lbl4Lbupdate(t.union69_.(*union_77_t).L7LbL4LbUpdate)
 		return &tmp
 	}
 	return nil
@@ -3609,10 +3943,10 @@ func (t *ControlMessage) SetL7LbL4LbUpdate(v L7Lbl4Lbupdate) bool {
 	} else if t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
-		if _, ok := t.union67_.(*union_75_t); !ok {
-			t.union67_ = &union_75_t{}
+		if _, ok := t.union69_.(*union_77_t); !ok {
+			t.union69_ = &union_77_t{}
 		}
-		t.union67_.(*union_75_t).L7LbL4LbUpdate = L7Lbl4Lbupdate(v)
+		t.union69_.(*union_77_t).L7LbL4LbUpdate = L7Lbl4Lbupdate(v)
 		return true
 	}
 	return false
@@ -3625,10 +3959,10 @@ func (t *ControlMessage) L7LbUpdate() *L7Lbupdate {
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
-		if _, ok := t.union67_.(*union_72_t); !ok {
+		if _, ok := t.union69_.(*union_74_t); !ok {
 			return nil // not set
 		}
-		tmp := L7Lbupdate(t.union67_.(*union_72_t).L7LbUpdate)
+		tmp := L7Lbupdate(t.union69_.(*union_74_t).L7LbUpdate)
 		return &tmp
 	}
 	return nil
@@ -3641,10 +3975,10 @@ func (t *ControlMessage) SetL7LbUpdate(v L7Lbupdate) bool {
 	} else if t.Header.MessageType == ControlMessageType_L7LbHello {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_L7LbUpdate {
-		if _, ok := t.union67_.(*union_72_t); !ok {
-			t.union67_ = &union_72_t{}
+		if _, ok := t.union69_.(*union_74_t); !ok {
+			t.union69_ = &union_74_t{}
 		}
-		t.union67_.(*union_72_t).L7LbUpdate = L7Lbupdate(v)
+		t.union69_.(*union_74_t).L7LbUpdate = L7Lbupdate(v)
 		return true
 	}
 	return false
@@ -3687,10 +4021,10 @@ func (t *ControlMessage) LargeChunk() *LargeChunkHeader {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
-		if _, ok := t.union67_.(*union_87_t); !ok {
+		if _, ok := t.union69_.(*union_89_t); !ok {
 			return nil // not set
 		}
-		tmp := LargeChunkHeader(t.union67_.(*union_87_t).LargeChunk)
+		tmp := LargeChunkHeader(t.union69_.(*union_89_t).LargeChunk)
 		return &tmp
 	}
 	return nil
@@ -3733,10 +4067,10 @@ func (t *ControlMessage) SetLargeChunk(v LargeChunkHeader) bool {
 	} else if t.Header.MessageType == ControlMessageType_CmdlineInstr {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_LargeChunk {
-		if _, ok := t.union67_.(*union_87_t); !ok {
-			t.union67_ = &union_87_t{}
+		if _, ok := t.union69_.(*union_89_t); !ok {
+			t.union69_ = &union_89_t{}
 		}
-		t.union67_.(*union_87_t).LargeChunk = LargeChunkHeader(v)
+		t.union69_.(*union_89_t).LargeChunk = LargeChunkHeader(v)
 		return true
 	}
 	return false
@@ -3765,10 +4099,10 @@ func (t *ControlMessage) Message() *Message {
 	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_Message {
-		if _, ok := t.union67_.(*union_80_t); !ok {
+		if _, ok := t.union69_.(*union_82_t); !ok {
 			return nil // not set
 		}
-		tmp := Message(t.union67_.(*union_80_t).Message)
+		tmp := Message(t.union69_.(*union_82_t).Message)
 		return &tmp
 	}
 	return nil
@@ -3797,10 +4131,10 @@ func (t *ControlMessage) SetMessage(v Message) bool {
 	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_Message {
-		if _, ok := t.union67_.(*union_80_t); !ok {
-			t.union67_ = &union_80_t{}
+		if _, ok := t.union69_.(*union_82_t); !ok {
+			t.union69_ = &union_82_t{}
 		}
-		t.union67_.(*union_80_t).Message = Message(v)
+		t.union69_.(*union_82_t).Message = Message(v)
 		return true
 	}
 	return false
@@ -3821,10 +4155,10 @@ func (t *ControlMessage) VipUpdate() *Vipupdate {
 	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
-		if _, ok := t.union67_.(*union_76_t); !ok {
+		if _, ok := t.union69_.(*union_78_t); !ok {
 			return nil // not set
 		}
-		tmp := Vipupdate(t.union67_.(*union_76_t).VipUpdate)
+		tmp := Vipupdate(t.union69_.(*union_78_t).VipUpdate)
 		return &tmp
 	}
 	return nil
@@ -3845,10 +4179,10 @@ func (t *ControlMessage) SetVipUpdate(v Vipupdate) bool {
 	} else if t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_VipUpdate {
-		if _, ok := t.union67_.(*union_76_t); !ok {
-			t.union67_ = &union_76_t{}
+		if _, ok := t.union69_.(*union_78_t); !ok {
+			t.union69_ = &union_78_t{}
 		}
-		t.union67_.(*union_76_t).VipUpdate = Vipupdate(v)
+		t.union69_.(*union_78_t).VipUpdate = Vipupdate(v)
 		return true
 	}
 	return false
@@ -3873,10 +4207,10 @@ func (t *ControlMessage) WasmInstall() *WasmInstallInfo {
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
-		if _, ok := t.union67_.(*union_78_t); !ok {
+		if _, ok := t.union69_.(*union_80_t); !ok {
 			return nil // not set
 		}
-		tmp := WasmInstallInfo(t.union67_.(*union_78_t).WasmInstall)
+		tmp := WasmInstallInfo(t.union69_.(*union_80_t).WasmInstall)
 		return &tmp
 	}
 	return nil
@@ -3901,10 +4235,10 @@ func (t *ControlMessage) SetWasmInstall(v WasmInstallInfo) bool {
 	} else if t.Header.MessageType == ControlMessageType_KeyShare {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
-		if _, ok := t.union67_.(*union_78_t); !ok {
-			t.union67_ = &union_78_t{}
+		if _, ok := t.union69_.(*union_80_t); !ok {
+			t.union69_ = &union_80_t{}
 		}
-		t.union67_.(*union_78_t).WasmInstall = WasmInstallInfo(v)
+		t.union69_.(*union_80_t).WasmInstall = WasmInstallInfo(v)
 		return true
 	}
 	return false
@@ -3931,10 +4265,10 @@ func (t *ControlMessage) WasmUninstall() *WasmUninstallInfo {
 	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
 		return nil
 	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
-		if _, ok := t.union67_.(*union_79_t); !ok {
+		if _, ok := t.union69_.(*union_81_t); !ok {
 			return nil // not set
 		}
-		tmp := WasmUninstallInfo(t.union67_.(*union_79_t).WasmUninstall)
+		tmp := WasmUninstallInfo(t.union69_.(*union_81_t).WasmUninstall)
 		return &tmp
 	}
 	return nil
@@ -3961,10 +4295,10 @@ func (t *ControlMessage) SetWasmUninstall(v WasmUninstallInfo) bool {
 	} else if t.Header.MessageType == ControlMessageType_WasmInstall {
 		return false
 	} else if t.Header.MessageType == ControlMessageType_WasmUninstall {
-		if _, ok := t.union67_.(*union_79_t); !ok {
-			t.union67_ = &union_79_t{}
+		if _, ok := t.union69_.(*union_81_t); !ok {
+			t.union69_ = &union_81_t{}
 		}
-		t.union67_.(*union_79_t).WasmUninstall = WasmUninstallInfo(v)
+		t.union69_.(*union_81_t).WasmUninstall = WasmUninstallInfo(v)
 		return true
 	}
 	return false
@@ -3976,6 +4310,8 @@ func (t *ControlMessage) Visit(v VisitorJJRQX) {
 	v.Visit(v, "CmdlineInstr", (t.CmdlineInstr()))
 	v.Visit(v, "CmdlineOut", (t.CmdlineOut()))
 	v.Visit(v, "CmdlineResize", (t.CmdlineResize()))
+	v.Visit(v, "ConsoleHello", (t.ConsoleHello()))
+	v.Visit(v, "ConsoleKeepalive", (t.ConsoleKeepalive()))
 	v.Visit(v, "Data", (t.Data()))
 	v.Visit(v, "FileTransfer", (t.FileTransfer()))
 	v.Visit(v, "KeyShare", (t.KeyShare()))
@@ -4001,356 +4337,392 @@ func (t *ControlMessage) Write(w io.Writer) (err error) {
 	}
 	switch {
 	case (t.Header.MessageType == ControlMessageType_L4LbKeepalive):
-		if _, ok := t.union67_.(*union_69_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_69_t")
-		}
-		new_buf_89 := bytes.NewBuffer(nil)
-		old_buf_89_w := w
-		w = new_buf_89
-		if err := t.union67_.(*union_69_t).L4LbKeepAlive.Write(w); err != nil {
-			return fmt.Errorf("encode L4LbKeepAlive: %w", err)
-		}
-		if new_buf_89.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L4LbKeepAlive: expect %d bytes but got %d bytes", new_buf_89.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_89.WriteTo(old_buf_89_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_89_w
-	case (t.Header.MessageType == ControlMessageType_L7LbKeepalive):
-		if _, ok := t.union67_.(*union_70_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_70_t")
-		}
-		new_buf_90 := bytes.NewBuffer(nil)
-		old_buf_90_w := w
-		w = new_buf_90
-		if err := t.union67_.(*union_70_t).L7LbKeepAlive.Write(w); err != nil {
-			return fmt.Errorf("encode L7LbKeepAlive: %w", err)
-		}
-		if new_buf_90.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L7LbKeepAlive: expect %d bytes but got %d bytes", new_buf_90.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_90.WriteTo(old_buf_90_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_90_w
-	case (t.Header.MessageType == ControlMessageType_L7LbHello):
-		if _, ok := t.union67_.(*union_71_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_71_t")
-		}
-		new_buf_91 := bytes.NewBuffer(nil)
-		old_buf_91_w := w
-		w = new_buf_91
-		if err := t.union67_.(*union_71_t).L7LbHello.Write(w); err != nil {
-			return fmt.Errorf("encode L7LbHello: %w", err)
-		}
-		if new_buf_91.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L7LbHello: expect %d bytes but got %d bytes", new_buf_91.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_91.WriteTo(old_buf_91_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_91_w
-	case (t.Header.MessageType == ControlMessageType_L7LbUpdate):
-		if _, ok := t.union67_.(*union_72_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_72_t")
-		}
-		new_buf_92 := bytes.NewBuffer(nil)
-		old_buf_92_w := w
-		w = new_buf_92
-		if err := t.union67_.(*union_72_t).L7LbUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode L7LbUpdate: %w", err)
-		}
-		if new_buf_92.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L7LbUpdate: expect %d bytes but got %d bytes", new_buf_92.Len(), int(t.Header.Len))
-		}
-		_, err = new_buf_92.WriteTo(old_buf_92_w)
-		if err != nil {
-			return err
-		}
-		w = old_buf_92_w
-	case (t.Header.MessageType == ControlMessageType_L4LbHello):
-		if _, ok := t.union67_.(*union_73_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_73_t")
+		if _, ok := t.union69_.(*union_71_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_71_t")
 		}
 		new_buf_93 := bytes.NewBuffer(nil)
 		old_buf_93_w := w
 		w = new_buf_93
-		if err := t.union67_.(*union_73_t).L4LbHello.Write(w); err != nil {
-			return fmt.Errorf("encode L4LbHello: %w", err)
+		if err := t.union69_.(*union_71_t).L4LbKeepAlive.Write(w); err != nil {
+			return fmt.Errorf("encode L4LbKeepAlive: %w", err)
 		}
 		if new_buf_93.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L4LbHello: expect %d bytes but got %d bytes", new_buf_93.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode L4LbKeepAlive: expect %d bytes but got %d bytes", new_buf_93.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_93.WriteTo(old_buf_93_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_93_w
-	case (t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate):
-		if _, ok := t.union67_.(*union_74_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_74_t")
+	case (t.Header.MessageType == ControlMessageType_L7LbKeepalive):
+		if _, ok := t.union69_.(*union_72_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_72_t")
 		}
 		new_buf_94 := bytes.NewBuffer(nil)
 		old_buf_94_w := w
 		w = new_buf_94
-		if err := t.union67_.(*union_74_t).L4LbL7LbUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode L4LbL7LbUpdate: %w", err)
+		if err := t.union69_.(*union_72_t).L7LbKeepAlive.Write(w); err != nil {
+			return fmt.Errorf("encode L7LbKeepAlive: %w", err)
 		}
 		if new_buf_94.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L4LbL7LbUpdate: expect %d bytes but got %d bytes", new_buf_94.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode L7LbKeepAlive: expect %d bytes but got %d bytes", new_buf_94.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_94.WriteTo(old_buf_94_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_94_w
-	case (t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate):
-		if _, ok := t.union67_.(*union_75_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_75_t")
+	case (t.Header.MessageType == ControlMessageType_L7LbHello):
+		if _, ok := t.union69_.(*union_73_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_73_t")
 		}
 		new_buf_95 := bytes.NewBuffer(nil)
 		old_buf_95_w := w
 		w = new_buf_95
-		if err := t.union67_.(*union_75_t).L7LbL4LbUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode L7LbL4LbUpdate: %w", err)
+		if err := t.union69_.(*union_73_t).L7LbHello.Write(w); err != nil {
+			return fmt.Errorf("encode L7LbHello: %w", err)
 		}
 		if new_buf_95.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode L7LbL4LbUpdate: expect %d bytes but got %d bytes", new_buf_95.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode L7LbHello: expect %d bytes but got %d bytes", new_buf_95.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_95.WriteTo(old_buf_95_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_95_w
-	case (t.Header.MessageType == ControlMessageType_VipUpdate):
-		if _, ok := t.union67_.(*union_76_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_76_t")
+	case (t.Header.MessageType == ControlMessageType_L7LbUpdate):
+		if _, ok := t.union69_.(*union_74_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_74_t")
 		}
 		new_buf_96 := bytes.NewBuffer(nil)
 		old_buf_96_w := w
 		w = new_buf_96
-		if err := t.union67_.(*union_76_t).VipUpdate.Write(w); err != nil {
-			return fmt.Errorf("encode VipUpdate: %w", err)
+		if err := t.union69_.(*union_74_t).L7LbUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode L7LbUpdate: %w", err)
 		}
 		if new_buf_96.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode VipUpdate: expect %d bytes but got %d bytes", new_buf_96.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode L7LbUpdate: expect %d bytes but got %d bytes", new_buf_96.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_96.WriteTo(old_buf_96_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_96_w
-	case (t.Header.MessageType == ControlMessageType_KeyShare):
-		if _, ok := t.union67_.(*union_77_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_77_t")
+	case (t.Header.MessageType == ControlMessageType_L4LbHello):
+		if _, ok := t.union69_.(*union_75_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_75_t")
 		}
 		new_buf_97 := bytes.NewBuffer(nil)
 		old_buf_97_w := w
 		w = new_buf_97
-		if err := t.union67_.(*union_77_t).KeyShare.Write(w); err != nil {
-			return fmt.Errorf("encode KeyShare: %w", err)
+		if err := t.union69_.(*union_75_t).L4LbHello.Write(w); err != nil {
+			return fmt.Errorf("encode L4LbHello: %w", err)
 		}
 		if new_buf_97.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode KeyShare: expect %d bytes but got %d bytes", new_buf_97.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode L4LbHello: expect %d bytes but got %d bytes", new_buf_97.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_97.WriteTo(old_buf_97_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_97_w
-	case (t.Header.MessageType == ControlMessageType_WasmInstall):
-		if _, ok := t.union67_.(*union_78_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_78_t")
+	case (t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate):
+		if _, ok := t.union69_.(*union_76_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_76_t")
 		}
 		new_buf_98 := bytes.NewBuffer(nil)
 		old_buf_98_w := w
 		w = new_buf_98
-		if err := t.union67_.(*union_78_t).WasmInstall.Write(w); err != nil {
-			return fmt.Errorf("encode WasmInstall: %w", err)
+		if err := t.union69_.(*union_76_t).L4LbL7LbUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode L4LbL7LbUpdate: %w", err)
 		}
 		if new_buf_98.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode WasmInstall: expect %d bytes but got %d bytes", new_buf_98.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode L4LbL7LbUpdate: expect %d bytes but got %d bytes", new_buf_98.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_98.WriteTo(old_buf_98_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_98_w
-	case (t.Header.MessageType == ControlMessageType_WasmUninstall):
-		if _, ok := t.union67_.(*union_79_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_79_t")
+	case (t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate):
+		if _, ok := t.union69_.(*union_77_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_77_t")
 		}
 		new_buf_99 := bytes.NewBuffer(nil)
 		old_buf_99_w := w
 		w = new_buf_99
-		if err := t.union67_.(*union_79_t).WasmUninstall.Write(w); err != nil {
-			return fmt.Errorf("encode WasmUninstall: %w", err)
+		if err := t.union69_.(*union_77_t).L7LbL4LbUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode L7LbL4LbUpdate: %w", err)
 		}
 		if new_buf_99.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode WasmUninstall: expect %d bytes but got %d bytes", new_buf_99.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode L7LbL4LbUpdate: expect %d bytes but got %d bytes", new_buf_99.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_99.WriteTo(old_buf_99_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_99_w
-	case (t.Header.MessageType == ControlMessageType_Message):
-		if _, ok := t.union67_.(*union_80_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_80_t")
+	case (t.Header.MessageType == ControlMessageType_VipUpdate):
+		if _, ok := t.union69_.(*union_78_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_78_t")
 		}
 		new_buf_100 := bytes.NewBuffer(nil)
 		old_buf_100_w := w
 		w = new_buf_100
-		if err := t.union67_.(*union_80_t).Message.Write(w); err != nil {
-			return fmt.Errorf("encode Message: %w", err)
+		if err := t.union69_.(*union_78_t).VipUpdate.Write(w); err != nil {
+			return fmt.Errorf("encode VipUpdate: %w", err)
 		}
 		if new_buf_100.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode Message: expect %d bytes but got %d bytes", new_buf_100.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode VipUpdate: expect %d bytes but got %d bytes", new_buf_100.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_100.WriteTo(old_buf_100_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_100_w
-	case (t.Header.MessageType == ControlMessageType_CmdlineIn):
-		if _, ok := t.union67_.(*union_81_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_81_t")
+	case (t.Header.MessageType == ControlMessageType_KeyShare):
+		if _, ok := t.union69_.(*union_79_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_79_t")
 		}
 		new_buf_101 := bytes.NewBuffer(nil)
 		old_buf_101_w := w
 		w = new_buf_101
-		if err := t.union67_.(*union_81_t).CmdlineIn.Write(w); err != nil {
-			return fmt.Errorf("encode CmdlineIn: %w", err)
+		if err := t.union69_.(*union_79_t).KeyShare.Write(w); err != nil {
+			return fmt.Errorf("encode KeyShare: %w", err)
 		}
 		if new_buf_101.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode CmdlineIn: expect %d bytes but got %d bytes", new_buf_101.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode KeyShare: expect %d bytes but got %d bytes", new_buf_101.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_101.WriteTo(old_buf_101_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_101_w
-	case (t.Header.MessageType == ControlMessageType_CmdlineOut):
-		if _, ok := t.union67_.(*union_82_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_82_t")
+	case (t.Header.MessageType == ControlMessageType_WasmInstall):
+		if _, ok := t.union69_.(*union_80_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_80_t")
 		}
 		new_buf_102 := bytes.NewBuffer(nil)
 		old_buf_102_w := w
 		w = new_buf_102
-		if err := t.union67_.(*union_82_t).CmdlineOut.Write(w); err != nil {
-			return fmt.Errorf("encode CmdlineOut: %w", err)
+		if err := t.union69_.(*union_80_t).WasmInstall.Write(w); err != nil {
+			return fmt.Errorf("encode WasmInstall: %w", err)
 		}
 		if new_buf_102.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode CmdlineOut: expect %d bytes but got %d bytes", new_buf_102.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode WasmInstall: expect %d bytes but got %d bytes", new_buf_102.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_102.WriteTo(old_buf_102_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_102_w
-	case (t.Header.MessageType == ControlMessageType_CmdlineExit):
-		if _, ok := t.union67_.(*union_83_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_83_t")
+	case (t.Header.MessageType == ControlMessageType_WasmUninstall):
+		if _, ok := t.union69_.(*union_81_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_81_t")
 		}
 		new_buf_103 := bytes.NewBuffer(nil)
 		old_buf_103_w := w
 		w = new_buf_103
-		if err := t.union67_.(*union_83_t).CmdlineExit.Write(w); err != nil {
-			return fmt.Errorf("encode CmdlineExit: %w", err)
+		if err := t.union69_.(*union_81_t).WasmUninstall.Write(w); err != nil {
+			return fmt.Errorf("encode WasmUninstall: %w", err)
 		}
 		if new_buf_103.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode CmdlineExit: expect %d bytes but got %d bytes", new_buf_103.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode WasmUninstall: expect %d bytes but got %d bytes", new_buf_103.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_103.WriteTo(old_buf_103_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_103_w
-	case (t.Header.MessageType == ControlMessageType_CmdlineResize):
-		if _, ok := t.union67_.(*union_84_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_84_t")
+	case (t.Header.MessageType == ControlMessageType_Message):
+		if _, ok := t.union69_.(*union_82_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_82_t")
 		}
 		new_buf_104 := bytes.NewBuffer(nil)
 		old_buf_104_w := w
 		w = new_buf_104
-		if err := t.union67_.(*union_84_t).CmdlineResize.Write(w); err != nil {
-			return fmt.Errorf("encode CmdlineResize: %w", err)
+		if err := t.union69_.(*union_82_t).Message.Write(w); err != nil {
+			return fmt.Errorf("encode Message: %w", err)
 		}
 		if new_buf_104.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode CmdlineResize: expect %d bytes but got %d bytes", new_buf_104.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode Message: expect %d bytes but got %d bytes", new_buf_104.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_104.WriteTo(old_buf_104_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_104_w
-	case (t.Header.MessageType == ControlMessageType_FileTransfer):
-		if _, ok := t.union67_.(*union_85_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_85_t")
+	case (t.Header.MessageType == ControlMessageType_CmdlineIn):
+		if _, ok := t.union69_.(*union_83_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_83_t")
 		}
 		new_buf_105 := bytes.NewBuffer(nil)
 		old_buf_105_w := w
 		w = new_buf_105
-		if err := t.union67_.(*union_85_t).FileTransfer.Write(w); err != nil {
-			return fmt.Errorf("encode FileTransfer: %w", err)
+		if err := t.union69_.(*union_83_t).CmdlineIn.Write(w); err != nil {
+			return fmt.Errorf("encode CmdlineIn: %w", err)
 		}
 		if new_buf_105.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode FileTransfer: expect %d bytes but got %d bytes", new_buf_105.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode CmdlineIn: expect %d bytes but got %d bytes", new_buf_105.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_105.WriteTo(old_buf_105_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_105_w
-	case (t.Header.MessageType == ControlMessageType_CmdlineInstr):
-		if _, ok := t.union67_.(*union_86_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_86_t")
+	case (t.Header.MessageType == ControlMessageType_CmdlineOut):
+		if _, ok := t.union69_.(*union_84_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_84_t")
 		}
 		new_buf_106 := bytes.NewBuffer(nil)
 		old_buf_106_w := w
 		w = new_buf_106
-		if err := t.union67_.(*union_86_t).CmdlineInstr.Write(w); err != nil {
-			return fmt.Errorf("encode CmdlineInstr: %w", err)
+		if err := t.union69_.(*union_84_t).CmdlineOut.Write(w); err != nil {
+			return fmt.Errorf("encode CmdlineOut: %w", err)
 		}
 		if new_buf_106.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode CmdlineInstr: expect %d bytes but got %d bytes", new_buf_106.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode CmdlineOut: expect %d bytes but got %d bytes", new_buf_106.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_106.WriteTo(old_buf_106_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_106_w
-	case (t.Header.MessageType == ControlMessageType_LargeChunk):
-		if _, ok := t.union67_.(*union_87_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_87_t")
+	case (t.Header.MessageType == ControlMessageType_CmdlineExit):
+		if _, ok := t.union69_.(*union_85_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_85_t")
 		}
 		new_buf_107 := bytes.NewBuffer(nil)
 		old_buf_107_w := w
 		w = new_buf_107
-		if err := t.union67_.(*union_87_t).LargeChunk.Write(w); err != nil {
-			return fmt.Errorf("encode LargeChunk: %w", err)
+		if err := t.union69_.(*union_85_t).CmdlineExit.Write(w); err != nil {
+			return fmt.Errorf("encode CmdlineExit: %w", err)
 		}
 		if new_buf_107.Len() != int(t.Header.Len) {
-			return fmt.Errorf("encode LargeChunk: expect %d bytes but got %d bytes", new_buf_107.Len(), int(t.Header.Len))
+			return fmt.Errorf("encode CmdlineExit: expect %d bytes but got %d bytes", new_buf_107.Len(), int(t.Header.Len))
 		}
 		_, err = new_buf_107.WriteTo(old_buf_107_w)
 		if err != nil {
 			return err
 		}
 		w = old_buf_107_w
+	case (t.Header.MessageType == ControlMessageType_CmdlineResize):
+		if _, ok := t.union69_.(*union_86_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_86_t")
+		}
+		new_buf_108 := bytes.NewBuffer(nil)
+		old_buf_108_w := w
+		w = new_buf_108
+		if err := t.union69_.(*union_86_t).CmdlineResize.Write(w); err != nil {
+			return fmt.Errorf("encode CmdlineResize: %w", err)
+		}
+		if new_buf_108.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode CmdlineResize: expect %d bytes but got %d bytes", new_buf_108.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_108.WriteTo(old_buf_108_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_108_w
+	case (t.Header.MessageType == ControlMessageType_FileTransfer):
+		if _, ok := t.union69_.(*union_87_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_87_t")
+		}
+		new_buf_109 := bytes.NewBuffer(nil)
+		old_buf_109_w := w
+		w = new_buf_109
+		if err := t.union69_.(*union_87_t).FileTransfer.Write(w); err != nil {
+			return fmt.Errorf("encode FileTransfer: %w", err)
+		}
+		if new_buf_109.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode FileTransfer: expect %d bytes but got %d bytes", new_buf_109.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_109.WriteTo(old_buf_109_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_109_w
+	case (t.Header.MessageType == ControlMessageType_CmdlineInstr):
+		if _, ok := t.union69_.(*union_88_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_88_t")
+		}
+		new_buf_110 := bytes.NewBuffer(nil)
+		old_buf_110_w := w
+		w = new_buf_110
+		if err := t.union69_.(*union_88_t).CmdlineInstr.Write(w); err != nil {
+			return fmt.Errorf("encode CmdlineInstr: %w", err)
+		}
+		if new_buf_110.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode CmdlineInstr: expect %d bytes but got %d bytes", new_buf_110.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_110.WriteTo(old_buf_110_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_110_w
+	case (t.Header.MessageType == ControlMessageType_LargeChunk):
+		if _, ok := t.union69_.(*union_89_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_89_t")
+		}
+		new_buf_111 := bytes.NewBuffer(nil)
+		old_buf_111_w := w
+		w = new_buf_111
+		if err := t.union69_.(*union_89_t).LargeChunk.Write(w); err != nil {
+			return fmt.Errorf("encode LargeChunk: %w", err)
+		}
+		if new_buf_111.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode LargeChunk: expect %d bytes but got %d bytes", new_buf_111.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_111.WriteTo(old_buf_111_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_111_w
+	case (t.Header.MessageType == ControlMessageType_ConsoleHello):
+		if _, ok := t.union69_.(*union_90_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_90_t")
+		}
+		new_buf_112 := bytes.NewBuffer(nil)
+		old_buf_112_w := w
+		w = new_buf_112
+		if err := t.union69_.(*union_90_t).ConsoleHello.Write(w); err != nil {
+			return fmt.Errorf("encode ConsoleHello: %w", err)
+		}
+		if new_buf_112.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode ConsoleHello: expect %d bytes but got %d bytes", new_buf_112.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_112.WriteTo(old_buf_112_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_112_w
+	case (t.Header.MessageType == ControlMessageType_ConsoleKeepalive):
+		if _, ok := t.union69_.(*union_91_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_91_t")
+		}
+		new_buf_113 := bytes.NewBuffer(nil)
+		old_buf_113_w := w
+		w = new_buf_113
+		if err := t.union69_.(*union_91_t).ConsoleKeepalive.Write(w); err != nil {
+			return fmt.Errorf("encode ConsoleKeepalive: %w", err)
+		}
+		if new_buf_113.Len() != int(t.Header.Len) {
+			return fmt.Errorf("encode ConsoleKeepalive: expect %d bytes but got %d bytes", new_buf_113.Len(), int(t.Header.Len))
+		}
+		_, err = new_buf_113.WriteTo(old_buf_113_w)
+		if err != nil {
+			return err
+		}
+		w = old_buf_113_w
 	default:
-		if _, ok := t.union67_.(*union_88_t); !ok {
-			return fmt.Errorf("encode t.union67_: union is not set to union_88_t")
+		if _, ok := t.union69_.(*union_92_t); !ok {
+			return fmt.Errorf("encode t.union69_: union is not set to union_92_t")
 		}
 		len_Data := int(t.Header.Len)
-		if len(t.union67_.(*union_88_t).Data) != len_Data {
-			return fmt.Errorf("encode Data: expect %d bytes but got %d bytes", len_Data, len(t.union67_.(*union_88_t).Data))
+		if len(t.union69_.(*union_92_t).Data) != len_Data {
+			return fmt.Errorf("encode Data: expect %d bytes but got %d bytes", len_Data, len(t.union69_.(*union_92_t).Data))
 		}
-		if n, err := w.Write(t.union67_.(*union_88_t).Data); err != nil || n != len(t.union67_.(*union_88_t).Data) {
+		if n, err := w.Write(t.union69_.(*union_92_t).Data); err != nil || n != len(t.union69_.(*union_92_t).Data) {
 			return fmt.Errorf("encode Data: %w", err)
 		}
 	}
@@ -4376,254 +4748,280 @@ func (t *ControlMessage) Read(r io.Reader) (err error) {
 	}
 	switch {
 	case (t.Header.MessageType == ControlMessageType_L4LbKeepalive):
-		t.union67_ = &union_69_t{}
+		t.union69_ = &union_71_t{}
 		sub_byte_len_L4LbKeepAlive := int64(t.Header.Len)
 		sub_byte_r_L4LbKeepAlive := io.LimitReader(r, int64(sub_byte_len_L4LbKeepAlive))
-		tmp_old_r_L4LbKeepAlive_108 := r
+		tmp_old_r_L4LbKeepAlive_114 := r
 		r = sub_byte_r_L4LbKeepAlive
-		if err := t.union67_.(*union_69_t).L4LbKeepAlive.Read(r); err != nil {
+		if err := t.union69_.(*union_71_t).L4LbKeepAlive.Read(r); err != nil {
 			return fmt.Errorf("read L4LbKeepAlive: %w", err)
 		}
 		if sub_byte_r_L4LbKeepAlive.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L4LbKeepAlive: expect %d bytes but got %d bytes", sub_byte_len_L4LbKeepAlive, sub_byte_len_L4LbKeepAlive-sub_byte_r_L4LbKeepAlive.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L4LbKeepAlive_108
+		r = tmp_old_r_L4LbKeepAlive_114
 	case (t.Header.MessageType == ControlMessageType_L7LbKeepalive):
-		t.union67_ = &union_70_t{}
+		t.union69_ = &union_72_t{}
 		sub_byte_len_L7LbKeepAlive := int64(t.Header.Len)
 		sub_byte_r_L7LbKeepAlive := io.LimitReader(r, int64(sub_byte_len_L7LbKeepAlive))
-		tmp_old_r_L7LbKeepAlive_109 := r
+		tmp_old_r_L7LbKeepAlive_115 := r
 		r = sub_byte_r_L7LbKeepAlive
-		if err := t.union67_.(*union_70_t).L7LbKeepAlive.Read(r); err != nil {
+		if err := t.union69_.(*union_72_t).L7LbKeepAlive.Read(r); err != nil {
 			return fmt.Errorf("read L7LbKeepAlive: %w", err)
 		}
 		if sub_byte_r_L7LbKeepAlive.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L7LbKeepAlive: expect %d bytes but got %d bytes", sub_byte_len_L7LbKeepAlive, sub_byte_len_L7LbKeepAlive-sub_byte_r_L7LbKeepAlive.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L7LbKeepAlive_109
+		r = tmp_old_r_L7LbKeepAlive_115
 	case (t.Header.MessageType == ControlMessageType_L7LbHello):
-		t.union67_ = &union_71_t{}
+		t.union69_ = &union_73_t{}
 		sub_byte_len_L7LbHello := int64(t.Header.Len)
 		sub_byte_r_L7LbHello := io.LimitReader(r, int64(sub_byte_len_L7LbHello))
-		tmp_old_r_L7LbHello_110 := r
+		tmp_old_r_L7LbHello_116 := r
 		r = sub_byte_r_L7LbHello
-		if err := t.union67_.(*union_71_t).L7LbHello.Read(r); err != nil {
+		if err := t.union69_.(*union_73_t).L7LbHello.Read(r); err != nil {
 			return fmt.Errorf("read L7LbHello: %w", err)
 		}
 		if sub_byte_r_L7LbHello.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L7LbHello: expect %d bytes but got %d bytes", sub_byte_len_L7LbHello, sub_byte_len_L7LbHello-sub_byte_r_L7LbHello.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L7LbHello_110
+		r = tmp_old_r_L7LbHello_116
 	case (t.Header.MessageType == ControlMessageType_L7LbUpdate):
-		t.union67_ = &union_72_t{}
+		t.union69_ = &union_74_t{}
 		sub_byte_len_L7LbUpdate := int64(t.Header.Len)
 		sub_byte_r_L7LbUpdate := io.LimitReader(r, int64(sub_byte_len_L7LbUpdate))
-		tmp_old_r_L7LbUpdate_111 := r
+		tmp_old_r_L7LbUpdate_117 := r
 		r = sub_byte_r_L7LbUpdate
-		if err := t.union67_.(*union_72_t).L7LbUpdate.Read(r); err != nil {
+		if err := t.union69_.(*union_74_t).L7LbUpdate.Read(r); err != nil {
 			return fmt.Errorf("read L7LbUpdate: %w", err)
 		}
 		if sub_byte_r_L7LbUpdate.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L7LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L7LbUpdate, sub_byte_len_L7LbUpdate-sub_byte_r_L7LbUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L7LbUpdate_111
+		r = tmp_old_r_L7LbUpdate_117
 	case (t.Header.MessageType == ControlMessageType_L4LbHello):
-		t.union67_ = &union_73_t{}
+		t.union69_ = &union_75_t{}
 		sub_byte_len_L4LbHello := int64(t.Header.Len)
 		sub_byte_r_L4LbHello := io.LimitReader(r, int64(sub_byte_len_L4LbHello))
-		tmp_old_r_L4LbHello_112 := r
+		tmp_old_r_L4LbHello_118 := r
 		r = sub_byte_r_L4LbHello
-		if err := t.union67_.(*union_73_t).L4LbHello.Read(r); err != nil {
+		if err := t.union69_.(*union_75_t).L4LbHello.Read(r); err != nil {
 			return fmt.Errorf("read L4LbHello: %w", err)
 		}
 		if sub_byte_r_L4LbHello.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L4LbHello: expect %d bytes but got %d bytes", sub_byte_len_L4LbHello, sub_byte_len_L4LbHello-sub_byte_r_L4LbHello.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L4LbHello_112
+		r = tmp_old_r_L4LbHello_118
 	case (t.Header.MessageType == ControlMessageType_L4LbL7LbUpdate):
-		t.union67_ = &union_74_t{}
+		t.union69_ = &union_76_t{}
 		sub_byte_len_L4LbL7LbUpdate := int64(t.Header.Len)
 		sub_byte_r_L4LbL7LbUpdate := io.LimitReader(r, int64(sub_byte_len_L4LbL7LbUpdate))
-		tmp_old_r_L4LbL7LbUpdate_113 := r
+		tmp_old_r_L4LbL7LbUpdate_119 := r
 		r = sub_byte_r_L4LbL7LbUpdate
-		if err := t.union67_.(*union_74_t).L4LbL7LbUpdate.Read(r); err != nil {
+		if err := t.union69_.(*union_76_t).L4LbL7LbUpdate.Read(r); err != nil {
 			return fmt.Errorf("read L4LbL7LbUpdate: %w", err)
 		}
 		if sub_byte_r_L4LbL7LbUpdate.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L4LbL7LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L4LbL7LbUpdate, sub_byte_len_L4LbL7LbUpdate-sub_byte_r_L4LbL7LbUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L4LbL7LbUpdate_113
+		r = tmp_old_r_L4LbL7LbUpdate_119
 	case (t.Header.MessageType == ControlMessageType_L7LbL4LbUpdate):
-		t.union67_ = &union_75_t{}
+		t.union69_ = &union_77_t{}
 		sub_byte_len_L7LbL4LbUpdate := int64(t.Header.Len)
 		sub_byte_r_L7LbL4LbUpdate := io.LimitReader(r, int64(sub_byte_len_L7LbL4LbUpdate))
-		tmp_old_r_L7LbL4LbUpdate_114 := r
+		tmp_old_r_L7LbL4LbUpdate_120 := r
 		r = sub_byte_r_L7LbL4LbUpdate
-		if err := t.union67_.(*union_75_t).L7LbL4LbUpdate.Read(r); err != nil {
+		if err := t.union69_.(*union_77_t).L7LbL4LbUpdate.Read(r); err != nil {
 			return fmt.Errorf("read L7LbL4LbUpdate: %w", err)
 		}
 		if sub_byte_r_L7LbL4LbUpdate.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read L7LbL4LbUpdate: expect %d bytes but got %d bytes", sub_byte_len_L7LbL4LbUpdate, sub_byte_len_L7LbL4LbUpdate-sub_byte_r_L7LbL4LbUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_L7LbL4LbUpdate_114
+		r = tmp_old_r_L7LbL4LbUpdate_120
 	case (t.Header.MessageType == ControlMessageType_VipUpdate):
-		t.union67_ = &union_76_t{}
+		t.union69_ = &union_78_t{}
 		sub_byte_len_VipUpdate := int64(t.Header.Len)
 		sub_byte_r_VipUpdate := io.LimitReader(r, int64(sub_byte_len_VipUpdate))
-		tmp_old_r_VipUpdate_115 := r
+		tmp_old_r_VipUpdate_121 := r
 		r = sub_byte_r_VipUpdate
-		if err := t.union67_.(*union_76_t).VipUpdate.Read(r); err != nil {
+		if err := t.union69_.(*union_78_t).VipUpdate.Read(r); err != nil {
 			return fmt.Errorf("read VipUpdate: %w", err)
 		}
 		if sub_byte_r_VipUpdate.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read VipUpdate: expect %d bytes but got %d bytes", sub_byte_len_VipUpdate, sub_byte_len_VipUpdate-sub_byte_r_VipUpdate.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_VipUpdate_115
+		r = tmp_old_r_VipUpdate_121
 	case (t.Header.MessageType == ControlMessageType_KeyShare):
-		t.union67_ = &union_77_t{}
+		t.union69_ = &union_79_t{}
 		sub_byte_len_KeyShare := int64(t.Header.Len)
 		sub_byte_r_KeyShare := io.LimitReader(r, int64(sub_byte_len_KeyShare))
-		tmp_old_r_KeyShare_116 := r
+		tmp_old_r_KeyShare_122 := r
 		r = sub_byte_r_KeyShare
-		if err := t.union67_.(*union_77_t).KeyShare.Read(r); err != nil {
+		if err := t.union69_.(*union_79_t).KeyShare.Read(r); err != nil {
 			return fmt.Errorf("read KeyShare: %w", err)
 		}
 		if sub_byte_r_KeyShare.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read KeyShare: expect %d bytes but got %d bytes", sub_byte_len_KeyShare, sub_byte_len_KeyShare-sub_byte_r_KeyShare.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_KeyShare_116
+		r = tmp_old_r_KeyShare_122
 	case (t.Header.MessageType == ControlMessageType_WasmInstall):
-		t.union67_ = &union_78_t{}
+		t.union69_ = &union_80_t{}
 		sub_byte_len_WasmInstall := int64(t.Header.Len)
 		sub_byte_r_WasmInstall := io.LimitReader(r, int64(sub_byte_len_WasmInstall))
-		tmp_old_r_WasmInstall_117 := r
+		tmp_old_r_WasmInstall_123 := r
 		r = sub_byte_r_WasmInstall
-		if err := t.union67_.(*union_78_t).WasmInstall.Read(r); err != nil {
+		if err := t.union69_.(*union_80_t).WasmInstall.Read(r); err != nil {
 			return fmt.Errorf("read WasmInstall: %w", err)
 		}
 		if sub_byte_r_WasmInstall.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read WasmInstall: expect %d bytes but got %d bytes", sub_byte_len_WasmInstall, sub_byte_len_WasmInstall-sub_byte_r_WasmInstall.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_WasmInstall_117
+		r = tmp_old_r_WasmInstall_123
 	case (t.Header.MessageType == ControlMessageType_WasmUninstall):
-		t.union67_ = &union_79_t{}
+		t.union69_ = &union_81_t{}
 		sub_byte_len_WasmUninstall := int64(t.Header.Len)
 		sub_byte_r_WasmUninstall := io.LimitReader(r, int64(sub_byte_len_WasmUninstall))
-		tmp_old_r_WasmUninstall_118 := r
+		tmp_old_r_WasmUninstall_124 := r
 		r = sub_byte_r_WasmUninstall
-		if err := t.union67_.(*union_79_t).WasmUninstall.Read(r); err != nil {
+		if err := t.union69_.(*union_81_t).WasmUninstall.Read(r); err != nil {
 			return fmt.Errorf("read WasmUninstall: %w", err)
 		}
 		if sub_byte_r_WasmUninstall.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read WasmUninstall: expect %d bytes but got %d bytes", sub_byte_len_WasmUninstall, sub_byte_len_WasmUninstall-sub_byte_r_WasmUninstall.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_WasmUninstall_118
+		r = tmp_old_r_WasmUninstall_124
 	case (t.Header.MessageType == ControlMessageType_Message):
-		t.union67_ = &union_80_t{}
+		t.union69_ = &union_82_t{}
 		sub_byte_len_Message := int64(t.Header.Len)
 		sub_byte_r_Message := io.LimitReader(r, int64(sub_byte_len_Message))
-		tmp_old_r_Message_119 := r
+		tmp_old_r_Message_125 := r
 		r = sub_byte_r_Message
-		if err := t.union67_.(*union_80_t).Message.Read(r); err != nil {
+		if err := t.union69_.(*union_82_t).Message.Read(r); err != nil {
 			return fmt.Errorf("read Message: %w", err)
 		}
 		if sub_byte_r_Message.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read Message: expect %d bytes but got %d bytes", sub_byte_len_Message, sub_byte_len_Message-sub_byte_r_Message.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_Message_119
+		r = tmp_old_r_Message_125
 	case (t.Header.MessageType == ControlMessageType_CmdlineIn):
-		t.union67_ = &union_81_t{}
+		t.union69_ = &union_83_t{}
 		sub_byte_len_CmdlineIn := int64(t.Header.Len)
 		sub_byte_r_CmdlineIn := io.LimitReader(r, int64(sub_byte_len_CmdlineIn))
-		tmp_old_r_CmdlineIn_120 := r
+		tmp_old_r_CmdlineIn_126 := r
 		r = sub_byte_r_CmdlineIn
-		if err := t.union67_.(*union_81_t).CmdlineIn.Read(r); err != nil {
+		if err := t.union69_.(*union_83_t).CmdlineIn.Read(r); err != nil {
 			return fmt.Errorf("read CmdlineIn: %w", err)
 		}
 		if sub_byte_r_CmdlineIn.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read CmdlineIn: expect %d bytes but got %d bytes", sub_byte_len_CmdlineIn, sub_byte_len_CmdlineIn-sub_byte_r_CmdlineIn.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_CmdlineIn_120
+		r = tmp_old_r_CmdlineIn_126
 	case (t.Header.MessageType == ControlMessageType_CmdlineOut):
-		t.union67_ = &union_82_t{}
+		t.union69_ = &union_84_t{}
 		sub_byte_len_CmdlineOut := int64(t.Header.Len)
 		sub_byte_r_CmdlineOut := io.LimitReader(r, int64(sub_byte_len_CmdlineOut))
-		tmp_old_r_CmdlineOut_121 := r
+		tmp_old_r_CmdlineOut_127 := r
 		r = sub_byte_r_CmdlineOut
-		if err := t.union67_.(*union_82_t).CmdlineOut.Read(r); err != nil {
+		if err := t.union69_.(*union_84_t).CmdlineOut.Read(r); err != nil {
 			return fmt.Errorf("read CmdlineOut: %w", err)
 		}
 		if sub_byte_r_CmdlineOut.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read CmdlineOut: expect %d bytes but got %d bytes", sub_byte_len_CmdlineOut, sub_byte_len_CmdlineOut-sub_byte_r_CmdlineOut.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_CmdlineOut_121
+		r = tmp_old_r_CmdlineOut_127
 	case (t.Header.MessageType == ControlMessageType_CmdlineExit):
-		t.union67_ = &union_83_t{}
+		t.union69_ = &union_85_t{}
 		sub_byte_len_CmdlineExit := int64(t.Header.Len)
 		sub_byte_r_CmdlineExit := io.LimitReader(r, int64(sub_byte_len_CmdlineExit))
-		tmp_old_r_CmdlineExit_122 := r
+		tmp_old_r_CmdlineExit_128 := r
 		r = sub_byte_r_CmdlineExit
-		if err := t.union67_.(*union_83_t).CmdlineExit.Read(r); err != nil {
+		if err := t.union69_.(*union_85_t).CmdlineExit.Read(r); err != nil {
 			return fmt.Errorf("read CmdlineExit: %w", err)
 		}
 		if sub_byte_r_CmdlineExit.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read CmdlineExit: expect %d bytes but got %d bytes", sub_byte_len_CmdlineExit, sub_byte_len_CmdlineExit-sub_byte_r_CmdlineExit.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_CmdlineExit_122
+		r = tmp_old_r_CmdlineExit_128
 	case (t.Header.MessageType == ControlMessageType_CmdlineResize):
-		t.union67_ = &union_84_t{}
+		t.union69_ = &union_86_t{}
 		sub_byte_len_CmdlineResize := int64(t.Header.Len)
 		sub_byte_r_CmdlineResize := io.LimitReader(r, int64(sub_byte_len_CmdlineResize))
-		tmp_old_r_CmdlineResize_123 := r
+		tmp_old_r_CmdlineResize_129 := r
 		r = sub_byte_r_CmdlineResize
-		if err := t.union67_.(*union_84_t).CmdlineResize.Read(r); err != nil {
+		if err := t.union69_.(*union_86_t).CmdlineResize.Read(r); err != nil {
 			return fmt.Errorf("read CmdlineResize: %w", err)
 		}
 		if sub_byte_r_CmdlineResize.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read CmdlineResize: expect %d bytes but got %d bytes", sub_byte_len_CmdlineResize, sub_byte_len_CmdlineResize-sub_byte_r_CmdlineResize.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_CmdlineResize_123
+		r = tmp_old_r_CmdlineResize_129
 	case (t.Header.MessageType == ControlMessageType_FileTransfer):
-		t.union67_ = &union_85_t{}
+		t.union69_ = &union_87_t{}
 		sub_byte_len_FileTransfer := int64(t.Header.Len)
 		sub_byte_r_FileTransfer := io.LimitReader(r, int64(sub_byte_len_FileTransfer))
-		tmp_old_r_FileTransfer_124 := r
+		tmp_old_r_FileTransfer_130 := r
 		r = sub_byte_r_FileTransfer
-		if err := t.union67_.(*union_85_t).FileTransfer.Read(r); err != nil {
+		if err := t.union69_.(*union_87_t).FileTransfer.Read(r); err != nil {
 			return fmt.Errorf("read FileTransfer: %w", err)
 		}
 		if sub_byte_r_FileTransfer.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read FileTransfer: expect %d bytes but got %d bytes", sub_byte_len_FileTransfer, sub_byte_len_FileTransfer-sub_byte_r_FileTransfer.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_FileTransfer_124
+		r = tmp_old_r_FileTransfer_130
 	case (t.Header.MessageType == ControlMessageType_CmdlineInstr):
-		t.union67_ = &union_86_t{}
+		t.union69_ = &union_88_t{}
 		sub_byte_len_CmdlineInstr := int64(t.Header.Len)
 		sub_byte_r_CmdlineInstr := io.LimitReader(r, int64(sub_byte_len_CmdlineInstr))
-		tmp_old_r_CmdlineInstr_125 := r
+		tmp_old_r_CmdlineInstr_131 := r
 		r = sub_byte_r_CmdlineInstr
-		if err := t.union67_.(*union_86_t).CmdlineInstr.Read(r); err != nil {
+		if err := t.union69_.(*union_88_t).CmdlineInstr.Read(r); err != nil {
 			return fmt.Errorf("read CmdlineInstr: %w", err)
 		}
 		if sub_byte_r_CmdlineInstr.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read CmdlineInstr: expect %d bytes but got %d bytes", sub_byte_len_CmdlineInstr, sub_byte_len_CmdlineInstr-sub_byte_r_CmdlineInstr.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_CmdlineInstr_125
+		r = tmp_old_r_CmdlineInstr_131
 	case (t.Header.MessageType == ControlMessageType_LargeChunk):
-		t.union67_ = &union_87_t{}
+		t.union69_ = &union_89_t{}
 		sub_byte_len_LargeChunk := int64(t.Header.Len)
 		sub_byte_r_LargeChunk := io.LimitReader(r, int64(sub_byte_len_LargeChunk))
-		tmp_old_r_LargeChunk_126 := r
+		tmp_old_r_LargeChunk_132 := r
 		r = sub_byte_r_LargeChunk
-		if err := t.union67_.(*union_87_t).LargeChunk.Read(r); err != nil {
+		if err := t.union69_.(*union_89_t).LargeChunk.Read(r); err != nil {
 			return fmt.Errorf("read LargeChunk: %w", err)
 		}
 		if sub_byte_r_LargeChunk.(*io.LimitedReader).N != 0 {
 			return fmt.Errorf("read LargeChunk: expect %d bytes but got %d bytes", sub_byte_len_LargeChunk, sub_byte_len_LargeChunk-sub_byte_r_LargeChunk.(*io.LimitedReader).N)
 		}
-		r = tmp_old_r_LargeChunk_126
+		r = tmp_old_r_LargeChunk_132
+	case (t.Header.MessageType == ControlMessageType_ConsoleHello):
+		t.union69_ = &union_90_t{}
+		sub_byte_len_ConsoleHello := int64(t.Header.Len)
+		sub_byte_r_ConsoleHello := io.LimitReader(r, int64(sub_byte_len_ConsoleHello))
+		tmp_old_r_ConsoleHello_133 := r
+		r = sub_byte_r_ConsoleHello
+		if err := t.union69_.(*union_90_t).ConsoleHello.Read(r); err != nil {
+			return fmt.Errorf("read ConsoleHello: %w", err)
+		}
+		if sub_byte_r_ConsoleHello.(*io.LimitedReader).N != 0 {
+			return fmt.Errorf("read ConsoleHello: expect %d bytes but got %d bytes", sub_byte_len_ConsoleHello, sub_byte_len_ConsoleHello-sub_byte_r_ConsoleHello.(*io.LimitedReader).N)
+		}
+		r = tmp_old_r_ConsoleHello_133
+	case (t.Header.MessageType == ControlMessageType_ConsoleKeepalive):
+		t.union69_ = &union_91_t{}
+		sub_byte_len_ConsoleKeepalive := int64(t.Header.Len)
+		sub_byte_r_ConsoleKeepalive := io.LimitReader(r, int64(sub_byte_len_ConsoleKeepalive))
+		tmp_old_r_ConsoleKeepalive_134 := r
+		r = sub_byte_r_ConsoleKeepalive
+		if err := t.union69_.(*union_91_t).ConsoleKeepalive.Read(r); err != nil {
+			return fmt.Errorf("read ConsoleKeepalive: %w", err)
+		}
+		if sub_byte_r_ConsoleKeepalive.(*io.LimitedReader).N != 0 {
+			return fmt.Errorf("read ConsoleKeepalive: expect %d bytes but got %d bytes", sub_byte_len_ConsoleKeepalive, sub_byte_len_ConsoleKeepalive-sub_byte_r_ConsoleKeepalive.(*io.LimitedReader).N)
+		}
+		r = tmp_old_r_ConsoleKeepalive_134
 	default:
-		t.union67_ = &union_88_t{}
+		t.union69_ = &union_92_t{}
 		len_Data := int(t.Header.Len)
 		if len_Data != 0 {
 			tmpData := make([]byte, len_Data)
@@ -4631,9 +5029,9 @@ func (t *ControlMessage) Read(r io.Reader) (err error) {
 			if err != nil {
 				return fmt.Errorf("read Data: expect %d bytes but read %d bytes: %w", len_Data, n_Data, err)
 			}
-			t.union67_.(*union_88_t).Data = tmpData[:]
+			t.union69_.(*union_92_t).Data = tmpData[:]
 		} else {
-			t.union67_.(*union_88_t).Data = nil
+			t.union69_.(*union_92_t).Data = nil
 		}
 	}
 	return nil

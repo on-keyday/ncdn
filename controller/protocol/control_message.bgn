@@ -25,6 +25,8 @@ enum ControlMessageType:
     wasm_uninstall # controller -> l7lb
     message # l4lb,l7lb -> controller
     large_chunk # both direction
+    console_hello # console controler, not lb but can access via cmdline
+    console_keepalive
 
 
 format ControlMessageHeader:
@@ -58,6 +60,8 @@ format ControlMessage:
         ControlMessageType.file_transfer => file_transfer :FileTransfer(input = input.subrange(header.len))
         ControlMessageType.cmdline_instr => cmdline_instr :CmdlineInstruction(input = input.subrange(header.len))
         ControlMessageType.large_chunk => large_chunk :LargeChunkHeader(input = input.subrange(header.len))
+        ControlMessageType.console_hello => console_hello :ConsoleHello(input = input.subrange(header.len))
+        ControlMessageType.console_keepalive => console_keepalive :ConsoleKeepAlive(input = input.subrange(header.len))
         .. => data :[header.len]u8
 
 format MachineInfo:
@@ -69,6 +73,14 @@ format L7LBHello:
     machine :MachineInfo
     info :L7LBInfo
 
+format ConsoleHello:
+    server_id :u32
+    address :Address
+
+format ConsoleKeepAlive:
+    next_period :u64
+
+
 format Address:
     is_v6 :u1
     reserved :u7
@@ -77,7 +89,7 @@ format Address:
     else:
         addr_v4 :[4]u8
 
-format L7LBInfo: # currently l4lb can interpret ipv4 only
+format L7LBInfo: 
     server_id :u32 # hashed value, for consistensy hash
     address :Address
     mac_address :[6]u8

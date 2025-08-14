@@ -692,3 +692,44 @@ func LargeChunk(chunkID uint32, chunkLen uint32, eof bool) *ControlMessage {
 	controlMsg.SetLargeChunk(hdr)
 	return controlMsg
 }
+
+type ConsoleData struct {
+	ServerID uint32
+	Address  netip.Addr
+}
+
+func ConsoleHelloToConsoleData(hello *ConsoleHello) *ConsoleData {
+	return &ConsoleData{
+		ServerID: hello.ServerId,
+		Address:  IPFromAddress(hello.Address),
+	}
+}
+
+func HelloConsole(serverID uint32, addr netip.Addr) *ControlMessage {
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         uint16(4 + 1 + len(addr.AsSlice())), // 4 bytes for serverID + 1 byte for is_v6 + addr length
+			MessageType: ControlMessageType_ConsoleHello,
+		},
+	}
+	controlMsg.SetConsoleHello(ConsoleHello{
+		ServerId: serverID,
+		Address:  ConvertToAddress(addr),
+	})
+	return controlMsg
+}
+
+func KeepAliveConsole(nextPeriod time.Duration) *ControlMessage {
+	controlMsg := &ControlMessage{
+		Header: ControlMessageHeader{
+			Version:     0,
+			Len:         uint16(8), // 8 bytes for nextPeriod
+			MessageType: ControlMessageType_ConsoleKeepalive,
+		},
+	}
+	controlMsg.SetConsoleKeepalive(ConsoleKeepAlive{
+		NextPeriod: uint64(nextPeriod),
+	})
+	return controlMsg
+}

@@ -24,8 +24,9 @@ type ControllerStatus struct {
 type LBType string
 
 const (
-	LBTypeL4 LBType = "L4LB"
-	LBTypeL7 LBType = "L7LB"
+	LBTypeL4      LBType = "L4LB"
+	LBTypeL7      LBType = "L7LB"
+	LBTypeConsole LBType = "Console"
 )
 
 type DestEntry struct {
@@ -76,6 +77,7 @@ func NewController(logger *slog.Logger) Controller {
 		logger:         logger,
 		l4lblist:       &l4list{},
 		l7lbList:       &l7list{},
+		consoleList:    &consolelist{},
 		commandManager: newCommandLineManager(),
 	}
 	return c
@@ -145,14 +147,16 @@ func (l *generationList[T]) Remove(item T) {
 
 type l7list = generationList[*L7LB]
 type l4list = generationList[*L4LB]
+type consolelist = generationList[*LBConn[protocol.ConsoleData]]
 
 type controller struct {
-	lock      sync.Mutex
-	l4lblist  *l4list
-	l7lbList  *l7list
-	logger    *slog.Logger
-	sharedKey sharedKey
-	msgSeqNum uint64
+	lock        sync.Mutex
+	l4lblist    *l4list
+	l7lbList    *l7list
+	consoleList *consolelist
+	logger      *slog.Logger
+	sharedKey   sharedKey
+	msgSeqNum   uint64
 
 	commandManager *commandLineManager
 }
@@ -273,6 +277,7 @@ func (lb *LBConn[T]) GetSeqNum() uint64 {
 
 type L4LB = LBConn[protocol.L4LBControlState]
 type L7LB = LBConn[protocol.L7LBControlState]
+type ConsoleConn = LBConn[protocol.ConsoleData]
 
 func (l *LBConn[T]) Close() error {
 	l.CloseChannel()
@@ -393,9 +398,11 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 		l4lbInfo := msg.L4LbHello()
 		var err error
 		l4lb := NewLBConn(ctx, conn, protocol.L4LBHelloToControlState(l4lbInfo),
-			c.logger.With("server_id", l4lbInfo.Info.ServerId, "remote_addr", conn.RemoteAddr()))
+			c.logger.With("type", "L4LB", "server_id", l4lbInfo.Info.ServerId, "remote_addr", conn.RemoteAddr()))
 		var updateInfo []*protocol.L7LBData
-		var l7generation uint64
+		var l4updateInfo []*protocol.L4LBData
+		var l7lblist *l7list
+		var l4generation uint64
 		var sharedKey sharedKey
 		c.withLock(func() {
 			for _, v := range c.l4lblist.list {
@@ -409,7 +416,11 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 			for _, v := range c.l7lbList.list {
 				updateInfo = append(updateInfo, &v.data.data.Data.Data)
 			}
-			l7generation = c.l7lbList.generation
+			for _, v := range c.l4lblist.list {
+				l4updateInfo = append(l4updateInfo, &v.data.data.Data.Data)
+			}
+			l7lblist = c.l7lbList.Clone()
+			l4generation = c.l4lblist.generation
 			sharedKey = c.sharedKey
 		})
 		if err != nil {
@@ -418,14 +429,18 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 		}
 		sendCommandLineReset(l4lb) // Reset command line state
 		sendKeyShare(l4lb, sharedKey.key, sharedKey.generation)
-		sendL4L7LBUpdate(l4lb, updateInfo, l7generation)
+		sendL4L7LBUpdate(l4lb, updateInfo, l7lblist.generation)
+		for _, l7lb := range l7lblist.list {
+			sendL7L4LBUpdate(l7lb, l4updateInfo, l4generation)
+		}
 		c.handleL4LB(l4lb)
 	case protocol.ControlMessageType_L7LbHello:
 		l7lbInfo := msg.L7LbHello()
 		l7lb := NewLBConn(ctx, conn, protocol.L7LBHelloToControlState(l7lbInfo),
-			c.logger.With("server_id", l7lbInfo.Info.ServerId, "remote_addr", conn.RemoteAddr()))
+			c.logger.With("type", "L7LB", "server_id", l7lbInfo.Info.ServerId, "remote_addr", conn.RemoteAddr()))
 		var err error
-		var data []*protocol.L7LBData
+		var l7data []*protocol.L7LBData
+		var l4data []*protocol.L4LBData
 		var sharedKey sharedKey
 		var l4lbList *l4list
 		var l7generation uint64
@@ -442,7 +457,10 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 				return int(a.data.data.Data.Data.ServerID) - int(b.data.data.Data.Data.ServerID)
 			})
 			for _, v := range c.l7lbList.list {
-				data = append(data, &v.data.data.Data.Data)
+				l7data = append(l7data, &v.data.data.Data.Data)
+			}
+			for _, v := range c.l4lblist.list {
+				l4data = append(l4data, &v.data.data.Data.Data)
 			}
 			l4lbList = c.l4lblist.Clone()
 			l7generation = c.l7lbList.generation
@@ -454,10 +472,32 @@ func (c *controller) handleConnection(ctx context.Context, conn transport.Connec
 		}
 		sendCommandLineReset(l7lb) // Reset command line state
 		sendKeyShare(l7lb, sharedKey.key, sharedKey.generation)
+		sendL7L4LBUpdate(l7lb, l4data, l4lbList.generation)
 		for _, l4lb := range l4lbList.list {
-			sendL4L7LBUpdate(l4lb, data, l7generation)
+			sendL4L7LBUpdate(l4lb, l7data, l7generation)
 		}
 		c.handleL7LB(l7lb)
+	case protocol.ControlMessageType_ConsoleHello:
+		consoleData := msg.ConsoleHello()
+		var err error
+		console := NewLBConn(ctx, conn, protocol.ConsoleHelloToConsoleData(consoleData),
+			c.logger.With("type", "Console", "server_id", consoleData.ServerId, "remote_addr", conn.RemoteAddr()))
+		c.withLock(func() {
+			for _, v := range c.consoleList.list {
+				if v.data.data.ServerID == console.data.data.ServerID {
+					err = errors.New("console with this ServerID already exists")
+					return
+				}
+			}
+			c.consoleList.Add(c.msgSeqNum, console)
+			c.msgSeqNum++
+		})
+		if err != nil {
+			console.logger.Error("Failed to set Console", "error", err)
+			return
+		}
+		sendCommandLineReset(console) // Reset command line state
+		c.handleConsole(console)
 	default:
 		c.logger.Error("Unknown message type", "type", msg.Header.MessageType)
 		return
@@ -624,5 +664,20 @@ func (c *controller) handleL4LB(l4lb *L4LB) {
 		for _, l7lb := range l7lblist.list {
 			sendL7L4LBUpdate(l7lb, data, l4generation) // Notify L7LBs about the L4LB disconnection
 		}
+	})
+}
+
+func (c *controller) handleConsole(console *ConsoleConn) {
+	handleLBConn(c, "Console", console, func(msg *protocol.ControlMessage) (time.Duration, error) {
+		kl := msg.ConsoleKeepalive()
+		if kl != nil {
+			return time.Duration(kl.NextPeriod), nil
+		}
+		return 0, fmt.Errorf("unexpected message for Console: %v", msg.Header.MessageType)
+	}, func() {
+		c.withLock(func() {
+			c.consoleList.Remove(console)
+		})
+		console.logger.Info("Console disconnected", "remote_addr", console.conn.RemoteAddr())
 	})
 }
