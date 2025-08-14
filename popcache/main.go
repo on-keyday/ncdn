@@ -332,6 +332,7 @@ func main() {
 				}
 			}()
 			handleRequest = func(req *http.Request) {
+				req.Header.Set("Host", req.Host) // reset for edge function
 				err := ec.ProcessRequest(r.Context(), reqID, serverID, req)
 				if err != nil {
 					log.Printf("Failed to process request: %v", err)
