@@ -303,8 +303,9 @@ type LargeChunkHeader struct {
 	ChunkLen uint32
 }
 type ConsoleHello struct {
-	ServerId uint32
-	Address  Address
+	ServerId   uint32
+	Address    Address
+	MacAddress [6]uint8
 }
 type L7Lbinfo struct {
 	ServerId   uint32
@@ -1877,6 +1878,7 @@ func (t *LargeChunkHeader) DecodeExact(d []byte) error {
 func (t *ConsoleHello) Visit(v VisitorJJRQX) {
 	v.Visit(v, "ServerId", &t.ServerId)
 	v.Visit(v, "Address", &t.Address)
+	v.Visit(v, "MacAddress", &t.MacAddress)
 }
 func (t *ConsoleHello) MarshalJSON() ([]byte, error) {
 	return json.Marshal(VisitorJJRQXToMap(t))
@@ -1889,6 +1891,9 @@ func (t *ConsoleHello) Write(w io.Writer) (err error) {
 	}
 	if err := t.Address.Write(w); err != nil {
 		return fmt.Errorf("encode Address: %w", err)
+	}
+	if n, err := w.Write(t.MacAddress[:]); err != nil || n != len(t.MacAddress) {
+		return fmt.Errorf("encode MacAddress: %w", err)
 	}
 	return nil
 }
@@ -1915,6 +1920,10 @@ func (t *ConsoleHello) Read(r io.Reader) (err error) {
 	t.ServerId = uint32(binary.BigEndian.Uint32(tmpServerId[:]))
 	if err := t.Address.Read(r); err != nil {
 		return fmt.Errorf("read Address: %w", err)
+	}
+	n_MacAddress, err := io.ReadFull(r, t.MacAddress[:])
+	if err != nil {
+		return fmt.Errorf("read MacAddress: expect %d bytes but read %d bytes: %w", 6, n_MacAddress, err)
 	}
 	return nil
 }

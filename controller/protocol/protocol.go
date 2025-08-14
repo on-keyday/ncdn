@@ -694,8 +694,9 @@ func LargeChunk(chunkID uint32, chunkLen uint32, eof bool) *ControlMessage {
 }
 
 type ConsoleData struct {
-	ServerID uint32
-	Address  netip.Addr
+	ServerID   uint32
+	Address    netip.Addr
+	MacAddress [6]byte
 }
 
 func ConsoleHelloToConsoleData(hello *ConsoleHello) *ConsoleData {
@@ -705,17 +706,18 @@ func ConsoleHelloToConsoleData(hello *ConsoleHello) *ConsoleData {
 	}
 }
 
-func HelloConsole(serverID uint32, addr netip.Addr) *ControlMessage {
+func HelloConsole(data *ConsoleData) *ControlMessage {
 	controlMsg := &ControlMessage{
 		Header: ControlMessageHeader{
 			Version:     0,
-			Len:         uint16(4 + 1 + len(addr.AsSlice())), // 4 bytes for serverID + 1 byte for is_v6 + addr length
+			Len:         uint16(4 + 1 + len(data.Address.AsSlice()) + 6), // 4 bytes for serverID + 1 byte for is_v6 + addr length
 			MessageType: ControlMessageType_ConsoleHello,
 		},
 	}
 	controlMsg.SetConsoleHello(ConsoleHello{
-		ServerId: serverID,
-		Address:  ConvertToAddress(addr),
+		ServerId:   data.ServerID,
+		Address:    ConvertToAddress(data.Address),
+		MacAddress: data.MacAddress,
 	})
 	return controlMsg
 }

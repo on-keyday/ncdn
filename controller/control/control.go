@@ -17,8 +17,9 @@ import (
 )
 
 type ControllerStatus struct {
-	L4LBData []*protocol.L4LBControlState
-	L7LBData []*protocol.L7LBControlState
+	L4LBData    []*protocol.L4LBControlState
+	L7LBData    []*protocol.L7LBControlState
+	ConsoleData []*protocol.ConsoleData
 }
 
 type LBType string
@@ -55,9 +56,11 @@ func (c *controller) Status() *ControllerStatus {
 	s := &ControllerStatus{}
 	var l7list *l7list
 	var l4list *l4list
+	var consolelist *consolelist
 	c.withLock(func() {
 		l4list = c.l4lblist.Clone()
 		l7list = c.l7lbList.Clone()
+		consolelist = c.consoleList.Clone()
 	})
 	for _, l4lb := range l4list.list {
 		l4lb.data.WithLock(func(data *protocol.L4LBControlState) {
@@ -67,6 +70,11 @@ func (c *controller) Status() *ControllerStatus {
 	for _, l7lb := range l7list.list {
 		l7lb.data.WithLock(func(data *protocol.L7LBControlState) {
 			s.L7LBData = append(s.L7LBData, data.Clone())
+		})
+	}
+	for _, console := range consolelist.list {
+		console.data.WithLock(func(data *protocol.ConsoleData) {
+			s.ConsoleData = append(s.ConsoleData, data)
 		})
 	}
 	return s

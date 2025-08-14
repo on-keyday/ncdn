@@ -129,12 +129,22 @@ func makeL7LBKeepAlive(t time.Duration, m *protocol.MachineStat, data *protocol.
 	return protocol.L7LBKeepAlive(t, m, data), nil
 }
 
+func makeConsoleKeepAlive(t time.Duration, m *protocol.MachineStat, data struct{}) (*protocol.ControlMessage, error) {
+	return protocol.KeepAliveConsole(t), nil
+}
+
 func ConnectL4LB(logger *slog.Logger, conn transport.Connection, data *protocol.L4LBData, keepalive time.Duration, appStat func() (*protocol.L4UpdateInfo, error)) (*LBState[*protocol.L4LBData, *protocol.L4UpdateInfo], error) {
 	return connectLB(logger, conn, protocol.L4LBHello, appStat, makeL4LBKeepAlive, data, keepalive)
 }
 
 func ConnectL7LB(logger *slog.Logger, conn transport.Connection, data *protocol.L7LBData, keepalive time.Duration, appStat func() (*protocol.L7UpdateInfo, error)) (*LBState[*protocol.L7LBData, *protocol.L7UpdateInfo], error) {
 	return connectLB(logger, conn, protocol.L7LBHello, appStat, makeL7LBKeepAlive, data, keepalive)
+}
+
+func ConnectConsole(logger *slog.Logger, conn transport.Connection, data *protocol.ConsoleData, keepalive time.Duration, appStat func() (struct{}, error)) (*LBState[*protocol.ConsoleData, struct{}], error) {
+	return connectLB(logger, conn, func(data *protocol.ConsoleData, machine *protocol.MachineData) *protocol.ControlMessage {
+		return protocol.HelloConsole(data)
+	}, appStat, makeConsoleKeepAlive, data, keepalive)
 }
 
 type LBConnConnector[T any, U any] func(logger *slog.Logger, conn transport.Connection, data T, keepalive time.Duration, appStat func() (U, error)) (*LBState[T, U], error)

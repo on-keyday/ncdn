@@ -76,6 +76,7 @@ format L7LBHello:
 format ConsoleHello:
     server_id :u32
     address :Address
+    mac_address :[6]u8
 
 format ConsoleKeepAlive:
     next_period :u64
