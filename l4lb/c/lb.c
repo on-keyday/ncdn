@@ -739,7 +739,7 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
           }
           uint32_t server_id = hash_server_id(config, src_addr, ntohs(udp->source), ((const uint8_t*)(quic+1))[0]) + 1;
           *dest = handle_initial(server_id, config, c, "long");
-          if (!dest) {
+          if (!*dest) {
             ++c->quiclb_no_dest_entry_total;
             EXIT(XDP_DROP);
           }
@@ -753,8 +753,8 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
           struct quiclb_connection_id* conn_id =
               (struct quiclb_connection_id*)(quic + 1);
     
-          dest = handle_connection_id(conn_id, config,c, "long", src_addr, ntohs(udp->source));
-          if (!dest) {
+          *dest = handle_connection_id(conn_id, config,c, "long", src_addr, ntohs(udp->source));
+          if (!*dest) {
             EXIT(XDP_DROP);
           }
         }
@@ -771,9 +771,9 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
         struct quiclb_connection_id* conn_id =
             (struct quiclb_connection_id*)(quic + 1);
 
-        dest = handle_connection_id(conn_id,config,c,"short", src_addr, ntohs(udp->source));
+        *dest = handle_connection_id(conn_id,config,c,"short", src_addr, ntohs(udp->source));
 
-        if (!dest) {
+        if (!*dest) {
           EXIT(XDP_DROP);
         }
       }
@@ -792,9 +792,9 @@ __always_inline int handle_transport(struct xdp_md* ctx,uint16_t ether_type,stru
   return XDP_TX;
 }
 
-__always_inline bool ipv6_addr_equal(const struct in6_addr* addr1, const struct in6_addr* addr2) {
+__always_inline bool ipv6_addr_equal(const uint8_t* addr1, const uint8_t* addr2) {
     for (int i = 0; i < 16; i++) {
-        if (addr1->s6_addr[i] != addr2->s6_addr[i]) {
+        if (addr1[i] != addr2[i]) {
             return false;
         }
     }
@@ -873,33 +873,33 @@ int lb_main(struct xdp_md* ctx) {
   }
   else if(eth->h_proto == htons(ETH_P_IPV6)) {
       // Check if the packet is long enough to contain the headers we need.
-      if (data + sizeof(struct ethhdr) + sizeof(struct ipv6hdr)  >
+      if (data + sizeof(struct ethhdr) + sizeof(struct ip6_hdr)  >
           data_end) {
         ++c->too_short_packet_total;
         EXIT(XDP_PASS);
       }
-      struct ipv6hdr* ipv6 = (struct ipv6hdr*)(eth + 1);
+      struct ip6_hdr* ipv6 = (struct ip6_hdr*)(eth + 1);
 
       // Check if the packet is IPv6, has no extension headers, is destined to the VIP,
       // and is a UDP packet.
-      if (ipv6->version != 0x6) {
+      if ((ipv6->ip6_vfc  & IPV6_VERSION_MASK) != IPV6_VERSION) {
         ++c->non_ipv6_packet_total;
         EXIT(XDP_PASS);
       }
-      if (ipv6->nexthdr != IPPROTO_TCP && ipv6->nexthdr != IPPROTO_UDP) {
+      if (ipv6->ip6_nxt != IPPROTO_TCP && ipv6->ip6_nxt != IPPROTO_UDP) {
         ++c->non_supported_proto_packet_total;
         EXIT(XDP_PASS);
       }
-      if (!ipv6_addr_equal(&ipv6->daddr, config->vip_address_v6)) {
+      if (!ipv6_addr_equal(ipv6->ip6_dst.s6_addr, config->vipv6_address)) {
         ++c->no_vip_match_total;
         EXIT(XDP_PASS);
       }
 
-      int err = handle_transport(ctx, htons(ETH_P_IPV6), &dest, ipv6 + 1, (uint8_t*)&ipv6->saddr, sizeof(struct ethhdr) + sizeof(struct ipv6hdr), ipv6->nexthdr, config, c);
+      int err = handle_transport(ctx, htons(ETH_P_IPV6), &dest, ipv6 + 1, (uint8_t*)&ipv6->ip6_src, sizeof(struct ethhdr) + sizeof(struct ip6_hdr), ipv6->ip6_nxt, config, c);
       if(err != XDP_TX) {
         return err; // if not XDP_TX, we should not continue
       }
-      total_len = ntohs(ipv6->payload_len) + sizeof(struct ipv6hdr);
+      total_len = ntohs(ipv6->ip6_plen) + sizeof(struct ip6_hdr);
   }
   else {
     debugk("ASSERTION FAILURE: ether_type %x is not supported", eth->h_proto);
