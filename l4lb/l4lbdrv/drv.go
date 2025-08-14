@@ -23,6 +23,7 @@ type Config struct {
 	EBPFPinDir     string // Path to pinning directory for crypto context map
 
 	VIP           netip.Addr
+	VIPv6         netip.Addr // IPv6 VIP, if applicable
 	Dests         DestinationEntries
 	SharedKey     []byte  // Shared key for QUIC connection ID generation
 	MTU           uint16  // Maximum Transmission Unit
@@ -116,10 +117,13 @@ func IPToUint32(ip netip.Addr) (uint32, error) {
 }
 
 func (lb *L4LB) UpdateVIP(newVIP netip.Addr) error {
-	if !newVIP.Is4() {
-		return errors.New("Given VIP is not an IPv4 address.")
+	if newVIP.Is4() {
+		lb.cfg.VIP = newVIP
+	} else if newVIP.Is6() {
+		lb.cfg.VIPv6 = newVIP
+	} else {
+		return fmt.Errorf("invalid VIP address: %s", newVIP)
 	}
-	lb.cfg.VIP = newVIP
 
 	if err := lb.Sync(); err != nil {
 		slog.Error("Failed to sync load balancer configuration", slog.Any("error", err))
@@ -151,6 +155,7 @@ func (lb *L4LB) Sync() error {
 
 	err = lb.bindings.ConfigMap.Update(uint32(0), &LbConfig{
 		VipAddress:      vip4,
+		Vipv6Address:    lb.cfg.VIPv6.As16(),
 		NumDests:        uint32(len(lb.cfg.Dests) - 1),
 		Mtu:             lb.cfg.MTU,
 		ServerIdHashKey: hostOrder.Uint32(lb.cfg.RoutingRandom[:]),

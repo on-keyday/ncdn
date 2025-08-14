@@ -12,7 +12,7 @@ import (
 // Source: ../c/lb.c
 
 const (
-	DESTINATIONS_SIZE = 255 // ../c/lb.c:94
+	DESTINATIONS_SIZE = 255 // ../c/lb.c:96
 )
 
 type StatCounters struct { // ../c/lb.c:32
@@ -270,12 +270,13 @@ func (c *StatCounters) String() string {
 }
 
 type LbConfig struct { // ../c/lb.c:69
-	VipAddress      uint32 // ../c/lb.c:70
-	NumDests        uint32 // ../c/lb.c:71
-	Mtu             uint16 // ../c/lb.c:72
-	QuicDestPort    uint16 // ../c/lb.c:73
-	Flags           uint32 // ../c/lb.c:74
-	ServerIdHashKey uint32 // ../c/lb.c:75
+	VipAddress      uint32    // ../c/lb.c:70
+	NumDests        uint32    // ../c/lb.c:71
+	Mtu             uint16    // ../c/lb.c:72
+	QuicDestPort    uint16    // ../c/lb.c:73
+	Flags           uint32    // ../c/lb.c:74
+	ServerIdHashKey uint32    // ../c/lb.c:75
+	Vipv6Address    [16]uint8 // ../c/lb.c:76
 }
 
 func LbConfigAssertLayout(s *DWARFStruct) error {
@@ -322,14 +323,19 @@ func LbConfigAssertLayout(s *DWARFStruct) error {
 	if goff != uintptr(doff) {
 		return fmt.Errorf("offset mismatch: go ServerIdHashKey: %d, dwarf server_id_hash_key: %d", goff, doff)
 	}
+	goff = unsafe.Offsetof(LbConfig{}.Vipv6Address)
+	doff = fs["vipv6_address"].Offset
+	if goff != uintptr(doff) {
+		return fmt.Errorf("offset mismatch: go Vipv6Address: %d, dwarf vipv6_address: %d", goff, doff)
+	}
 
 	return nil
 }
 
-type TestDecrypt struct { // ../c/lb.c:506
-	ConnectionId    [20]uint8 // ../c/lb.c:507
-	Len             uint8     // ../c/lb.c:508
-	IsShortServerId uint8     // ../c/lb.c:509
+type TestDecrypt struct { // ../c/lb.c:542
+	ConnectionId    [20]uint8 // ../c/lb.c:543
+	Len             uint8     // ../c/lb.c:544
+	IsShortServerId uint8     // ../c/lb.c:545
 }
 
 func TestDecryptAssertLayout(s *DWARFStruct) error {

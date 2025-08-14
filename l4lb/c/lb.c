@@ -73,6 +73,7 @@ struct lb_config { /* go: */
   uint16_t quic_dest_port;
   uint32_t flags;
   uint32_t server_id_hash_key; 
+  uint8_t vipv6_address[16];
 } PACKED;
 
 #define LB_CONFIG_FLAG_CONNID_CACHE_ENABLED (1 << 0)
